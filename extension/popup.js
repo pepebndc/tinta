@@ -51,6 +51,14 @@ function renderCall(call, status) {
   const people = find("people");
   people.replaceChildren();
   find("debug").hidden = !call;
+  const mic = find("mic-state");
+  mic.hidden = !call || typeof call.mic_muted !== "boolean";
+  if (!mic.hidden) {
+    mic.className = call.mic_muted ? "mic-state muted" : "mic-state";
+    mic.textContent = call.mic_muted
+      ? "Your microphone is muted in Meet. Tinta does not record it."
+      : "Your microphone is on in Meet.";
+  }
   if (!call) {
     find("call-title").textContent = "No Google Meet call in this tab.";
     find("call-detail").textContent = "Open this popup in the tab of a Meet call.";

@@ -13,6 +13,7 @@ It reads these items:
 - The meeting title on the page. If the page does not show a title, it uses `document.title` without the `Meet - ` prefix.
 - The participant list: the participant ID, the display name, and a flag for the local user.
 - The set of participants that speak.
+- The mute state of your microphone, from the `data-is-muted` attribute of the Meet microphone button.
 - The `tinta-debug` key in the page `localStorage`.
 
 ## What the extension does not read or do
@@ -50,7 +51,18 @@ The `CONFIG` object at the top of `content.js` contains all selectors and thresh
 
 The content script ignores tiles that show "Presentation" or "presenting".
 Detection runs only when the URL has a meeting code and the page shows at least one tile.
-The call ends when no tile is present for 3 seconds, when the meeting code changes, or when the page closes.
+The call ends when no tile is present for 3 seconds, when the meeting code changes, or when the page or the tab closes.
+
+The microphone button in the Meet toolbar has a `data-is-muted` attribute and a label that names the microphone.
+A mutation observer reports each change of this attribute at once.
+While Tinta records the call, the app silences your microphone track for each muted interval.
+
+## Speaker highlight
+
+The popup switch highlights the detected speakers on the Meet page.
+Meet shows a small circle with animated bars in the corner of the tile of a speaker.
+The extension finds this circle from the elements that animate, and draws a lavender ring around it.
+If a tile has no circle, the extension draws a soft lavender frame inside the tile.
 
 ## Load the extension unpacked
 
@@ -70,13 +82,14 @@ Click the Tinta icon in the Chrome toolbar. The popup shows:
 - The connection to the Tinta app: connected, not running, or not installed.
 - The recording state and its time, when Tinta records.
 - The Meet call in the current tab: the title, the number of people, and the participant list. The people that the extension detects as speaking are at the top, with a lavender highlight.
-- A switch that outlines the detected speakers on the Meet page. Use it to check the detection during a call.
+- The mute state of your microphone in Meet.
+- A switch that highlights the detected speakers on the Meet page. Use it to check the detection during a call.
 
 The action badge shows `REC` on a red background while Tinta records, and `II` while the recording is paused.
 
 ## Debug mode
 
-The popup switch turns the outline on and off for the current tab.
+The popup switch turns the speaker highlight on and off for the current tab.
 To also log each change of speakers to the console:
 
 1. Open a Meet page.
@@ -94,8 +107,16 @@ The `t` value is the `Date.now()` time in epoch milliseconds from the content sc
 
 `meet_state`: the extension sends this message when the user joins, when the participant list or title changes, and every 10 seconds.
 
+`mic_muted` is true, false, or null when the page does not show the microphone button.
+
 ```json
-{"type":"meet_state","meeting_code":"abc-defg-hij","title":"Weekly sync","t":1758625200000,"self_name":"Alice","participants":[{"id":"spaces/x/devices/1","name":"Alice","is_self":true}]}
+{"type":"meet_state","meeting_code":"abc-defg-hij","title":"Weekly sync","t":1758625200000,"self_name":"Alice","participants":[{"id":"spaces/x/devices/1","name":"Alice","is_self":true}],"mic_muted":false}
+```
+
+`mic_state`: the extension sends this message when your microphone is muted or unmuted in Meet.
+
+```json
+{"type":"mic_state","meeting_code":"abc-defg-hij","t":1758625200000,"muted":true}
 ```
 
 `active_speakers`: the extension sends this message when the set of speakers changes, and every 5 seconds.
@@ -105,10 +126,11 @@ The `speaking` array can be empty.
 {"type":"active_speakers","meeting_code":"abc-defg-hij","t":1758625200000,"speaking":["spaces/x/devices/1"]}
 ```
 
-`meeting_ended`: the extension sends this message when the user leaves the call or the page closes.
+`meeting_ended`: the extension sends this message when the user leaves the call, or when the page or the tab closes.
+`left_at` is the time the user left. When the tiles disappear, it is the time of the last tile, 3 seconds before the message.
 
 ```json
-{"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625200000}
+{"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625203000,"left_at":1758625200000}
 ```
 
 While the popup is open, the service worker sends this message every second, so that the popup shows the current app state:

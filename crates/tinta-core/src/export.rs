@@ -8,13 +8,14 @@ use std::collections::HashMap;
 pub struct Document {
     pub meeting: Meeting,
     pub notes: String,
+    pub summary: Option<String>,
     pub speakers: Vec<Speaker>,
     pub turns: Vec<Turn>,
 }
 
 impl Document {
     pub fn load(db: &Db, id: &str) -> Result<Self> {
-        Ok(Self { meeting: db.meeting(id)?, notes: db.notes(id)?, speakers: db.all_speakers(id)?, turns: db.turns(id)? })
+        Ok(Self { meeting: db.meeting(id)?, notes: db.notes(id)?, summary: db.summary(id)?.map(|s| s.content), speakers: db.all_speakers(id)?, turns: db.turns(id)? })
     }
 
     /// Display name for each speaker ID. Merged speakers show the name of their target.
@@ -85,6 +86,10 @@ pub fn markdown(doc: &Document) -> String {
     }
     out.push_str("\n## Notes\n\n");
     out.push_str(if doc.notes.trim().is_empty() { "No notes.\n" } else { doc.notes.trim_end() });
+    if let Some(summary) = &doc.summary {
+        out.push_str("\n\n## Summary (written by a local model)\n\n");
+        out.push_str(summary.trim_end());
+    }
     out.push_str("\n\n## Transcript\n\n");
     for turn in &doc.turns {
         let name = doc.speaker_name(&names, turn);
@@ -111,6 +116,7 @@ pub fn json(doc: &Document) -> Result<String> {
             "folder": doc.meeting.folder,
         },
         "notes": doc.notes,
+        "summary": doc.summary,
         "speakers": doc.speakers.iter().filter(|s| s.merged_into.is_none()).map(|s| json!({
             "id": s.id,
             "name": names.get(&s.id),

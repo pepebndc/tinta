@@ -5,6 +5,8 @@ use sha2::Sha256;
 
 const SERVICE: &str = "app.tinta";
 const ACCOUNT: &str = "library-master-key";
+/// errSecItemNotFound
+const ITEM_NOT_FOUND: i32 = -25300;
 
 /// Keys derived from the master key in the Keychain.
 #[derive(Clone)]
@@ -39,6 +41,11 @@ impl Keys {
         }
         let master = match get_generic_password(SERVICE, ACCOUNT) {
             Ok(value) => hex::decode(value).context("invalid master key in Keychain")?,
+            // Only a missing item creates a new key. Any other error, for example a denied
+            // Keychain prompt, must stop here: a new key would make the library unreadable.
+            Err(error) if error.code() != ITEM_NOT_FOUND => {
+                return Err(anyhow!("cannot read the library key from the Keychain: {error}"));
+            }
             Err(_) => {
                 let mut key = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut key);

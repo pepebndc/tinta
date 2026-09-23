@@ -79,3 +79,5 @@ li.speaking .state { color: var(--ink); }
 .debug { border-top: 1px solid var(--line); padding: 10px 0; font-size: 11px; color: var(--muted); }
 footer { border-top: 1px solid var(--line); padding-top: 10px; font-size: 10px; color: var(--muted); line-height: 1.4; }
 [hidden] { display: none !important; }
+.mic-state { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.mic-state.muted { color: var(--ink); background: var(--soft); padding: 6px 8px; border-radius: 6px; }

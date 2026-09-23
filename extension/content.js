@@ -1,4 +1,5 @@
-// Reads only the meeting code, the meeting title, the participant list, and speaking state.
+// Reads only the meeting code, the meeting title, the participant list, speaking state, and
+// whether your microphone is muted.
 // It does not read captions, chat, or other page content, and it does not capture audio.
 (function () {
   "use strict";
@@ -22,6 +23,12 @@
     speakingIndicatorSelectors: [],
     speakingLabelPattern: /\b(is speaking|speaking|est[aá] hablando|hablando|parle)\b/i,
     ignoreMutationSelector: "video, canvas",
+    // The Meet toolbar marks the microphone and camera buttons with data-is-muted.
+    mutedButtonSelector: "[data-is-muted]",
+    micLabelPattern: /microphone|micr[oó]fono|mikrofon|\bmicro\b|\u2318\s*\+\s*d|ctrl\s*\+\s*d/i,
+    // The speaking indicator of Meet is a small circle in the corner of a tile.
+    indicatorSize: { min: 14, max: 64 },
+    indicatorWindowMs: 1500,
     maxNameLength: 80,
     maxStringLength: 200,
     maxParticipants: 100,
@@ -34,6 +41,7 @@
     leaveGraceMs: 3000,
     debugStorageKey: "tinta-debug",
     debugAttribute: "data-tinta-speaking",
+    ringAttribute: "data-tinta-ring",
   };
 
   let debug = (() => {
@@ -192,19 +200,26 @@
     const info = tiles.get(tile);
     if (!info || info.presentation || !inCall) return;
     let n = 0;
+    const now = performance.now();
     for (const r of records) {
       const target = r.target;
       if (target.nodeType !== Node.ELEMENT_NODE) continue;
       if (target.closest(CONFIG.ignoreMutationSelector)) continue;
       n += 1;
+      if (debug) {
+        const t = info.targets.get(target) || { n: 0, last: 0 };
+        t.n += 1;
+        t.last = now;
+        info.targets.set(target, t);
+      }
     }
-    if (n > 0) tracker.record(info.id, performance.now(), n);
+    if (n > 0) tracker.record(info.id, now, n);
   }
 
   function attachTile(tile, id) {
     const observer = new MutationObserver((records) => onTileMutations(tile, records));
     observer.observe(tile, { attributes: true, attributeFilter: ["class", "style"], subtree: true });
-    tiles.set(tile, { id, observer, presentation: false });
+    tiles.set(tile, { id, observer, presentation: false, targets: new Map() });
   }
 
   function detachTile(tile) {
@@ -212,7 +227,7 @@
     if (!info) return;
     info.observer.disconnect();
     tiles.delete(tile);
-    if (debug) tile.removeAttribute(CONFIG.debugAttribute);
+    tile.removeAttribute(CONFIG.debugAttribute);
   }
 
   function hasSpeakingHint(tile) {
@@ -298,6 +313,30 @@
     }, CONFIG.rescanDelayMs);
   }
 
+  // Microphone state.
+
+  function micMuted() {
+    for (const el of document.querySelectorAll(CONFIG.mutedButtonSelector)) {
+      const label = [el.getAttribute("aria-label"), el.getAttribute("data-tooltip"), el.getAttribute("title")].join(" ");
+      if (!CONFIG.micLabelPattern.test(label)) continue;
+      const value = el.getAttribute("data-is-muted");
+      if (value === "true") return true;
+      if (value === "false") return false;
+    }
+    return null;
+  }
+
+  let lastMicMuted = null;
+
+  function checkMic() {
+    const muted = micMuted();
+    if (muted === lastMicMuted) return;
+    lastMicMuted = muted;
+    if (!inCall) return;
+    send({ type: "mic_state", meeting_code: code, t: Date.now(), muted });
+    log("microphone", muted === null ? "unknown" : muted ? "muted" : "on");
+  }
+
   // Call state and messages.
 
   let inCall = false;
@@ -323,12 +362,13 @@
       t: Date.now(),
       self_name: self ? self.name : pageSelfName(),
       participants: list,
+      mic_muted: lastMicMuted,
     };
   }
 
   function sendState(force) {
     const msg = stateMessage();
-    const key = JSON.stringify([msg.title, msg.self_name, msg.participants]);
+    const key = JSON.stringify([msg.title, msg.self_name, msg.participants, msg.mic_muted]);
     if (!force && key === lastStateKey) return;
     lastStateKey = key;
     send(msg);
@@ -351,7 +391,6 @@
     send({ type: "active_speakers", meeting_code: code, t: Date.now(), speaking });
     if (changed) {
       log("speaking", speaking.map((id) => (participants.get(id) || {}).name || id));
-      if (debug) paintSpeaking(new Set(speaking));
     }
   }
 
@@ -361,6 +400,7 @@
     }
     tracker.tick(performance.now());
     sendSpeakers(false);
+    if (debug) paintSpeaking(new Set(currentSpeakers()));
   }
 
   function startCall(newCode) {
@@ -368,6 +408,7 @@
     inCall = true;
     lastStateKey = null;
     lastSpeakersKey = null;
+    lastMicMuted = micMuted();
     log("joined", code);
     sendState(true);
     sendSpeakers(true);
@@ -376,9 +417,10 @@
     speakersTimer = setInterval(() => sendSpeakers(true), CONFIG.speakersHeartbeatMs);
   }
 
-  function endCall() {
+  // `leftAt` is the time the user left, when it is earlier than now.
+  function endCall(leftAt) {
     if (!inCall) return;
-    send({ type: "meeting_ended", meeting_code: code, t: Date.now() });
+    send({ type: "meeting_ended", meeting_code: code, t: Date.now(), left_at: leftAt || Date.now() });
     log("ended", code);
     inCall = false;
     clearInterval(tickTimer);
@@ -399,20 +441,80 @@
       return;
     }
     if (participants.size === 0 && now - lastTileSeenAt >= CONFIG.leaveGraceMs) {
-      endCall();
+      endCall(lastTileSeenAt);
       return;
     }
     sendState(false);
   }
 
-  // Debug outline.
+  // Speaker highlight. It draws a ring around the speaking indicator of Meet, or a soft
+  // frame around the tile when the page has no indicator.
+
+  const rings = new Set();
+
+  function isIndicator(el, tile) {
+    if (!(el instanceof HTMLElement) || !tile.contains(el) || el === tile) return false;
+    const r = el.getBoundingClientRect();
+    const { min, max } = CONFIG.indicatorSize;
+    if (r.width < min || r.width > max || Math.abs(r.width - r.height) > 3) return false;
+    const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    return radius >= r.width / 2 - 2;
+  }
+
+  // The indicator animates, so the most active mutation target leads to it.
+  function indicatorFor(tile, info) {
+    const now = performance.now();
+    const recent = [];
+    for (const [el, t] of info.targets) {
+      if (now - t.last > CONFIG.indicatorWindowMs || !el.isConnected) info.targets.delete(el);
+      else recent.push([el, t.n]);
+    }
+    recent.sort((a, b) => b[1] - a[1]);
+    for (const [el] of recent.slice(0, 5)) {
+      let node = el;
+      for (let depth = 0; node && node !== tile && depth < 5; depth++, node = node.parentElement) {
+        if (isIndicator(node, tile)) return node;
+      }
+    }
+    return null;
+  }
 
   function paintSpeaking(ids) {
+    const next = new Set();
     for (const [tile, info] of tiles) {
-      if (ids.has(info.id)) tile.setAttribute(CONFIG.debugAttribute, "");
+      const speaking = ids.has(info.id);
+      const ring = speaking ? indicatorFor(tile, info) : null;
+      if (ring) next.add(ring);
+      if (speaking && !ring) tile.setAttribute(CONFIG.debugAttribute, "");
       else tile.removeAttribute(CONFIG.debugAttribute);
     }
+    for (const el of rings) if (!next.has(el)) el.removeAttribute(CONFIG.ringAttribute);
+    for (const el of next) el.setAttribute(CONFIG.ringAttribute, "");
+    rings.clear();
+    for (const el of next) rings.add(el);
   }
+
+  const HIGHLIGHT_CSS = `
+    [${CONFIG.ringAttribute}] {
+      outline: 2px solid #aaa4e8 !important;
+      outline-offset: 3px !important;
+      animation: tinta-ring 1.4s ease-in-out infinite !important;
+    }
+    @keyframes tinta-ring {
+      50% { outline-color: #8174dc; outline-offset: 5px; }
+    }
+    [${CONFIG.debugAttribute}]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 2px #aaa4e8, inset 0 0 18px #8174dc55;
+      pointer-events: none;
+      z-index: 2;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      [${CONFIG.ringAttribute}] { animation: none !important; }
+    }`;
 
   let debugStyle = null;
 
@@ -420,12 +522,13 @@
     debug = on;
     if (on && !debugStyle) {
       debugStyle = document.createElement("style");
-      debugStyle.textContent = "[" + CONFIG.debugAttribute + "] { outline: 3px solid #8174dc !important; outline-offset: -3px; }";
+      debugStyle.textContent = HIGHLIGHT_CSS;
       (document.head || document.documentElement).appendChild(debugStyle);
     } else if (!on && debugStyle) {
       debugStyle.remove();
       debugStyle = null;
     }
+    if (!on) for (const info of tiles.values()) info.targets.clear();
     paintSpeaking(new Set(on ? currentSpeakers() : []));
     log("debug mode", on ? "on" : "off");
   }
@@ -442,7 +545,13 @@
   // Start.
 
   new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
+  // A mute changes an attribute of the toolbar button. The observer reports it at once.
+  new MutationObserver(checkMic).observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ["data-is-muted", "aria-label"],
+  });
   setInterval(scan, CONFIG.rescanIntervalMs);
-  window.addEventListener("pagehide", endCall);
+  window.addEventListener("pagehide", () => endCall());
   scan();
 })();

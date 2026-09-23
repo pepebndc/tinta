@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 
+/// The author of a summary that an MCP client wrote.
+pub const MCP_AUTHOR: &str = "MCP client";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Summary {
+    pub content: String,
+    /// The local model, or `MCP_AUTHOR`.
+    pub written_by: String,
+    pub updated_at: i64,
+}
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meetings (
     id TEXT PRIMARY KEY,
@@ -35,6 +46,12 @@ CREATE TABLE IF NOT EXISTS notes (
     meeting_id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
     updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS summaries (
+    meeting_id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    model TEXT NOT NULL,
+    created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS tags (
     meeting_id TEXT NOT NULL,
@@ -596,6 +613,38 @@ impl Db {
         self.reindex(id)
     }
 
+    // MARK: Summaries
+
+    /// The summary of a meeting. A local model writes it, and MCP clients can change it.
+    pub fn summary(&self, id: &str) -> Result<Option<Summary>> {
+        Ok(self
+            .conn
+            .query_row("SELECT content, model, created_at FROM summaries WHERE meeting_id = ?1", [id], |r| {
+                Ok(Summary { content: r.get(0)?, written_by: r.get(1)?, updated_at: r.get(2)? })
+            })
+            .optional()?)
+    }
+
+    /// `written_by` names the local model, or `MCP_AUTHOR` for a change through MCP.
+    /// MCP changes create a revision that the user can undo.
+    pub fn set_summary(&self, id: &str, content: &str, written_by: &str, origin: Origin) -> Result<()> {
+        let old = self.summary(id)?;
+        self.conn.execute(
+            "INSERT INTO summaries (meeting_id, content, model, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, model = excluded.model, created_at = excluded.created_at",
+            params![id, content, written_by, now_ms()],
+        )?;
+        if origin == Origin::Mcp {
+            let old = old.map(|s| serde_json::to_string(&s)).transpose()?;
+            self.record(&Self::new_batch(), id, "summary", id, "content", origin, old.as_deref(), Some(content))?;
+        }
+        self.reindex(id)
+    }
+
+    pub fn delete_summary(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [id])?;
+        self.reindex(id)
+    }
+
     // MARK: Participants and speaker events
 
     pub fn upsert_participants(&self, id: &str, participants: &[Participant]) -> Result<()> {
@@ -919,6 +968,17 @@ impl Db {
                 ("meeting", "audio_trashed_at") => {
                     self.conn.execute("UPDATE meetings SET audio_trashed_at = NULL WHERE id = ?1", [&entity_id])?;
                 }
+                ("summary", "content") => match old.as_deref().map(serde_json::from_str::<Summary>).transpose()? {
+                    Some(s) => {
+                        self.conn.execute(
+                            "UPDATE summaries SET content = ?2, model = ?3, created_at = ?4 WHERE meeting_id = ?1",
+                            params![entity_id, s.content, s.written_by, s.updated_at],
+                        )?;
+                    }
+                    None => {
+                        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [&entity_id])?;
+                    }
+                },
                 ("notes", "content") => {
                     self.conn.execute(
                         "UPDATE notes SET content = ?2, updated_at = ?3 WHERE meeting_id = ?1",
@@ -956,7 +1016,7 @@ impl Db {
 
     /// Deletion by the user: the caller removes files. The database rows go at once.
     pub fn delete_meeting_now(&self, id: &str) -> Result<()> {
-        for table in ["notes", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
+        for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
             self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
         }
         self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
@@ -1093,6 +1153,9 @@ impl Db {
         let insert = "INSERT INTO search (meeting_id, kind, body) VALUES (?1, ?2, ?3)";
         self.conn.execute(insert, params![id, "title", format!("{} {}", meeting.title, tags)])?;
         self.conn.execute(insert, params![id, "notes", self.notes(id)?])?;
+        if let Some(summary) = self.summary(id)? {
+            self.conn.execute(insert, params![id, "summary", summary.content])?;
+        }
         let speakers = self.speakers(id)?;
         let names: Vec<String> = speakers.iter().filter_map(|s| s.name.clone()).collect();
         let transcript: Vec<String> = self.turns(id)?.into_iter().map(|t| t.text).collect();

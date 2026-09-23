@@ -68,6 +68,9 @@ export type MeetingDetail = {
   participants: Participant[];
   has_edits: boolean;
   finalizing: boolean;
+  audio_bytes: number;
+  summary: { content: string; written_by: string; updated_at: number } | null;
+  summarizing: boolean;
 };
 
 export type ExtensionState = {
@@ -78,9 +81,10 @@ export type ExtensionState = {
   self_name: string | null;
   participants: Participant[];
   speaking: string[];
+  mic_muted: boolean | null;
 };
 
-export type Active = { meeting_id: string; start_wall_ms: number; paused: boolean };
+export type Active = { meeting_id: string; start_wall_ms: number; paused: boolean; meeting_code: string | null };
 
 export type Bootstrap = {
   self_name: string;
@@ -88,6 +92,9 @@ export type Bootstrap = {
   last_source: string;
   theme: "system" | "light" | "dark";
   onboarded: boolean;
+  auto_stop: boolean;
+  auto_summary: boolean;
+  summaries: { available: boolean; reason?: string };
   filevault: boolean;
   models_installed: boolean;
   models_path: string;
@@ -114,6 +121,7 @@ export type Revision = {
 };
 export type GranolaPreview = { path: string; total: number; mine: number; shared: number; already_imported: number };
 export type GranolaSummary = { imported: number; skipped: number; failed: { title: string; error: string }[] };
+export type StorageUsage = { library: number; audio: number; total: number; models: number };
 export type Access = { id: number; ts: number; session: string; tool: string; meeting_ids: string[]; result: string };
 
 export const api = {
@@ -151,6 +159,9 @@ export const api = {
   moveLibrary: (parent: string) => invoke<string>("move_library", { parent }),
   showLibrary: () => invoke<void>("show_library"),
   prepareExtension: () => invoke<string>("prepare_extension"),
+  summarize: (id: string) => invoke<void>("summarize", { id }),
+  deleteSummary: (id: string) => invoke<void>("delete_summary", { id }),
+  storageUsage: () => invoke<StorageUsage>("storage_usage"),
   granolaDefaultPath: () => invoke<string | null>("granola_default_path"),
   granolaPreview: (path: string) => invoke<GranolaPreview>("granola_preview", { path }),
   importGranola: (path: string, includeSummaries: boolean) =>
@@ -190,13 +201,19 @@ export function clock(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+export function bytes(n: number): string {
+  if (n < 1000) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = n / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
 export function dateTime(ms: number | null): string {
   if (!ms) return "";
   return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-export function playWav(base64: string): HTMLAudioElement {
-  const audio = new Audio(`data:audio/wav;base64,${base64}`);
-  void audio.play();
-  return audio;
 }

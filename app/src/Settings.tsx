@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Access, api, Bootstrap, dateTime, Meeting, on, Revision } from "./api";
+import { Access, api, Bootstrap, bytes, dateTime, Meeting, on, Revision, StorageUsage } from "./api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { setTheme, ThemeChoice } from "./theme";
 import { ExtensionSteps, useModelInstall } from "./Onboarding";
@@ -9,6 +9,11 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
   const { progress, install } = useModelInstall(onChanged, onError);
 
   const [moving, setMoving] = useState(false);
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
+
+  useEffect(() => {
+    api.storageUsage().then(setUsage).catch((e) => onError(String(e)));
+  }, [boot.data_dir, boot.models_installed]);
 
   async function changeLocation() {
     const parent = await open({ directory: true, multiple: false, title: "Select a folder for the Tinta library" });
@@ -77,6 +82,24 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
       </section>
 
       <section className="panel">
+        <h2>Summaries</h2>
+        <label>
+          <input
+            type="checkbox"
+            checked={boot.auto_summary}
+            disabled={!boot.summaries.available}
+            onChange={(e) => set("auto_summary", String(e.target.checked))}
+          />{" "}
+          Write a summary after each call
+        </label>
+        <p className="small muted">
+          {boot.summaries.available
+            ? "The Apple on-device model writes the summary on this Mac from your notes and the transcript. Nothing leaves this Mac. You can also write a summary from each meeting."
+            : boot.summaries.reason}
+        </p>
+      </section>
+
+      <section className="panel">
         <h2>Microphone and echo</h2>
         <p>Microphone access: {boot.microphone}</p>
         {boot.microphone !== "granted" && (
@@ -95,6 +118,13 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
 
       <section className="panel">
         <h2>Google Meet extension</h2>
+        <label>
+          <input type="checkbox" checked={boot.auto_stop} onChange={(e) => set("auto_stop", String(e.target.checked))} /> Stop the
+          recording when the Meet call ends
+        </label>
+        <p className="small muted">
+          Tinta stops 3 seconds after you leave. A rejoin in this time keeps the recording. When you mute your microphone in Meet, Tinta does not record it.
+        </p>
         {boot.extension.connected_at ? (
           <p>The extension is connected. Its ID is {boot.extension_id}.</p>
         ) : (
@@ -108,6 +138,20 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
       <section className="panel">
         <h2>Storage</h2>
         <p className="path">{boot.data_dir}</p>
+        {usage && (
+          <dl className="usage">
+            <dt>Total</dt>
+            <dd>
+              <strong>{bytes(usage.total)}</strong>
+            </dd>
+            <dt>Audio</dt>
+            <dd>{bytes(usage.audio)}</dd>
+            <dt>Notes and transcripts</dt>
+            <dd>{bytes(usage.library)}</dd>
+            <dt className="muted">Speech models</dt>
+            <dd className="muted">{bytes(usage.models)}, in a separate folder</dd>
+          </dl>
+        )}
         <div className="row">
           <button onClick={changeLocation} disabled={moving}>
             {moving ? "Moving the library…" : "Change location"}

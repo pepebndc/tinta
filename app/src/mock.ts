@@ -57,20 +57,27 @@ function detail(): MeetingDetail {
     ],
     has_edits: false,
     finalizing: false,
+    audio_bytes: 61_400_000,
+    summary: {
+      content: "The team reviewed the first screen of the app. They agreed to keep it calm, with speaker names and timestamps, and to give the notes their own space.\n\n### Key points\n\n- The first screen should feel calm.\n- Speaker names and timestamps help people find a part of the conversation.\n- Notes stay on this Mac.\n\n### Action items\n\n- **Sam Carter**: Review the icon at small sizes tomorrow morning.\n",
+      written_by: "Apple on-device model",
+      updated_at: now - 30 * 60_000,
+    },
+    summarizing: false,
   };
 }
 
 const boot: Bootstrap = {
-  self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
+  self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), auto_stop: true, auto_summary: true, summaries: { available: true }, mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
   models_path: "~/Library/Application Support/FluidAudio/Models", microphone: "granted",
   mcp_path: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp",
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
   extension_id: "ajncjfpbmkmiheokjfhfdlhnmfbaofij", data_dir: "~/Library/Application Support/Tinta",
   models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
-  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false } : null,
+  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, meeting_code: "abc-defg-hij" } : null,
   extension: {
     connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now, meeting_code: "abc-defg-hij", title: "Design review", self_name: "Sam Rivera",
-    participants: detail().participants, speaking: [],
+    participants: detail().participants, speaking: [], mic_muted: hash() === "recording" ? true : false,
   },
 };
 
@@ -84,6 +91,7 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     granola_default_path: "/Users/sam/granola-export",
     granola_preview: { path: "/Users/sam/granola-export", total: 128, mine: 120, shared: 8, already_imported: 0 },
     trash: [],
+    storage_usage: { library: 4_200_000, audio: 312_000_000, total: 316_200_000, models: 486_000_000 },
     prepare_extension: "/Users/sam/Library/Application Support/Tinta/Chrome extension",
     mcp_activity: { revisions: [], access: [] },
   };

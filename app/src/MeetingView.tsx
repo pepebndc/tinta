@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Active, api, Bootstrap, clock, dateTime, ExtensionState, MeetingDetail, on, playWav, Source, Speaker, Turn } from "./api";
+import { Active, api, Bootstrap, bytes, clock, dateTime, ExtensionState, MeetingDetail, on, Source, Speaker, Turn } from "./api";
 import { Avatar, Icon } from "./Brand";
+import { PlayButton, stopPlayback } from "./Player";
+import { SummaryPanel } from "./Summary";
 
 type Props = {
   id: string;
@@ -22,12 +24,13 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
   const [sources, setSources] = useState<Source[]>([]);
   const [route, setRoute] = useState<"speakers" | "headphones" | null>(null);
   const [source, setSource] = useState(boot?.last_source ?? "com.google.Chrome");
-  const [levels, setLevels] = useState({ mic: 0, remote: 0, capturing: false });
+  const [levels, setLevels] = useState({ mic: 0, remote: 0, capturing: false, micMuted: false });
   const [progress, setProgress] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const notesTimer = useRef<number | undefined>(undefined);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const latestNotes = useRef("");
   const recordingHere = active?.meeting_id === id;
 
   async function load() {
@@ -57,7 +60,12 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
       }),
       on<EngineEvent>("engine", (e) => {
         if (e.event === "levels") {
-          setLevels({ mic: Number(e.mic), remote: Number(e.remote), capturing: Boolean(e.remote_capturing) });
+          setLevels({
+            mic: Number(e.mic),
+            remote: Number(e.remote),
+            capturing: Boolean(e.remote_capturing),
+            micMuted: Boolean(e.mic_muted),
+          });
         } else if (e.event === "finalize_progress") {
           setProgress(`${e.stage}: ${Math.round(Number(e.fraction) * 100)}%`);
         } else if (e.event === "error" || e.event === "warning") {
@@ -74,12 +82,19 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
     return () => {
       subs.forEach((s) => s.then((u) => u()));
       clearInterval(tick);
-      if (notesTimer.current) window.clearTimeout(notesTimer.current);
+      stopPlayback();
+      // Save a pending edit when the user opens another view.
+      if (notesTimer.current) {
+        window.clearTimeout(notesTimer.current);
+        notesTimer.current = undefined;
+        api.setNotes(id, latestNotes.current).catch((e) => onError(String(e)));
+      }
     };
   }, [id]);
 
   function changeNotes(value: string) {
     setNotes(value);
+    latestNotes.current = value;
     if (notesTimer.current) window.clearTimeout(notesTimer.current);
     notesTimer.current = window.setTimeout(() => {
       notesTimer.current = undefined;
@@ -168,6 +183,18 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
         <div className="date">
           {dateTime(m.started_at ?? m.created_at)}
           {m.language && <> · {m.language === "es" ? "Spanish" : m.language === "en" ? "English" : m.language}</>}
+          <button
+            className="id-chip"
+            title={`Meeting ID ${m.id}. MCP clients use it to find this meeting.`}
+            onClick={() =>
+              navigator.clipboard
+                .writeText(m.id)
+                .then(() => setMessage(`Copied the meeting ID ${m.id}. MCP clients can use it to find this meeting.`))
+                .catch((e) => onError(String(e)))
+            }
+          >
+            ID {m.id.slice(0, 8)} · Copy
+          </button>
         </div>
         <input
           className="title"
@@ -246,13 +273,16 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
           <div className="row">
             <span className="rec-dot big" /> <strong>{active?.paused ? "Paused" : "Recording"}</strong>
             <span className="timer">{clock(elapsed ?? 0)}</span>
-            <Meter label="Microphone" value={levels.mic} />
+            <Meter label={levels.micMuted ? "Microphone (muted in Meet)" : "Microphone"} value={levels.mic} />
             <Meter label={levels.capturing ? "Meeting audio" : "Meeting audio (not detected)"} value={levels.remote} />
             <button onClick={() => pause(!active?.paused)}>{active?.paused ? "Resume" : "Pause"}</button>
             <button className="danger" onClick={stop}>
               Stop
             </button>
           </div>
+          {levels.micMuted && (
+            <div className="small muted">Your microphone is muted in Meet. Tinta does not record it until you unmute.</div>
+          )}
           {!levels.capturing && (
             <div className="warn small">
               No audio from the selected app yet. The app starts to capture when the meeting app plays sound.
@@ -271,7 +301,9 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
         </section>
       )}
 
-      <div className="columns">
+      {ready && <SummaryPanel detail={detail} boot={boot} onError={onError} onMessage={setMessage} />}
+
+      <Workspace details={ready}>
         <section className="column notes-column">
           <div className="column-head">
             <h2>Your notes</h2>
@@ -294,7 +326,7 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
           </div>
           <Transcript detail={detail} editable={ready} timed={!imported} onError={onError} onChanged={load} />
         </section>
-      </div>
+      </Workspace>
 
       {ready && (
         <div className="columns">
@@ -314,6 +346,84 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
         </span>
         <span>{detail.turns.length > 0 ? `${detail.turns.length} turns` : ""}</span>
       </footer>
+    </div>
+  );
+}
+
+// Stack notes over the transcript on tall or narrow windows.
+const STACKED = "(max-aspect-ratio: 1/1) and (min-height: 820px), (max-width: 1100px) and (min-height: 760px)";
+
+function useStacked(): boolean {
+  const [stacked, setStacked] = useState(() => window.matchMedia(STACKED).matches);
+  useEffect(() => {
+    const media = window.matchMedia(STACKED);
+    const change = () => setStacked(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  return stacked;
+}
+
+const MIN_RATIO = 0.25;
+const MAX_RATIO = 0.75;
+const clampRatio = (r: number) => Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));
+
+/** Notes and transcript with a divider that the user can drag. Each layout keeps its own ratio. */
+function Workspace({ details, children }: { details: boolean; children: [React.ReactNode, React.ReactNode] }) {
+  const stacked = useStacked();
+  const key = stacked ? "tinta-split-stacked" : "tinta-split-side";
+  const [ratio, setRatio] = useState(() => clampRatio(Number(localStorage.getItem(key)) || 0.5));
+  const box = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  useEffect(() => setRatio(clampRatio(Number(localStorage.getItem(key)) || 0.5)), [key]);
+
+  function save(next: number) {
+    const value = clampRatio(next);
+    setRatio(value);
+    localStorage.setItem(key, String(value));
+  }
+
+  function move(e: React.PointerEvent) {
+    if (!dragging.current || !box.current) return;
+    const rect = box.current.getBoundingClientRect();
+    save(stacked ? (e.clientY - rect.top) / rect.height : (e.clientX - rect.left) / rect.width);
+  }
+
+  const template = `minmax(0, ${ratio}fr) 12px minmax(0, ${1 - ratio}fr)`;
+  return (
+    <div
+      ref={box}
+      className={`workspace ${stacked ? "stacked" : "side"} ${details ? "with-details" : ""}`}
+      style={stacked ? { gridTemplateRows: template } : { gridTemplateColumns: template }}
+    >
+      {children[0]}
+      <div
+        className="splitter"
+        role="separator"
+        aria-orientation={stacked ? "horizontal" : "vertical"}
+        aria-valuenow={Math.round(ratio * 100)}
+        aria-valuemin={MIN_RATIO * 100}
+        aria-valuemax={MAX_RATIO * 100}
+        aria-label="Resize notes and transcript"
+        tabIndex={0}
+        onPointerDown={(e) => {
+          dragging.current = true;
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={move}
+        onPointerUp={() => (dragging.current = false)}
+        onDoubleClick={() => save(0.5)}
+        onKeyDown={(e) => {
+          const back = stacked ? "ArrowUp" : "ArrowLeft";
+          const forward = stacked ? "ArrowDown" : "ArrowRight";
+          if (e.key === back) save(ratio - 0.05);
+          if (e.key === forward) save(ratio + 0.05);
+        }}
+      >
+        <span />
+      </div>
+      {children[1]}
     </div>
   );
 }
@@ -376,9 +486,7 @@ function Transcript({ detail, editable, timed, onError, onChanged }: { detail: M
               {editable && (
                 <span className="turn-actions">
                   {!detail.meeting.audio_deleted && (
-                    <button className="link" onClick={() => api.turnAudio(t.id).then(playWav).catch((e) => onError(String(e)))}>
-                      Play
-                    </button>
+                    <PlayButton id={`turn-${t.id}`} label="Play" load={() => api.turnAudio(t.id)} onError={onError} />
                   )}
                   <select
                     className="inline-select"
@@ -456,9 +564,7 @@ function Speakers({ detail, onError, onChanged }: { detail: MeetingDetail; onErr
           </div>
           <div className="speaker-actions">
             {!detail.meeting.audio_deleted && (
-              <button className="link" onClick={() => api.speakerSample(s.id).then(playWav).catch((e) => onError(String(e)))}>
-                Play sample
-              </button>
+              <PlayButton id={`speaker-${s.id}`} label="Play sample" load={() => api.speakerSample(s.id)} onError={onError} />
             )}
             {s.name && s.name_source !== "user" && (
               <button className="link" onClick={() => act(api.renameSpeaker(s.id, s.name))}>
@@ -513,11 +619,12 @@ function AudioAndLanguage({ detail, onError, onChanged }: { detail: MeetingDetai
       {m.audio_deleted ? (
         <p className="muted">The audio is deleted. The notes and the transcript stay until you delete the meeting.</p>
       ) : m.audio_trashed_at ? (
-        <p className="muted">The audio is in the trash.</p>
+        <p className="muted">The audio is in the trash. It uses {bytes(detail.audio_bytes)} on this Mac.</p>
       ) : (
         <>
           <p>
-            The app deletes the audio on <strong>{dateTime(m.audio_until)}</strong>.
+            The audio uses <strong>{bytes(detail.audio_bytes)}</strong> on this Mac. The app deletes it on{" "}
+            <strong>{dateTime(m.audio_until)}</strong>.
           </p>
           <label>
             Keep audio for{" "}

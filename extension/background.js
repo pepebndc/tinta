@@ -2,7 +2,7 @@
 
 const HOST_NAME = "app.tinta";
 const MEET_ORIGIN = "https://meet.google.com";
-const MESSAGE_TYPES = new Set(["meet_state", "active_speakers", "meeting_ended"]);
+const MESSAGE_TYPES = new Set(["meet_state", "active_speakers", "mic_state", "meeting_ended"]);
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
 
@@ -93,11 +93,14 @@ function remember(tabId, msg) {
     calls.delete(tabId);
     return;
   }
-  const call = calls.get(tabId) || { meeting_code: msg.meeting_code, title: null, participants: [], speaking: [] };
+  const call = calls.get(tabId) || { meeting_code: msg.meeting_code, title: null, participants: [], speaking: [], mic_muted: null };
   if (msg.type === "meet_state") {
     call.meeting_code = msg.meeting_code;
     call.title = msg.title;
     call.participants = msg.participants;
+    call.mic_muted = msg.mic_muted;
+  } else if (msg.type === "mic_state") {
+    call.mic_muted = msg.muted;
   } else if (msg.type === "active_speakers") {
     call.speaking = msg.speaking;
   }
@@ -122,7 +125,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => calls.delete(tabId));
+// A closed tab cannot send its own end message.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const call = calls.get(tabId);
+  calls.delete(tabId);
+  if (call) forward({ type: "meeting_ended", meeting_code: call.meeting_code, t: Date.now(), left_at: Date.now() });
+});
 
 showStatus();
 connect();

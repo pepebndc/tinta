@@ -133,12 +133,19 @@ final class RecordingSession: @unchecked Sendable {
     private var routeWarned = false
     /// Remote levels by sample range, for the live echo check. Kept for 60 seconds.
     private var remoteLevels: [(start: Int64, end: Int64, level: Float)] = []
+    /// Microphone audio waits here before it is stored or transcribed. A mute in Meet reaches the
+    /// engine a little after the click, so the delay lets the engine silence the audio from the exact time.
+    private var micHold: [(samples: [Float], start: Int64)] = []
+    private static let micHoldSamples = Int64(ChunkFormat.sampleRate * 8 / 10)
+    /// Changes of the Meet microphone state, by meeting clock index.
+    private var muteChanges: [(index: Int64, muted: Bool)] = []
 
-    init(directory: URL, key: SymmetricKey, source: String, speech: Speech) throws {
+    init(directory: URL, key: SymmetricKey, source: String, speech: Speech, micMuted: Bool) throws {
         self.directory = directory
         startHost = Clock.now()
         startWallMs = Int64(Date().timeIntervalSince1970 * 1000)
         route = OutputRoute.current()
+        if micMuted { muteChanges = [(0, true)] }
         var writers: [Track: ChunkWriter] = [:]
         var segmenters: [Track: LiveSegmenter] = [:]
         for track in Track.allCases {
@@ -201,8 +208,70 @@ final class RecordingSession: @unchecked Sendable {
             }
             lock.unlock()
         }
+        if track == .mic {
+            holdMic(samples, start: start)
+        } else {
+            store(.remote, samples, start: start)
+        }
+    }
+
+    private func store(_ track: Track, _ samples: [Float], start: Int64) {
         writers[track]?.append(samples, startIndex: start)
         segmenters[track]?.push(samples, index: start)
+    }
+
+    private func holdMic(_ samples: [Float], start: Int64) {
+        lock.lock()
+        micHold.append((samples, start))
+        let cutoff = start + Int64(samples.count) - Self.micHoldSamples
+        var ready: [(samples: [Float], start: Int64)] = []
+        while let first = micHold.first, first.start + Int64(first.samples.count) <= cutoff {
+            ready.append(silenceMuted(micHold.removeFirst()))
+        }
+        lock.unlock()
+        for item in ready { store(.mic, item.samples, start: item.start) }
+    }
+
+    private func releaseMic() {
+        lock.lock()
+        let ready = micHold.map(silenceMuted)
+        micHold.removeAll()
+        lock.unlock()
+        for item in ready { store(.mic, item.samples, start: item.start) }
+    }
+
+    /// Replaces the samples that fall in a muted interval with silence. The caller holds `lock`.
+    private func silenceMuted(_ item: (samples: [Float], start: Int64)) -> (samples: [Float], start: Int64) {
+        guard !muteChanges.isEmpty else { return item }
+        var samples = item.samples
+        for i in samples.indices where isMuted(at: item.start + Int64(i)) {
+            samples[i] = 0
+        }
+        return (samples, item.start)
+    }
+
+    private func isMuted(at index: Int64) -> Bool {
+        var muted = false
+        for change in muteChanges {
+            if change.index > index { break }
+            muted = change.muted
+        }
+        return muted
+    }
+
+    /// Records a Meet microphone change at a wall clock time in milliseconds.
+    func setMicMuted(_ muted: Bool, wallMs: Int64) {
+        let index = max(0, (wallMs - startWallMs) * Int64(ChunkFormat.sampleRate) / 1000)
+        lock.lock()
+        muteChanges.removeAll { $0.index >= index }
+        muteChanges.append((index, muted))
+        lock.unlock()
+    }
+
+    private var micMutedNow: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return muteChanges.last?.muted ?? false
     }
 
     /// A microphone utterance is echo when remote audio plays and the microphone level is low.
@@ -222,13 +291,18 @@ final class RecordingSession: @unchecked Sendable {
                 "warning",
                 ["message": "The sound now plays through speakers. Echo removal is off for this recording, so use headphones."])
         }
+        let muted = micMutedNow
         lock.lock()
-        let mic = levels[.mic] ?? 0
+        let mic = muted ? 0 : levels[.mic] ?? 0
         let remote = levels[.remote] ?? 0
         levels = [:]
         lock.unlock()
         Output.shared.event(
-            "levels", ["mic": Double(mic), "remote": Double(remote), "remote_capturing": tap?.isCapturing ?? false])
+            "levels",
+            [
+                "mic": Double(mic), "remote": Double(remote), "remote_capturing": tap?.isCapturing ?? false,
+                "mic_muted": muted,
+            ])
     }
 
     var echoCancellationActive: Bool { mic?.echoCancellationActive ?? false }
@@ -238,6 +312,7 @@ final class RecordingSession: @unchecked Sendable {
     }
 
     func setPaused(_ value: Bool) {
+        if value { releaseMic() }
         lock.lock()
         paused = value
         lock.unlock()
@@ -248,6 +323,7 @@ final class RecordingSession: @unchecked Sendable {
         levelTimer?.cancel()
         mic?.stop()
         tap?.stop()
+        releaseMic()
         writers.values.forEach { $0.flush() }
         segmenters.values.forEach { $0.finish() }
     }

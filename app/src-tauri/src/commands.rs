@@ -18,6 +18,7 @@ async fn bootstrap() -> CommandResult<Value> {
     let s = state();
     let models = s.engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
     let permissions = s.engine.call("permissions", json!({}), Duration::from_secs(10)).unwrap_or(json!({}));
+    let summaries = s.engine.call("summary_status", json!({}), Duration::from_secs(10)).unwrap_or(json!({"available": false}));
     let db = s.db.lock().unwrap();
     let setting = |key: &str, default: &str| db.setting(key).ok().flatten().unwrap_or_else(|| default.to_string());
     let mcp_path = system::helper_path("tinta-mcp");
@@ -27,6 +28,9 @@ async fn bootstrap() -> CommandResult<Value> {
         "last_source": setting("last_source", "com.google.Chrome"),
         "theme": setting("theme", "system"),
         "onboarded": setting("onboarded", "false") == "true",
+        "auto_stop": setting("auto_stop", "true") == "true",
+        "auto_summary": setting("auto_summary", "true") == "true",
+        "summaries": summaries,
         "filevault": system::filevault_on(),
         "models_installed": models["installed"].as_bool().unwrap_or(false),
         "models_path": models["path"],
@@ -42,7 +46,7 @@ async fn bootstrap() -> CommandResult<Value> {
 
 #[tauri::command]
 async fn set_setting(key: String, value: String) -> CommandResult<()> {
-    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded"];
+    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary"];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
     }
@@ -102,6 +106,9 @@ async fn get_meeting(id: String) -> CommandResult<Value> {
         "participants": db.participants(&id).map_err(err)?,
         "has_edits": db.has_edits(&id).map_err(err)?,
         "finalizing": s.finalizing.lock().unwrap().contains(&id),
+        "audio_bytes": dir_size(&paths::audio_dir(&id)),
+        "summary": db.summary(&id).map_err(err)?,
+        "summarizing": s.summarizing.lock().unwrap().contains(&id),
     }))
 }
 
@@ -149,6 +156,21 @@ async fn stop_recording() -> CommandResult<String> {
 async fn run_final_pass(id: String, language: Option<String>) -> CommandResult<()> {
     let s = state();
     std::thread::spawn(move || s.finalize_logged(&id, language));
+    Ok(())
+}
+
+#[tauri::command]
+async fn summarize(id: String) -> CommandResult<()> {
+    let s = state();
+    std::thread::spawn(move || s.summarize_logged(&id));
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_summary(id: String) -> CommandResult<()> {
+    let s = state();
+    s.db.lock().unwrap().delete_summary(&id).map_err(err)?;
+    s.meeting_changed(&id);
     Ok(())
 }
 
@@ -248,6 +270,9 @@ async fn delete_meeting(id: String) -> CommandResult<()> {
 #[tauri::command]
 async fn delete_audio(id: String) -> CommandResult<()> {
     let s = state();
+    if s.active.lock().unwrap().as_ref().map(|a| a.meeting_id == id).unwrap_or(false) {
+        return Err("stop the recording first".into());
+    }
     s.delete_audio_files(&id).map_err(err)?;
     s.meeting_changed(&id);
     Ok(())
@@ -350,6 +375,35 @@ async fn prepare_extension(app: tauri::AppHandle) -> CommandResult<String> {
     Ok(target.to_string_lossy().to_string())
 }
 
+/// Disk use of the library, the audio, and the speech models, in bytes.
+#[tauri::command]
+async fn storage_usage() -> CommandResult<Value> {
+    let s = state();
+    let models = s.engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
+    let data = paths::data_dir();
+    let library: u64 = ["library.db", "library.db-wal", "library.db-shm"]
+        .iter()
+        .filter_map(|name| std::fs::metadata(data.join(name)).ok())
+        .map(|m| m.len())
+        .sum();
+    let meetings = dir_size(&data.join("meetings"));
+    let models = models["path"].as_str().map(|p| dir_size(std::path::Path::new(p))).unwrap_or(0);
+    Ok(json!({"library": library, "audio": meetings, "total": library + meetings, "models": models}))
+}
+
+/// The total size of the files in a folder. A missing folder has size 0.
+fn dir_size(path: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    entries
+        .flatten()
+        .map(|entry| match entry.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&entry.path()),
+            Ok(t) if t.is_file() => entry.metadata().map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
 fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
@@ -427,6 +481,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         move_library,
         show_library,
         prepare_extension,
+        storage_usage,
+        summarize,
+        delete_summary,
         granola_default_path,
         granola_preview,
         import_granola,

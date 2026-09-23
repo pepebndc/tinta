@@ -63,6 +63,9 @@ fn connection(state: Arc<AppState>, stream: UnixStream) -> Result<()> {
         };
         writeln!(writer, "{}", serde_json::to_string(&response)?)?;
     }
+    if client == "native-host" {
+        state.on_extension_disconnected();
+    }
     Ok(())
 }
 

@@ -266,7 +266,7 @@ input, select, textarea {
 .privacy-card { background: var(--back); }
 
 /* Meeting */
-.meeting { display: flex; flex-direction: column; min-height: 100%; }
+.meeting { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .toolbar {
   height: 56px;
   padding: 0 28px;
@@ -284,7 +284,15 @@ input, select, textarea {
 .toolbar-actions { display: flex; gap: 4px; align-items: center; }
 .select-quiet { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .select-quiet select { border: none; background: transparent; padding: 0; color: inherit; font-size: 12px; cursor: pointer; appearance: none; -webkit-appearance: none; }
-.meeting-body { padding: 30px 40px 20px; flex: 1; }
+/* The body scrolls. Very wide windows keep the content at a readable width. */
+.meeting-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 26px max(40px, calc((100% - 1640px) / 2)) 20px;
+}
 .date { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 .meeting-header .title {
   font-size: 29px;
@@ -367,8 +375,9 @@ input, select, textarea {
 .small-button { font-size: 11px; padding: 3px 10px; }
 .notes {
   width: 100%;
-  min-height: 460px;
-  resize: vertical;
+  flex: 1;
+  min-height: 0;
+  resize: none;
   border: none;
   background: transparent;
   padding: 2px;
@@ -378,7 +387,7 @@ input, select, textarea {
   color: var(--text);
 }
 .notes::placeholder { color: var(--muted); }
-.transcript { max-height: 600px; overflow-y: auto; padding-right: 4px; }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .turn { display: grid; grid-template-columns: 29px 1fr; gap: 12px; margin-bottom: 20px; }
 .turn.provisional { opacity: 0.72; }
 .turn.provisional .speaker { font-style: italic; }
@@ -406,7 +415,7 @@ input, select, textarea {
 .turn-text .tag { margin-left: 6px; }
 .turn-text.editable { cursor: text; }
 .turn-text.editable:hover { background: var(--soft); }
-.turn-edit { width: 100%; min-height: 70px; line-height: 1.6; margin-top: 4px; }
+.turn-edit { width: 100%; min-height: 70px; max-height: 40vh; resize: vertical; line-height: 1.6; margin-top: 4px; }
 .inline-select { font-size: 11px; padding: 1px 4px; border-radius: 5px; }
 .speaker-row { border-bottom: 1px solid var(--line); padding: 10px 0; }
 .speaker-row:last-child { border-bottom: none; }
@@ -559,3 +568,52 @@ input, select, textarea {
   .onboarding-card { animation: none; }
   .meter-bar.indeterminate div { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* Meeting workspace: notes and transcript fill the window. */
+.workspace { display: grid; flex: 1 0 auto; min-height: 380px; margin-bottom: 20px; }
+.workspace.stacked { min-height: 560px; }
+/* With speakers and audio below, the panes get a fixed share of the window, so the page shows the sections below. */
+.workspace.with-details { flex: 0 0 auto; min-height: 0; height: clamp(360px, 58vh, 960px); }
+.workspace.stacked.with-details { height: clamp(560px, 76vh, 1500px); }
+.workspace .column { margin: 0; display: flex; flex-direction: column; min-width: 0; min-height: 180px; }
+.workspace.side .column { min-width: 260px; }
+.workspace .column-head { flex-shrink: 0; }
+.splitter { display: grid; place-items: center; border-radius: 6px; outline-offset: -2px; touch-action: none; }
+.workspace.side .splitter { cursor: col-resize; }
+.workspace.stacked .splitter { cursor: row-resize; }
+.splitter span { background: var(--line); border-radius: 2px; transition: background 0.15s; }
+.workspace.side .splitter span { width: 3px; height: 36px; }
+.workspace.stacked .splitter span { width: 36px; height: 3px; }
+.splitter:hover span, .splitter:focus-visible span { background: var(--accent); }
+.info-notice { background: var(--soft); color: var(--ink); cursor: pointer; }
+.tag-row .tags { min-width: 0; }
+.play-button { min-width: 5.5em; justify-content: flex-start; }
+.play-button.playing, .play-button.paused { font-weight: 600; }
+/* The controls stay visible while a clip of the turn plays or is paused. */
+.turn-actions:has(.play-button.playing, .play-button.paused) { opacity: 1; pointer-events: auto; }
+.usage { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0 0 14px; font-size: 13px; }
+.usage dt { color: var(--ink); }
+.usage dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* Summary */
+.summary-panel { flex-shrink: 0; }
+.summary-panel.empty { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.summary-panel.empty p { margin: 0; }
+.summary-actions { display: flex; gap: 6px; }
+.summary-text { font-size: 13px; line-height: 1.65; color: var(--text); max-width: 900px; }
+.summary-text p { margin: 0 0 10px; }
+.summary-text h3 { font-size: 12px; font-weight: 600; color: var(--ink); margin: 14px 0 6px; }
+.summary-text ul { margin: 0 0 8px; padding-left: 18px; }
+.summary-text li { margin-bottom: 3px; }
+.summary-note { margin: 10px 0 0; }
+.summary-text { max-height: 40vh; overflow-y: auto; }
+.id-chip {
+  margin-left: 10px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line);
+}
+.id-chip:hover { color: var(--ink); }

@@ -124,6 +124,8 @@ fn main() -> Result<()> {
     state.engine.call("import_audio", params, Duration::from_secs(120)).context("import")?;
     state.db.lock().unwrap().mark_stopped(&id)?;
     let started = std::time::Instant::now();
+    // The self-test writes the summary itself, so the automatic summary stays off.
+    state.db.lock().unwrap().set_setting("auto_summary", "false")?;
     state.finalize(&id, None).context("final pass")?;
     println!("final pass: {:.1} s for {:.1} s of audio", started.elapsed().as_secs_f64(), spans.last().unwrap().2);
 
@@ -170,11 +172,24 @@ fn main() -> Result<()> {
     check(precision >= 0.7, "Meet events name the separated speakers", &mut failures);
     check(coverage >= 0.5, "names cover at least half of the speech", &mut failures);
 
+    if state.summaries_available() {
+        let started = std::time::Instant::now();
+        let written = state.summarize(&id);
+        let summary = state.db.lock().unwrap().summary(&id)?;
+        println!("summary ({:.1} s):\n{}", started.elapsed().as_secs_f64(), summary.as_ref().map(|s| s.content.as_str()).unwrap_or(""));
+        check(written.is_ok() && summary.is_some(), "the on-device model writes a summary", &mut failures);
+    } else {
+        println!("SKIP the on-device model is not available");
+    }
+
     let markdown = {
         let db = state.db.lock().unwrap();
         export::render(&export::Document::load(&db, &id)?, "md")?
     };
     check(markdown.contains("lending protocol"), "Markdown export contains the transcript", &mut failures);
+    if state.summaries_available() {
+        check(markdown.contains("## Summary"), "Markdown export contains the summary", &mut failures);
+    }
     let srt = {
         let db = state.db.lock().unwrap();
         export::render(&export::Document::load(&db, &id)?, "srt")?
@@ -192,6 +207,20 @@ fn main() -> Result<()> {
         let revision = db.revisions(Some(Origin::Mcp), 1)?;
         db.undo(revision[0].id)?;
         check(db.notes(&id)? == "My notes", "undo restores notes after an MCP edit", &mut failures);
+        let short = &id[..8];
+        let (meeting, _) = tools::call(&db, "get_meeting", &json!({"meeting_id": short}))?;
+        check(meeting["meeting"]["id"] == json!(id), "MCP finds a meeting by the first 8 characters of its ID", &mut failures);
+        let before = db.summary(&id)?.map(|s| s.content);
+        tools::call(&db, "update_summary", &json!({"meeting_id": id, "content": "Summary from MCP"}))?;
+        let (read, _) = tools::call(&db, "get_summary", &json!({"meeting_id": id}))?;
+        check(
+            read["summary"]["content"] == "Summary from MCP" && read["summary"]["written_by"] == "MCP client",
+            "MCP updates and reads the summary",
+            &mut failures,
+        );
+        let revision = db.revisions(Some(Origin::Mcp), 1)?;
+        db.undo(revision[0].id)?;
+        check(db.summary(&id)?.map(|s| s.content) == before, "undo restores the summary after an MCP update", &mut failures);
         tools::call(&db, "delete_meeting", &json!({"meeting_id": id}))?;
         check(db.meetings(true)?.is_empty() && db.trash()?.len() == 1, "MCP delete moves the meeting to the trash", &mut failures);
         db.restore(&id)?;

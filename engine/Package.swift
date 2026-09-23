@@ -17,7 +17,9 @@ let package = Package(
         .executableTarget(
             name: "TintaEngine",
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
-            path: "Sources/TintaEngine"
+            path: "Sources/TintaEngine",
+            // The Apple on-device model exists only on macOS 26 and later. Older systems run without summaries.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"])]
         )
     ]
 )

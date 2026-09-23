@@ -24,8 +24,10 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 5. Keep "Meeting audio" set to Google Chrome, and click Start recording.
 6. Allow the two macOS permission requests: microphone, and audio recording of other apps.
 7. Check both level meters. "Meeting audio" moves when other people speak.
-8. Write notes. Draft text with provisional names appears on the right.
-9. Click Stop at the end of the meeting.
+8. Write notes. Draft text with provisional names appears next to the notes.
+9. Mute your microphone in Meet and speak. The microphone meter shows "muted in Meet", and no draft text from your microphone appears. Unmute and check that your speech appears again.
+10. Open the extension popup and turn on "Highlight who speaks on the page". Check that a lavender ring shows around the Meet speaking circle of the person who speaks.
+11. Leave the call in Meet. After 3 seconds, Tinta stops the recording and shows a message. To stop earlier, click Stop.
 
 ## After the meeting
 
@@ -34,6 +36,8 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 3. Correct wrong names, merge split speakers, or move a single turn to another speaker.
 4. Click a transcript turn to correct its text.
 5. Export the meeting as Markdown, JSON, SRT, or VTT, or click Copy.
+
+6. Read the summary above the notes. Check the facts, the names, and the action items against the transcript.
 
 ## What to record for the pilot
 

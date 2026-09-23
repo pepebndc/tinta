@@ -19,11 +19,12 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Notes and transcript side by side.** Write your notes while the draft transcript appears. Insert a timestamp with one click.
 - **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.
 - **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. You can confirm, correct, merge, or split speakers.
+- **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
 - **Your library.** Search, folders, tags, and export to Markdown, JSON, SRT, and VTT.
 - **Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
 - **MCP server.** Connect Claude or another MCP client to your meetings when you choose to.
 
-Tinta has no summaries, no chat, and no AI features of its own. It records, transcribes, and keeps your notes.
+Tinta has no chat and no cloud AI. The transcription, the speaker separation, and the summaries run on your Mac.
 
 ## Privacy by design
 
@@ -33,7 +34,8 @@ Tinta has no summaries, no chat, and no AI features of its own. It records, tran
 | **Network** | Tinta downloads the speech models once, when you click Install. After that, it makes no network requests: no analytics, no crash reports, and no update checks. |
 | **Storage** | SQLCipher encrypts the library, and AES-GCM encrypts the audio. The key is in your macOS Keychain. Time Machine does not back up the library. |
 | **Audio** | Tinta deletes the audio 7 days after a meeting. You can keep it for up to 30 days, or delete it at once. |
-| **Browser** | The Meet extension reads only participant names and who speaks. It does not read captions, chat, or audio. |
+| **Summaries** | The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server. A summary can contain mistakes, so check it against the transcript. |
+| **Browser** | The Meet extension reads only participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
 | **MCP** | MCP access is local. An AI client that reads your meetings sends that content to its own model provider. Tinta records every MCP change, so you can undo it. |
 
 Tinta does not tell other people in a call that you record. Always tell them.
@@ -56,6 +58,7 @@ Tinta is a pilot. The final pass, the library, the Granola import, and MCP work 
 
 - A Mac with Apple Silicon (M1 or newer) and macOS 14.2 or later. 16 GB of memory is recommended.
 - Google Chrome, for speaker names on Google Meet.
+- macOS 26 or later with Apple Intelligence turned on, for summaries. Summaries support English, Spanish, and the other Apple Intelligence languages.
 - About 1 GB of free disk space for the app and the speech models.
 
 ## Install
@@ -86,7 +89,17 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 **Headphones or speakers.** Tinta selects the echo handling from your sound output. With speakers, it removes the echo of the call from your microphone. With headphones, it records your microphone directly. Headphones give the best transcript.
 
+**Mute in Meet.** When you mute your microphone in Meet, Tinta does not record your microphone. It records it again when you unmute.
+
+**End of the call.** When you leave the Meet call or close its tab, Tinta stops the recording 3 seconds later. If you rejoin in that time, the recording continues. Turn this off in Settings, under Google Meet extension.
+
+**While you record.** You can open other meetings, Home, or Settings. The recording, the live transcript, and the final pass continue.
+
+**Notes and transcript.** The notes and the transcript fill the window. On a tall or narrow window, the notes show above the transcript. Drag the divider between them to change their size. Double-click the divider to reset it.
+
 **After the call.** Tinta runs a final pass on your Mac. The final pass improves the text and matches speaker names. Play a sample of each speaker, correct names, and edit the transcript. Your notes stay separate from the transcript.
+
+**Summaries.** After the final pass, Tinta writes a summary above the notes. Your notes show what is important to you, so the summary uses them with the transcript. Click **Write again** after you correct names or text, or **Write a summary** for an older meeting. To write summaries only when you ask, turn off "Write a summary after each call" in Settings.
 
 **Import from Granola.** Export your Granola meetings to a folder, then click **Import from Granola** on Home. Granola transcripts have no timestamps and no audio. Delete the export folder after the import, because it is not encrypted.
 
@@ -104,7 +117,9 @@ Settings shows the configuration. For Claude Desktop, add:
 
 For Claude Code, run `claude mcp add tinta /Applications/Tinta.app/Contents/MacOS/tinta-mcp`.
 
-Tinta must be open. The tools can list, search, and read meetings. They can also change titles, tags, folders, notes, speaker names, and transcript text. Deletions through MCP go to a 7-day trash. **MCP activity** in the sidebar lists every request and lets you undo each change.
+Tinta must be open. The tools can list, search, and read meetings, including notes, transcripts, and summaries. They can also change titles, tags, folders, notes, summaries, speaker names, and transcript text.
+
+Each meeting has an ID. To give a meeting to an AI client, click **ID · Copy** next to the date of the meeting, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to a 7-day trash. **MCP activity** in the sidebar lists every request and lets you undo each change.
 
 Meeting text can contain instructions from other people. Do not let an AI client act on them.
 

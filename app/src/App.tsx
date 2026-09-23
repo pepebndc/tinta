@@ -28,6 +28,7 @@ export function App() {
   const [active, setActive] = useState<Active | null>(null);
   const [extension, setExtension] = useState<ExtensionState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,7 +62,11 @@ export function App() {
     const subs = [
       on("meeting_changed", () => void refreshList()),
       on<ExtensionState>("extension", setExtension),
-      on<Active>("recording", setActive),
+      on<Active | null>("recording", setActive),
+      on("auto_stopped", () => {
+        setNotice("The Meet call ended, so Tinta stopped the recording. The final pass runs on this Mac.");
+        void refreshList();
+      }),
     ];
     return () => subs.forEach((p) => p.then((u) => u()));
   }, [refreshList]);
@@ -228,6 +233,11 @@ export function App() {
         {error && (
           <div className="bar error-bar" onClick={() => setError(null)} role="alert">
             {error} <span className="muted">Click to close.</span>
+          </div>
+        )}
+        {notice && (
+          <div className="bar info-notice" onClick={() => setNotice(null)} role="status">
+            {notice} <span className="muted">Click to close.</span>
           </div>
         )}
         {boot && !boot.models_installed && view.kind !== "settings" && (

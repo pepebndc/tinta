@@ -32,14 +32,15 @@
       <div class="eyebrow">This call</div>
       <div id="call-title" class="call-title">No Google Meet call in this tab.</div>
       <div id="call-detail" class="muted"></div>
+      <div id="mic-state" class="mic-state" hidden></div>
       <ul id="people"></ul>
     </section>
 
     <section class="debug" id="debug" hidden>
-      <label><input type="checkbox" id="outline" /> Outline detected speakers on the page</label>
+      <label><input type="checkbox" id="outline" /> Highlight who speaks on the page</label>
     </section>
 
-    <footer>Reads only participant names and who speaks. No audio, captions, or chat.</footer>
+    <footer>Reads only participant names, who speaks, and your mute state. No audio, captions, or chat.</footer>
     <script src="popup.js"></script>
   </body>
 </html>

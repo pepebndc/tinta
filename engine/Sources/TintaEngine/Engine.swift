@@ -60,7 +60,6 @@ struct Engine {
 actor Controller {
     private let speech = Speech()
     private var session: RecordingSession?
-    private var finalizing = false
 
     func handle(_ command: String, _ params: [String: Any]) async throws -> [String: Any] {
         switch command {
@@ -89,10 +88,18 @@ actor Controller {
         case "resume":
             session?.setPaused(false)
             return [:]
+        case "mic_muted":
+            let wallMs = (params["t"] as? NSNumber)?.int64Value ?? Int64(Date().timeIntervalSince1970 * 1000)
+            session?.setMicMuted(params["muted"] as? Bool ?? false, wallMs: wallMs)
+            return [:]
         case "stop":
             session?.stop()
             session = nil
             return [:]
+        case "summary_status":
+            return Summarizer.status()
+        case "summarize":
+            return try await Summarizer.summarize(params)
         case "finalize":
             return try await finalize(params)
         case "sample":
@@ -143,7 +150,6 @@ actor Controller {
 
     private func start(_ params: [String: Any]) async throws -> [String: Any] {
         guard session == nil else { throw EngineError("a recording is already active") }
-        guard !finalizing else { throw EngineError("a final pass is running") }
         let directory = URL(fileURLWithPath: try params.string("dir"), isDirectory: true)
         let source = params.optionalString("source") ?? "com.google.Chrome"
         if !(await AVCaptureDevice.requestAccess(for: .audio)) {
@@ -152,7 +158,8 @@ actor Controller {
         }
         try await speech.warmUp()
         let recording = try RecordingSession(
-            directory: directory, key: try Self.key(params), source: source, speech: speech)
+            directory: directory, key: try Self.key(params), source: source, speech: speech,
+            micMuted: params["mic_muted"] as? Bool ?? false)
         try recording.start()
         session = recording
         return [
@@ -162,9 +169,7 @@ actor Controller {
     }
 
     private func finalize(_ params: [String: Any]) async throws -> [String: Any] {
-        guard session == nil else { throw EngineError("stop the recording before the final pass") }
-        finalizing = true
-        defer { finalizing = false }
+        // A final pass can run during a recording. The speech models serve both, one window at a time.
         let directory = URL(fileURLWithPath: try params.string("dir"), isDirectory: true)
         let key = try Self.key(params)
         var tracks: [String: Any] = [:]
