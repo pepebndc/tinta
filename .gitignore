@@ -1,0 +1,11 @@
+.DS_Store
+/.hob/
+/app/dist-mock/
+/app/dist/
+/app/node_modules/
+/app/src-tauri/binaries/
+/app/src-tauri/gen/
+/docs/internal/
+/engine/.build/
+/keys/
+/target/

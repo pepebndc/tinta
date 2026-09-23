@@ -1,0 +1,23 @@
+[package]
+name = "tinta"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "tinta_app"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+tinta-core = { path = "../../crates/tinta-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+libc = "0.2"
+base64 = "0.22"

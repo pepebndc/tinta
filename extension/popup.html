@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="" width="28" height="28" />
+      <span class="wordmark">tinta</span>
+      <span class="for">for Meet</span>
+    </header>
+
+    <section class="row" id="app-row">
+      <span class="dot" id="app-dot"></span>
+      <div>
+        <strong id="app-title">Connecting to Tinta…</strong>
+        <div class="muted" id="app-detail"></div>
+      </div>
+    </section>
+
+    <section class="row" id="rec-row" hidden>
+      <span class="dot rec" id="rec-dot"></span>
+      <div>
+        <strong id="rec-title">Recording in Tinta</strong>
+        <div class="muted" id="rec-detail"></div>
+      </div>
+      <span class="timer" id="rec-timer"></span>
+    </section>
+
+    <section class="call" id="call">
+      <div class="eyebrow">This call</div>
+      <div id="call-title" class="call-title">No Google Meet call in this tab.</div>
+      <div id="call-detail" class="muted"></div>
+      <ul id="people"></ul>
+    </section>
+
+    <section class="debug" id="debug" hidden>
+      <label><input type="checkbox" id="outline" /> Outline detected speakers on the page</label>
+    </section>
+
+    <footer>Reads only participant names and who speaks. No audio, captions, or chat.</footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

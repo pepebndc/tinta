@@ -1,0 +1,25 @@
+Tinta
+Copyright 2026 The Tinta authors
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE.
+
+Speech models (downloaded by the user at pinned revisions, not included in this repository):
+
+- Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC-BY-4.0.
+  https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+  Core ML conversion by FluidInference, CC-BY-4.0:
+  https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml
+- Silero VAD, MIT license. Core ML conversion by FluidInference:
+  https://huggingface.co/FluidInference/silero-vad-coreml
+- pyannote speaker-diarization-community-1 (segmentation, embedding, and PLDA), CC-BY-4.0.
+  https://huggingface.co/pyannote/speaker-diarization-community-1
+  Core ML conversion by FluidInference, scoped CC-BY-4.0 (see its NOTICE.md):
+  https://huggingface.co/FluidInference/speaker-diarization-coreml
+
+Libraries:
+
+- FluidAudio, Apache License 2.0. https://github.com/FluidInference/FluidAudio
+- Tauri, MIT or Apache License 2.0. https://tauri.app
+- SQLCipher, BSD-style license. https://www.zetetic.net/sqlcipher/
+- Other Rust and JavaScript dependencies keep their own licenses. See Cargo.lock and
+  app/pnpm-lock.yaml.
