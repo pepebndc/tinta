@@ -55,8 +55,7 @@ export function GranolaImport({ onError, onDone }: { onError: (e: string) => voi
   const remaining = preview ? preview.total - preview.already_imported : 0;
 
   return (
-    <section className="panel" id="granola">
-      <h2>Import from Granola</h2>
+    <section className="panel">
       <p className="small muted">
         Select the folder of a Granola export: it contains manifest.json and one folder for each meeting. Tinta imports titles,
         dates, participants, your notes, and transcripts with speaker names. Granola transcripts have no timestamps and no audio.

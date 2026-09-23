@@ -28,7 +28,14 @@
     "active": true,
     "targets": ["app"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
-    "externalBin": ["binaries/tinta-engine", "binaries/tinta-mcp", "binaries/tinta-native-host"],
+    "resources": {
+      "../../extension/*.json": "extension/",
+      "../../extension/*.js": "extension/",
+      "../../extension/*.html": "extension/",
+      "../../extension/*.css": "extension/",
+      "../../extension/icons/*": "extension/icons/"
+    },
+    "externalBin":["binaries/tinta-engine", "binaries/tinta-mcp", "binaries/tinta-native-host"],
     "copyright": "Copyright 2026 The Tinta authors. Apache-2.0.",
     "category": "Productivity",
     "shortDescription": "Meeting notes. On your Mac.",

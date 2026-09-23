@@ -7,6 +7,9 @@
 <p align="center"><strong>Meeting notes. On your Mac.</strong><br>
 Write your notes, get a transcript with speaker names, and keep everything on your own computer.</p>
 
+> [!NOTE]
+> Tinta is in active development. Expect bugs and changes. All feedback is welcome. To report a bug or suggest an improvement, [open an issue](https://github.com/pepebndc/tinta/issues).
+
 <p align="center">
   <img src="docs/images/meeting.png" alt="A meeting in Tinta: notes on the left, a transcript with speaker names on the right">
 </p>
@@ -68,10 +71,12 @@ Tinta has no signed download yet. Build it from source:
 
 ## Set up
 
-1. **Speech models.** In Tinta, open Settings and click **Install models**. Tinta downloads about 500 MB at pinned revisions and checks each file against its SHA-256 hash.
-2. **Chrome extension.** Open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and select the `extension` folder of this repository. Keep the folder, because Chrome loads the extension from it.
-3. **Restart Chrome.** Click the Tinta icon in the Chrome toolbar. The popup shows "Connected to Tinta".
-4. **Permissions.** At the first recording, macOS asks for access to the microphone and to the audio of other apps. Allow both.
+When you open Tinta for the first time, a short setup guides you through these steps. You can skip each step, or skip all of setup. Steps that you skip stay on Home, under Get ready. To see the setup again, open Settings and click **Run setup again**.
+
+1. **Your name and appearance.** Tinta uses your name for your microphone in the transcript.
+2. **Speech models.** Click **Install models**. Tinta downloads about 500 MB at pinned revisions and checks each file against its SHA-256 hash. The download continues if you go to the next step.
+3. **Microphone.** Click **Allow microphone**. macOS asks for the audio of other apps at the first recording.
+4. **Chrome extension.** Click **Show extension folder**. Tinta puts the extension in a "Chrome extension" folder and shows it in Finder. Open `chrome://extensions` in Chrome, turn on Developer mode, and drag the folder onto the page. Restart Chrome. The setup shows when the extension connects.
 
 ## Use
 
@@ -83,7 +88,7 @@ Tinta has no signed download yet. Build it from source:
 
 **After the call.** Tinta runs a final pass on your Mac. The final pass improves the text and matches speaker names. Play a sample of each speaker, correct names, and edit the transcript. Your notes stay separate from the transcript.
 
-**Import from Granola.** Export your Granola meetings to a folder, then click **Import from Granola** on Home or in Settings. Granola transcripts have no timestamps and no audio. Delete the export folder after the import, because it is not encrypted.
+**Import from Granola.** Export your Granola meetings to a folder, then click **Import from Granola** on Home. Granola transcripts have no timestamps and no audio. Delete the export folder after the import, because it is not encrypted.
 
 ## Connect an MCP client
 
@@ -148,7 +153,7 @@ This repository does not include the models. Tinta downloads them at pinned revi
 
 The self-test builds a synthetic meeting with the macOS voices. It runs the final pass, name matching, export, the MCP tools, undo, the trash, and audio retention. It uses its own data folder and does not touch your library. Install the speech models before you run it.
 
-The interface preview accepts these views after `index.html`: `#setup`, `#meeting`, `#recording`, and `#settings`. Production builds do not include the sample data.
+The interface preview accepts these views after `index.html`: `#setup`, `#meeting`, `#recording`, `#settings`, `#onboarding` (with the intro), and `#onboarding-welcome`, `#onboarding-models`, `#onboarding-microphone`, `#onboarding-meet`, or `#onboarding-done`. Production builds do not include the sample data.
 
 See the [test guide](docs/TESTING.md) for a first real meeting.
 

@@ -175,7 +175,20 @@ input, select, textarea {
 .ext-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); padding: 4px 10px 8px; }
 .ext-status .dot { background: var(--line); }
 .ext-status.on .dot { background: var(--ok); }
-.stored { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); padding: 10px 10px 0; }
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.8;
+  cursor: default;
+  user-select: none;
+}
 
 .main { flex: 1; overflow-y: auto; min-width: 0; display: flex; flex-direction: column; }
 .bar { padding: 9px 24px; border-bottom: 1px solid var(--line); font-size: 12px; }
@@ -450,3 +463,99 @@ input, select, textarea {
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 30px; padding: 3px; background: var(--back); gap: 2px; }
 .segmented button { border: none; background: transparent; padding: 5px 14px; color: var(--muted); }
 .segmented button.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 3px #0000001a; }
+.path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--ink); background: var(--back); padding: 8px 10px; border-radius: 7px; margin: 0 0 12px; overflow-wrap: anywhere; }
+
+/* First-run setup */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--paper);
+  padding: 22px 32px 32px;
+  overflow-y: auto;
+}
+.onboarding-top { width: 100%; max-width: 640px; display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
+.onboarding-dots { display: flex; gap: 8px; }
+.dot-step { width: 8px; height: 8px; padding: 0; border-radius: 50%; border: none; background: var(--line); }
+.dot-step:hover { background: var(--accent); }
+.dot-step.past { background: var(--accent); }
+.dot-step.current { background: var(--ink); width: 22px; border-radius: 4px; }
+.onboarding-error { width: 100%; max-width: 640px; margin-top: 12px; padding: 9px 14px; border-radius: 7px; background: var(--record-soft); color: var(--record); font-size: 12px; cursor: pointer; }
+.onboarding-card {
+  width: 100%;
+  max-width: 640px;
+  padding: 34px 38px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  animation: step-in 0.28s ease-out;
+}
+.onboarding-stage { width: 100%; max-width: 640px; margin: auto 0; padding: 24px 0; }
+.onboarding-card h1 { font-size: 26px; margin: 6px 0 0; }
+.onboarding-card p { margin: 0; }
+.onboarding-actions { width: 100%; max-width: 640px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.onboarding-actions .spacer { flex: 1; }
+.field { display: flex; flex-direction: column; gap: 6px; width: 100%; font-weight: 550; color: var(--ink); font-size: 13px; }
+.field input { max-width: 360px; font-weight: 400; }
+.field .segmented { align-self: flex-start; }
+.field .small { font-weight: 400; }
+.step-icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: var(--soft); color: var(--ink); }
+.step-done { display: flex; align-items: center; gap: 10px; color: var(--ok); font-weight: 550; }
+.step-done .check, .summary .check {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px;
+  background: var(--accent); color: #292456; flex-shrink: 0;
+}
+.summary { width: 100%; }
+.summary li:not(.done) .check { background: transparent; border: 1.5px solid var(--line); }
+.step-progress { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.meter-bar.indeterminate div { width: 35%; animation: slide 1.3s ease-in-out infinite; }
+.waiting { display: flex; align-items: center; gap: 8px; }
+.ext-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.ext-steps li { line-height: 1.5; }
+.ext-steps li > * { display: block; }
+.ext-steps li > button { display: inline-flex; margin-top: 6px; font-size: 12px; padding: 4px 12px; }
+.ext-steps li > .small { margin-top: 4px; }
+.ext-steps code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--back); padding: 1px 5px; border-radius: 4px; }
+.settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.settings-head button { font-size: 12px; }
+
+/* Intro: an ink drop falls, spreads into the mark, and the wordmark writes itself. */
+.onboarding.intro { justify-content: center; gap: 18px; cursor: pointer; animation: intro-out 0.3s ease-in 1.9s forwards; }
+.intro-mark { position: relative; width: 96px; height: 96px; display: grid; place-items: center; }
+.intro-mark .ink-icon { transform: scale(0); animation: ink-spread 0.55s cubic-bezier(0.3, 1.5, 0.5, 1) 0.38s forwards; }
+.intro-drop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 20px;
+  margin: -10px 0 0 -8px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: var(--ink);
+  animation: drop-fall 0.42s cubic-bezier(0.5, 0, 0.9, 0.4) forwards;
+}
+.intro-word { clip-path: inset(0 100% 0 0); animation: write 0.6s ease-out 0.8s forwards; padding: 10px 14px 18px 4px; }
+.intro-line { margin: 0; color: var(--muted); letter-spacing: 2.2px; text-transform: uppercase; font-size: 11px; font-weight: 600; opacity: 0; animation: fade-in 0.4s ease-out 1.3s forwards; }
+.intro-skip { position: absolute; bottom: 28px; opacity: 0; animation: fade-in 0.3s ease-out 0.6s forwards; }
+@keyframes drop-fall {
+  0% { transform: translateY(-160px) scaleY(1.2); opacity: 1; }
+  90% { transform: translateY(0) scaleY(1); opacity: 1; }
+  100% { transform: translateY(0) scale(2.2, 0.4); opacity: 0; }
+}
+@keyframes ink-spread { to { transform: scale(1); } }
+@keyframes write { to { clip-path: inset(0 0 0 0); } }
+@keyframes fade-in { to { opacity: 1; } }
+@keyframes intro-out { to { opacity: 0; } }
+@keyframes step-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-card { animation: none; }
+  .meter-bar.indeterminate div { animation: none; width: 100%; opacity: 0.5; }
+}

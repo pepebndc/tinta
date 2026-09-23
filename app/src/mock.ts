@@ -61,15 +61,15 @@ function detail(): MeetingDetail {
 }
 
 const boot: Bootstrap = {
-  self_name: "Sam Rivera", mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
+  self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
   models_path: "~/Library/Application Support/FluidAudio/Models", microphone: "granted",
   mcp_path: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp",
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
   extension_id: "ajncjfpbmkmiheokjfhfdlhnmfbaofij", data_dir: "~/Library/Application Support/Tinta",
-  models_installed: hash() !== "setup",
+  models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
   active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false } : null,
   extension: {
-    connected_at: hash() === "setup" ? null : now, last_seen: hash() === "setup" ? null : now, meeting_code: "abc-defg-hij", title: "Design review", self_name: "Sam Rivera",
+    connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now, meeting_code: "abc-defg-hij", title: "Design review", self_name: "Sam Rivera",
     participants: detail().participants, speaking: [],
   },
 };
@@ -84,6 +84,7 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     granola_default_path: "/Users/sam/granola-export",
     granola_preview: { path: "/Users/sam/granola-export", total: 128, mine: 120, shared: 8, already_imported: 0 },
     trash: [],
+    prepare_extension: "/Users/sam/Library/Application Support/Tinta/Chrome extension",
     mcp_activity: { revisions: [], access: [] },
   };
   return results[command] as T;

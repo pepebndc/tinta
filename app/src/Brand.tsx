@@ -1,4 +1,4 @@
-type IconName = "home" | "document" | "search" | "export" | "lock" | "trash" | "settings" | "activity" | "import" | "plus";
+type IconName = "home" | "document" | "search" | "export" | "lock" | "trash" | "settings" | "activity" | "import" | "plus" | "mic" | "users";
 
 const PATHS: Record<IconName, string[]> = {
   home: ["M4 11l8-7 8 7", "M6 9.5V20h12V9.5", "M10 20v-5h4v5"],
@@ -11,6 +11,8 @@ const PATHS: Record<IconName, string[]> = {
   activity: ["M3 12h4l3-8 4 16 3-8h4"],
   import: ["M12 3v12", "m8 11 4 4 4-4", "M5 13v7h14v-7"],
   plus: ["M12 5v14", "M5 12h14"],
+  mic: ["M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z", "M6 11a6 6 0 0 0 12 0", "M12 17v4"],
+  users: ["M9 11a3 3 0 1 0 0-6a3 3 0 0 0 0 6z", "M3 20a6 6 0 0 1 12 0", "M16 5a3 3 0 0 1 0 6", "M18 14a5 5 0 0 1 3 6"],
 };
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

@@ -377,6 +377,12 @@ impl Db {
         self.reindex(&id)
     }
 
+    /// Writes all pending changes into the main database file, so the file can be copied.
+    pub fn checkpoint(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
+
     // MARK: Settings
 
     pub fn setting(&self, key: &str) -> Result<Option<String>> {

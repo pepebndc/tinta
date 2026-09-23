@@ -291,6 +291,40 @@ impl AppState {
         })
     }
 
+    // MARK: Library location
+
+    /// Moves the library and the audio to `<parent>/Tinta` and opens it there.
+    pub fn move_library(&self, parent: &std::path::Path) -> Result<std::path::PathBuf> {
+        if self.active.lock().unwrap().is_some() || !self.finalizing.lock().unwrap().is_empty() {
+            bail!("Stop the recording and wait for the final pass before you move the library.");
+        }
+        let target = parent.join("Tinta");
+        paths::check_local(&target)?;
+        let current = paths::data_dir();
+        if target == current {
+            bail!("The library is already in this folder.");
+        }
+        if target.exists() && std::fs::read_dir(&target)?.next().is_some() {
+            bail!("{} already exists and is not empty.", target.display());
+        }
+        std::fs::create_dir_all(&target)?;
+        let mut db = self.db.lock().unwrap();
+        db.checkpoint()?;
+        std::fs::copy(current.join("library.db"), target.join("library.db"))?;
+        let meetings = current.join("meetings");
+        if meetings.exists() {
+            copy_dir(&meetings, &target.join("meetings"))?;
+        }
+        *db = Db::open(&target.join("library.db"), &self.keys)?;
+        paths::set_data_dir(&target)?;
+        system::exclude_from_backup(&target);
+        for name in ["library.db", "library.db-wal", "library.db-shm"] {
+            let _ = std::fs::remove_file(current.join(name));
+        }
+        let _ = std::fs::remove_dir_all(&meetings);
+        Ok(target)
+    }
+
     // MARK: Retention
 
     pub fn delete_meeting_files(&self, id: &str) {
@@ -322,6 +356,20 @@ impl AppState {
     }
 }
 
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 struct FinalizeGuard {
     state: Arc<AppState>,
     id: String,
@@ -337,6 +385,7 @@ impl Drop for FinalizeGuard {
 pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
     let data = paths::data_dir();
     std::fs::create_dir_all(&data)?;
+    std::fs::create_dir_all(paths::base_dir())?;
     system::exclude_from_backup(&data);
     let keys = Keys::load_or_create()?;
     let db = Db::open(&paths::database_path(), &keys)?;

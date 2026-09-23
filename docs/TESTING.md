@@ -7,12 +7,13 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 1. Build the app with `./scripts/build.sh`, or use a build that you received.
 2. Move `Tinta.app` to the Applications folder and open it.
 3. If macOS asks whether Tinta can use its key in the Keychain, click Always Allow. The app stores its library key there.
-4. Open Settings in the app and click Install models. The app downloads about 500 MB from Hugging Face. This is the only download.
-5. In Settings, check "Your name". The app uses this name for your microphone.
-6. Open `chrome://extensions` in Chrome and turn on Developer mode.
-7. Click Load unpacked and select the `extension` folder of this repository.
-8. Check that the extension ID is `ajncjfpbmkmiheokjfhfdlhnmfbaofij`.
-9. Restart Chrome. The app writes the native host file for Chrome when it starts, so open the app at least once before the restart.
+4. Follow the setup that opens at the first start. You can also open it later: Settings, Run setup again.
+5. Check "Your name". The app uses this name for your microphone.
+6. Click Install models. The app downloads about 500 MB from Hugging Face. This is the only download.
+7. Click Allow microphone.
+8. Click Show extension folder. Open `chrome://extensions` in Chrome, turn on Developer mode, and drag the "Chrome extension" folder from Finder onto the page.
+9. Check that the extension ID is `ajncjfpbmkmiheokjfhfdlhnmfbaofij`.
+10. Restart Chrome. The setup shows "The Meet extension is connected" when Chrome connects to the app.
 
 ## During the meeting
 
@@ -64,7 +65,7 @@ Write down these results after each test meeting:
 
 ## Import from Granola
 
-1. Open Settings, or click "Import from Granola" on Home. Tinta finds `~/granola-export` automatically.
+1. Click "Import from Granola" on Home. Tinta finds `~/granola-export` automatically.
 2. Check the number of meetings, and click Import.
 3. Leave "Add the Granola AI summaries" off, unless you need them. Tinta marks imported summaries in the notes.
 4. Open a few imported meetings. Check the notes, the transcript, and the speaker names.

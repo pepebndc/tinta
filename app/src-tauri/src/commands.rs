@@ -26,6 +26,7 @@ async fn bootstrap() -> CommandResult<Value> {
         "mcp_enabled": setting("mcp_enabled", "true") == "true",
         "last_source": setting("last_source", "com.google.Chrome"),
         "theme": setting("theme", "system"),
+        "onboarded": setting("onboarded", "false") == "true",
         "filevault": system::filevault_on(),
         "models_installed": models["installed"].as_bool().unwrap_or(false),
         "models_path": models["path"],
@@ -41,7 +42,7 @@ async fn bootstrap() -> CommandResult<Value> {
 
 #[tauri::command]
 async fn set_setting(key: String, value: String) -> CommandResult<()> {
-    let allowed = ["self_name", "mcp_enabled", "last_source", "theme"];
+    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded"];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
     }
@@ -322,6 +323,48 @@ async fn import_granola(path: String, include_summaries: bool) -> CommandResult<
 }
 
 #[tauri::command]
+async fn move_library(parent: String) -> CommandResult<String> {
+    let s = state();
+    let target = s.move_library(std::path::Path::new(&parent)).map_err(err)?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn show_library() -> CommandResult<()> {
+    std::process::Command::new("/usr/bin/open").arg(paths::data_dir()).spawn().map_err(err)?;
+    Ok(())
+}
+
+/// Copies the bundled Chrome extension to a fixed folder and shows it in Finder.
+/// Chrome loads an unpacked extension from a folder, and the app bundle is not a good place for it.
+#[tauri::command]
+async fn prepare_extension(app: tauri::AppHandle) -> CommandResult<String> {
+    use tauri::Manager;
+    let source = app.path().resource_dir().map_err(err)?.join("extension");
+    let target = paths::base_dir().join("Chrome extension");
+    if target.exists() {
+        std::fs::remove_dir_all(&target).map_err(err)?;
+    }
+    copy_dir(&source, &target).map_err(err)?;
+    std::process::Command::new("/usr/bin/open").arg("-R").arg(&target).spawn().map_err(err)?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            copy_dir(&path, &to.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(&path, to.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn trash() -> CommandResult<Value> {
     Ok(json!(state().db.lock().unwrap().trash().map_err(err)?))
 }
@@ -381,6 +424,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_audio_retention,
         export_text,
         export_file,
+        move_library,
+        show_library,
+        prepare_extension,
         granola_default_path,
         granola_preview,
         import_granola,

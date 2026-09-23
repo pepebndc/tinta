@@ -5,9 +5,11 @@ import { MeetingView } from "./MeetingView";
 import { McpActivity, Settings, Trash } from "./Settings";
 import { Icon, Lockup } from "./Brand";
 import { Home } from "./Home";
+import { GranolaImport } from "./GranolaImport";
+import { Onboarding } from "./Onboarding";
 import { setTheme } from "./theme";
 
-type View = { kind: "meeting"; id: string } | { kind: "settings" } | { kind: "trash" } | { kind: "mcp" } | { kind: "home" };
+type View = { kind: "meeting"; id: string } | { kind: "settings" } | { kind: "trash" } | { kind: "mcp" } | { kind: "granola" } | { kind: "home" };
 
 export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
@@ -118,6 +120,23 @@ export function App() {
 
   const extensionLive = extension?.last_seen && Date.now() - extension.last_seen < 30_000;
 
+  if (boot && !boot.onboarded) {
+    return (
+      <Onboarding
+        boot={boot}
+        extension={extension}
+        granolaExport={granolaExport}
+        error={error}
+        onChanged={() => void refreshBoot()}
+        onError={setError}
+        onFinish={(next) => {
+          setBoot({ ...boot, onboarded: true });
+          setView({ kind: next });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -200,10 +219,10 @@ export function App() {
           <button className={`quiet ${view.kind === "settings" ? "current" : ""}`} onClick={() => setView({ kind: "settings" })}>
             <Icon name="settings" size={15} /> Settings
           </button>
-          <div className="stored">
-            <Icon name="lock" size={14} /> Stored on this Mac
-          </div>
         </nav>
+        <footer className="sidebar-footer" aria-label="Storage">
+          <Icon name="lock" size={11} /> Encrypted and stored on this Mac
+        </footer>
       </aside>
       <main className="main">
         {error && (
@@ -245,6 +264,12 @@ export function App() {
           />
         )}
         {view.kind === "trash" && <Trash onError={setError} onChanged={refreshList} />}
+        {view.kind === "granola" && (
+          <div className="settings">
+            <h1>Import from Granola</h1>
+            <GranolaImport onError={setError} onDone={refreshList} />
+          </div>
+        )}
         {view.kind === "mcp" && <McpActivity onError={setError} boot={boot} />}
         {view.kind === "home" && boot && (
           <Home
@@ -259,10 +284,7 @@ export function App() {
             onSettings={() => setView({ kind: "settings" })}
             onRetry={(id) => api.runFinalPass(id, null).then(refreshList).catch((e) => setError(String(e)))}
             granolaExport={granolaExport}
-            onGranola={() => {
-              setView({ kind: "settings" });
-              setTimeout(() => document.getElementById("granola")?.scrollIntoView({ behavior: "smooth" }), 50);
-            }}
+            onGranola={() => setView({ kind: "granola" })}
           />
         )}
       </main>

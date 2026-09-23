@@ -201,6 +201,19 @@ fn main() -> Result<()> {
     let audio_gone = !paths::audio_dir(&id).exists() && state.db.lock().unwrap().meeting(&id)?.audio_deleted;
     check(audio_gone, "retention deletes expired audio", &mut failures);
 
+    let before = state.db.lock().unwrap().meetings(true)?.len();
+    let parent = paths::base_dir().join("moved-here");
+    std::fs::create_dir_all(&parent)?;
+    let moved = state.move_library(&parent)?;
+    let after = state.db.lock().unwrap().meetings(true)?.len();
+    check(
+        moved == parent.join("Tinta") && paths::data_dir() == moved && after == before && moved.join("library.db").exists(),
+        "moving the library keeps every meeting",
+        &mut failures,
+    );
+    let cloud = std::path::Path::new("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs");
+    check(state.move_library(cloud).is_err(), "cloud-synced folders are refused", &mut failures);
+
     state.engine.shutdown();
     if failures.is_empty() {
         println!("All checks passed.");

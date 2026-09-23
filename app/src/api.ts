@@ -87,6 +87,7 @@ export type Bootstrap = {
   mcp_enabled: boolean;
   last_source: string;
   theme: "system" | "light" | "dark";
+  onboarded: boolean;
   filevault: boolean;
   models_installed: boolean;
   models_path: string;
@@ -147,6 +148,9 @@ export const api = {
   setAudioRetention: (id: string, days: number) => invoke<number>("set_audio_retention", { id, days }),
   exportText: (id: string, format: string) => invoke<string>("export_text", { id, format }),
   exportFile: (id: string, format: string) => invoke<string>("export_file", { id, format }),
+  moveLibrary: (parent: string) => invoke<string>("move_library", { parent }),
+  showLibrary: () => invoke<void>("show_library"),
+  prepareExtension: () => invoke<string>("prepare_extension"),
   granolaDefaultPath: () => invoke<string | null>("granola_default_path"),
   granolaPreview: (path: string) => invoke<GranolaPreview>("granola_preview", { path }),
   importGranola: (path: string, includeSummaries: boolean) =>
@@ -156,6 +160,20 @@ export const api = {
   mcpActivity: () => invoke<{ revisions: Revision[]; access: Access[] }>("mcp_activity"),
   undo: (revisionId: number) => invoke<void>("undo", { revisionId }),
 };
+
+// One model installation at a time, shared by the setup flow and Settings.
+let installation: Promise<unknown> | null = null;
+
+export function installModels(): Promise<unknown> {
+  installation ??= api.installModels().finally(() => {
+    installation = null;
+  });
+  return installation;
+}
+
+export function installRunning(): boolean {
+  return installation !== null;
+}
 
 export function on<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
   if (MOCK) return Promise.resolve(() => undefined);

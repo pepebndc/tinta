@@ -1,28 +1,26 @@
 import { useEffect, useState } from "react";
 import { Access, api, Bootstrap, dateTime, Meeting, on, Revision } from "./api";
-import { GranolaImport } from "./GranolaImport";
+import { open } from "@tauri-apps/plugin-dialog";
 import { setTheme, ThemeChoice } from "./theme";
+import { ExtensionSteps, useModelInstall } from "./Onboarding";
 
 export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChanged: () => void; onError: (e: string) => void }) {
-  const [installing, setInstalling] = useState<string | null>(null);
   const [name, setName] = useState(boot.self_name);
+  const { progress, install } = useModelInstall(onChanged, onError);
 
-  useEffect(() => {
-    const sub = on<{ event: string; component?: string; state?: string }>("engine", (e) => {
-      if (e.event === "install_progress") setInstalling(e.state === "done" ? null : `${e.component}: ${e.state}`);
-    });
-    return () => void sub.then((u) => u());
-  }, []);
+  const [moving, setMoving] = useState(false);
 
-  async function install() {
-    setInstalling("starting");
+  async function changeLocation() {
+    const parent = await open({ directory: true, multiple: false, title: "Select a folder for the Tinta library" });
+    if (typeof parent !== "string") return;
+    setMoving(true);
     try {
-      await api.installModels();
+      await api.moveLibrary(parent);
       onChanged();
     } catch (e) {
       onError(String(e));
     } finally {
-      setInstalling(null);
+      setMoving(false);
     }
   }
 
@@ -31,7 +29,10 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
 
   return (
     <div className="settings">
-      <h1>Settings</h1>
+      <div className="settings-head">
+        <h1>Settings</h1>
+        <button onClick={() => set("onboarded", "false")}>Run setup again</button>
+      </div>
 
       <section className="panel">
         <h2>Appearance</h2>
@@ -51,7 +52,6 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
             </button>
           ))}
         </div>
-        <p className="small muted">System follows the macOS appearance.</p>
       </section>
 
       <section className="panel">
@@ -61,23 +61,19 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
       </section>
 
       <section className="panel">
-        <h2>Speech models</h2>
-        {boot.models_installed ? (
-          <p>The models are installed and match their pinned hashes when the app loads them.</p>
-        ) : (
-          <p>
-            Install the models once. This is the only time the app downloads files. It downloads about 500 MB from Hugging Face at
-            pinned revisions and checks each file against its SHA-256 hash.
-          </p>
-        )}
-        <p className="small muted">Location: {boot.models_path}</p>
-        <button className="primary" disabled={!!installing} onClick={install}>
-          {installing ? `Installing (${installing})…` : boot.models_installed ? "Install again" : "Install models"}
-        </button>
-        <p className="small muted">
-          Models: Parakeet TDT 0.6B v3 by NVIDIA (CC-BY-4.0), Core ML conversion by FluidInference. Silero VAD (MIT). pyannote
-          speaker diarization, Core ML conversion by FluidInference.
+        <h2>MCP</h2>
+        <label>
+          <input type="checkbox" checked={boot.mcp_enabled} onChange={(e) => set("mcp_enabled", String(e.target.checked))} /> Allow
+          MCP clients to read and change meetings
+        </label>
+        <p className="small">
+          An AI client that reads meetings through MCP sends that content to its model provider. Only use clients that your organization
+          approves. Meeting text can contain instructions from other people. Do not let a client act on them.
         </p>
+        <p className="small muted">Add this server to Claude Desktop or another MCP client:</p>
+        <pre className="code">{config}</pre>
+        <p className="small muted">Claude Code:</p>
+        <pre className="code">claude mcp add tinta "{boot.mcp_path}"</pre>
       </section>
 
       <section className="panel">
@@ -99,43 +95,45 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
 
       <section className="panel">
         <h2>Google Meet extension</h2>
-        <ol>
-          <li>Open chrome://extensions in Chrome and turn on Developer mode.</li>
-          <li>Click Load unpacked and select the extension folder of this project.</li>
-          <li>Check that the extension ID is {boot.extension_id}.</li>
-          <li>Join a Meet call. The sidebar shows "Meet: in call".</li>
-        </ol>
+        {boot.extension.connected_at ? (
+          <p>The extension is connected. Its ID is {boot.extension_id}.</p>
+        ) : (
+          <ExtensionSteps onError={onError} />
+        )}
         <p className="small muted">
           The extension reads only participant names and who speaks. It does not read captions, chat, or audio.
         </p>
       </section>
 
       <section className="panel">
-        <h2>MCP</h2>
-        <label>
-          <input type="checkbox" checked={boot.mcp_enabled} onChange={(e) => set("mcp_enabled", String(e.target.checked))} /> Allow
-          MCP clients to read and change meetings
-        </label>
-        <p className="small">
-          An AI client that reads meetings through MCP sends that content to its model provider. Only use clients that your organization
-          approves. Meeting text can contain instructions from other people. Do not let a client act on them.
-        </p>
-        <p className="small muted">Add this server to Claude Desktop or another MCP client:</p>
-        <pre className="code">{config}</pre>
-        <p className="small muted">Claude Code:</p>
-        <pre className="code">claude mcp add tinta "{boot.mcp_path}"</pre>
+        <h2>Storage</h2>
+        <p className="path">{boot.data_dir}</p>
+        <div className="row">
+          <button onClick={changeLocation} disabled={moving}>
+            {moving ? "Moving the library…" : "Change location"}
+          </button>
+          <button onClick={() => api.showLibrary().catch((e) => onError(String(e)))}>Show in Finder</button>
+        </div>
       </section>
 
-      <GranolaImport onError={onError} onDone={onChanged} />
-
       <section className="panel">
-        <h2>Storage</h2>
-        <p>
-          The library is encrypted with SQLCipher and the audio with AES-GCM. The key is in your login Keychain. Time Machine does not
-          back up the library. Export is the only backup.
+        <h2>Speech models</h2>
+        {boot.models_installed ? (
+          <p>The models are installed and match their pinned hashes when the app loads them.</p>
+        ) : (
+          <p>
+            Install the models once. This is the only time the app downloads files. It downloads about 500 MB from Hugging Face at
+            pinned revisions and checks each file against its SHA-256 hash.
+          </p>
+        )}
+        <p className="small muted">Location: {boot.models_path}</p>
+        <button className="primary" disabled={!!progress} onClick={() => void install()}>
+          {progress ? `${progress}…` : boot.models_installed ? "Install again" : "Install models"}
+        </button>
+        <p className="small muted">
+          Models: Parakeet TDT 0.6B v3 by NVIDIA (CC-BY-4.0), Core ML conversion by FluidInference. Silero VAD (MIT). pyannote
+          speaker diarization, Core ML conversion by FluidInference.
         </p>
-        <p>FileVault: {boot.filevault ? "on" : "off. Turn it on in System Settings, Privacy and Security."}</p>
-        <p className="small muted">Location: {boot.data_dir}</p>
       </section>
     </div>
   );
