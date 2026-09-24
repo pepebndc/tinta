@@ -54,7 +54,7 @@ Detection runs only when the URL has a meeting code and the page shows at least 
 The call ends when no tile is present for 3 seconds, when the meeting code changes, or when the page or the tab closes.
 
 The microphone button in the Meet toolbar has a `data-is-muted` attribute and a label that names the microphone.
-A mutation observer reports each change of this attribute at once.
+A mutation observer reports each change of this attribute at once. The extension also checks the state every 200 ms, and it reads only a visible button.
 While Tinta records the call, the app silences your microphone track for each muted interval.
 
 ## Speaker highlight

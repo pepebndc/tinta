@@ -188,7 +188,7 @@ See the [test guide](docs/TESTING.md) for a first real meeting.
 - A Meet room device shows as one participant, so Tinta cannot name the people in the room.
 - Names from Zoom and Teams are a beta. Tinta reads the labels of the call window, in English or Spanish. When Zoom or Microsoft changes the window, names can stop until Tinta gets an update. The Zoom reader is tested with Zoom Workplace 7.0 on macOS. The Teams reader is not tested with real calls yet.
 - Zoom marks the last person who spoke as the active speaker until another person speaks. Short replies can get the name of the previous speaker, so check the names after the call.
-- Tinta records the macOS default microphone.
+- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track has a gap of about 2 seconds.
 - With speakers, other audio plays a little quieter during a recording.
 
 ## License
