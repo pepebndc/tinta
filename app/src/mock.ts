@@ -74,11 +74,23 @@ const boot: Bootstrap = {
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
   extension_id: "ajncjfpbmkmiheokjfhfdlhnmfbaofij", data_dir: "~/Library/Application Support/Tinta",
   models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
-  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, meeting_code: "abc-defg-hij" } : null,
+  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null } : null,
   extension: {
-    connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now, meeting_code: "abc-defg-hij", title: "Design review", self_name: "Sam Rivera",
-    participants: detail().participants, speaking: [], mic_muted: hash() === "recording" ? true : false,
+    connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now,
+    meeting_code: hash() === "zoom" ? null : "abc-defg-hij", title: hash() === "zoom" ? null : "Design review", self_name: "Sam Rivera",
+    participants: hash() === "zoom" ? [] : detail().participants, speaking: [], mic_muted: hash() === "recording" ? true : false,
   },
+  call_reading: hash() === "zoom", accessibility: hash() === "zoom",
+  calls: hash() === "zoom"
+    ? [{
+        app: "us.zoom.xos", name: "Zoom", since: now - 30_000, speaking: ["Priya Shah"], mic_muted: false,
+        participants: [
+          { participant_id: "Sam Rivera", name: "Sam Rivera", is_self: true },
+          { participant_id: "Priya Shah", name: "Priya Shah", is_self: false },
+          { participant_id: "Leo Park", name: "Leo Park", is_self: false },
+        ],
+      }]
+    : [],
 };
 
 export async function mockInvoke<T>(command: string): Promise<T> {
@@ -86,7 +98,15 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     bootstrap: boot,
     list_meetings: { meetings, folders: ["Audits"] },
     get_meeting: detail(),
-    list_sources: { sources: [{ id: "com.google.Chrome", name: "Google Chrome", playing: true }, { id: "all", name: "All system audio", playing: true }], default_input: "MacBook Pro Microphone", route: "speakers" },
+    list_sources: {
+      sources: [
+        { id: "com.google.Chrome", name: "Google Chrome", playing: true },
+        { id: "us.zoom.xos", name: "Zoom", playing: hash() === "zoom" },
+        { id: "all", name: "All system audio", playing: true },
+      ],
+      default_input: "MacBook Pro Microphone",
+      route: "speakers",
+    },
     search: [],
     granola_default_path: "/Users/sam/granola-export",
     granola_preview: { path: "/Users/sam/granola-export", total: 128, mine: 120, shared: 8, already_imported: 0 },

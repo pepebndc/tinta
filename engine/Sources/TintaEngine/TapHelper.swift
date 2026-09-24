@@ -94,8 +94,16 @@ final class RemoteTap: @unchecked Sendable {
         }
     }
 
+    /// Closes the helper input and waits 3 seconds for the helper to exit. A helper that
+    /// does not exit gets a kill, so a stuck audio device cannot block the end of a recording.
     func stop() {
         try? input.fileHandleForWriting.close()
-        process.waitUntilExit()
+        let deadline = Date().addingTimeInterval(3)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        if process.isRunning {
+            Output.shared.log("the tap helper does not stop, so the engine ends it")
+            kill(process.processIdentifier, SIGKILL)
+            process.waitUntilExit()
+        }
     }
 }

@@ -31,6 +31,8 @@ async fn bootstrap() -> CommandResult<Value> {
         "auto_stop": setting("auto_stop", "true") == "true",
         "auto_summary": setting("auto_summary", "true") == "true",
         "audio_retention_days": db.audio_retention_days().map_err(err)?,
+        "call_reading": setting("call_reading", "false") == "true",
+        "accessibility": permissions["accessibility"].as_bool().unwrap_or(false),
         "summaries": summaries,
         "filevault": system::filevault_on(),
         "models_installed": models["installed"].as_bool().unwrap_or(false),
@@ -42,16 +44,45 @@ async fn bootstrap() -> CommandResult<Value> {
         "data_dir": paths::data_dir(),
         "active": *s.active.lock().unwrap(),
         "extension": *s.extension.lock().unwrap(),
+        "calls": *s.calls.lock().unwrap(),
     }))
 }
 
 #[tauri::command]
 async fn set_setting(key: String, value: String) -> CommandResult<()> {
-    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary"];
+    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary", "call_reading"];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
     }
-    state().db.lock().unwrap().set_setting(&key, &value).map_err(err)
+    state().db.lock().unwrap().set_setting(&key, &value).map_err(err)?;
+    if key == "call_reading" {
+        crate::watch_calls();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn request_accessibility() -> CommandResult<Value> {
+    state().engine.call("request_accessibility", json!({}), Duration::from_secs(10)).map_err(err)
+}
+
+/// Opens the Accessibility pane of System Settings.
+#[tauri::command]
+async fn open_accessibility_settings() -> CommandResult<()> {
+    std::process::Command::new("/usr/bin/open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .status()
+        .map_err(err)?;
+    Ok(())
+}
+
+/// Saves a text dump of the window of a call app to a file that the user selects.
+/// The dump helps to fix the reading of Zoom and Microsoft Teams. It can contain any text of the window.
+#[tauri::command]
+async fn save_call_report(app: String, path: String) -> CommandResult<()> {
+    let result = state().engine.call("call_report", json!({"app": app}), Duration::from_secs(20)).map_err(err)?;
+    let text = result["text"].as_str().unwrap_or_default();
+    std::fs::write(&path, text).map_err(err)
 }
 
 #[tauri::command]
@@ -459,6 +490,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_setting,
         install_models,
         request_microphone,
+        request_accessibility,
+        open_accessibility_settings,
+        save_call_report,
         list_sources,
         list_meetings,
         search,

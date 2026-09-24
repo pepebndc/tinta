@@ -18,7 +18,8 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 
 - **Notes and transcript side by side.** Write your notes while the draft transcript appears. Insert a timestamp with one click.
 - **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.
-- **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. You can confirm, correct, merge, or split speakers.
+- **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. In the Zoom and Microsoft Teams apps, Tinta reads who speaks from the call window (beta). You can confirm, correct, merge, or split speakers.
+- **Call detection.** Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, offers to record them, and stops when you leave.
 - **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
 - **Your library.** Search, folders, tags, and export to Markdown, JSON, SRT, and VTT.
 - **Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
@@ -36,6 +37,7 @@ Tinta has no chat and no cloud AI. The transcription, the speaker separation, an
 | **Audio** | By default, Tinta deletes the audio 7 days after a meeting. In Settings, under Storage, you can change this default from 0 to 30 days. You can also change the period of one meeting, or delete its audio at once. |
 | **Summaries** | The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server. A summary can contain mistakes, so check it against the transcript. |
 | **Browser** | The Meet extension reads only participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
+| **Zoom and Teams** | Tinta detects a call from the use of the microphone. It does not read the audio of the app to detect the call. When you turn on names from Zoom and Teams (beta), Tinta reads the participant names, who speaks, and whether your microphone is muted from the call window. This needs Accessibility access. Tinta does not keep other text of the window. |
 | **MCP** | MCP access is local. An AI client that reads your meetings sends that content to its own model provider. Tinta records every MCP change, so you can undo it. |
 
 Tinta does not tell other people in a call that you record. Always tell them.
@@ -58,6 +60,7 @@ Tinta is a pilot. The final pass, the library, the Granola import, and MCP work 
 
 - A Mac with Apple Silicon (M1 or newer) and macOS 14.2 or later. 16 GB of memory is recommended.
 - Google Chrome, for speaker names on Google Meet.
+- The Zoom Workplace or the Microsoft Teams desktop app, for calls in Zoom or Teams. Tinta does not read Zoom or Teams calls in a browser.
 - macOS 26 or later with Apple Intelligence turned on, for summaries. Summaries support English, Spanish, and the other Apple Intelligence languages.
 - About 1 GB of free disk space for the app and the speech models.
 
@@ -85,13 +88,17 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 **Record a Google Meet call.** Join the call in Chrome. Home shows "Google Meet call detected". Tell everyone that you record, then click **Record this call**.
 
-**Record other apps.** Click **New meeting**, select the app under "Meeting audio" (for example Zoom), and click **Start recording**. Speakers get automatic names on Google Meet only. On other apps, you name them after the call.
+**Record a Zoom or Teams call.** Join the call in the Zoom or Microsoft Teams desktop app. Home shows "Zoom call detected" or "Microsoft Teams call detected". Tell everyone that you record, then click **Record this call**.
+
+**Names from Zoom and Teams (beta).** Open Settings, and under Calls, turn on "Get speaker names from Zoom and Microsoft Teams". macOS asks for Accessibility access for Tinta. Allow it in System Settings, then Privacy & Security, then Accessibility. During the call, Tinta reads the participant names and the active speaker from the call window. In a call with one other person, the other voice gets that person's name. Without the beta, you name the speakers after the call.
+
+**Record other apps.** Click **New meeting**, select the app under "Meeting audio", and click **Start recording**. On other apps, you name the speakers after the call.
 
 **Headphones or speakers.** Tinta selects the echo handling from your sound output. With speakers, it removes the echo of the call from your microphone. With headphones, it records your microphone directly. Headphones give the best transcript.
 
-**Mute in Meet.** When you mute your microphone in Meet, Tinta does not record your microphone. It records it again when you unmute.
+**Mute in the call.** When you mute your microphone in Meet, Tinta does not record your microphone. It records it again when you unmute. With names from Zoom and Teams on, the same applies to Zoom and Teams.
 
-**End of the call.** When you leave the Meet call or close its tab, Tinta stops the recording 3 seconds later. If you rejoin in that time, the recording continues. Turn this off in Settings, under Google Meet extension.
+**End of the call.** When you leave the call, Tinta stops the recording 3 seconds later. For Meet, closing the tab also ends the call. If you rejoin in that time, the recording continues. Turn this off in Settings, under Calls.
 
 **While you record.** You can open other meetings, Home, or Settings. The recording, the live transcript, and the final pass continue.
 
@@ -130,6 +137,7 @@ flowchart LR
     Mic[Microphone] --> Engine
     Call[Meeting app audio] --> Tap[Tap helper] --> Engine
     Engine[tinta-engine<br>Parakeet, VAD, diarization] --> App
+    Apps[Zoom and Teams windows<br>names and active speaker] --> Reader[Call reader, Accessibility] --> Engine
     Ext[Chrome extension<br>names and active speaker] --> Host[tinta-native-host] --> App
     App[Tinta app<br>encrypted library] --> UI[Window]
     Client[MCP client] --> MCP[tinta-mcp] --> App
@@ -178,7 +186,10 @@ See the [test guide](docs/TESTING.md) for a first real meeting.
 - The extension installs unpacked. It is not in the Chrome Web Store yet.
 - Speaker names come from the Meet page. When Google changes the page, names can stop until the extension gets an update.
 - A Meet room device shows as one participant, so Tinta cannot name the people in the room.
-- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track has a gap of about 2 seconds.
+- Names from Zoom and Teams are a beta. Tinta reads the labels of the call window. When Zoom or Microsoft changes the window, names can stop until Tinta gets an update. The Zoom reader reads English and Spanish labels, and it is tested with Zoom Workplace 7.0 on macOS. The Teams reader reads English labels only, and it is tested with Teams 26225 on macOS.
+- In Teams, Tinta reads the names from the video tiles. In a large meeting, Teams does not show a tile for each person, so Tinta does not get the names of the people without a tile.
+- Zoom marks the last person who spoke as the active speaker until another person speaks. Short replies can get the name of the previous speaker, so check the names after the call.
+- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track and the meeting audio can have a gap of up to 3 seconds.
 - With speakers, other audio plays a little quieter during a recording.
 
 ## License

@@ -150,7 +150,7 @@ actor Speech {
     func transcribe(_ samples: [Float], offset: Double) async throws -> (String, [Word]) {
         try await loadIfNeeded()
         guard let asr else { throw EngineError("ASR not loaded") }
-        guard samples.count >= ChunkFormat.sampleRate / 4 else { return ("", []) }
+        guard samples.count >= ASRConstants.minimumRequiredSamples(forSampleRate: ChunkFormat.sampleRate) else { return ("", []) }
         var state = try TdtDecoderState(decoderLayers: await asr.decoderLayerCount)
         let result = try await asr.transcribe(samples, decoderState: &state)
         let words = buildWordTimings(from: result.tokenTimings ?? []).map {

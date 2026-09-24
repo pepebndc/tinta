@@ -84,7 +84,27 @@ export type ExtensionState = {
   mic_muted: boolean | null;
 };
 
-export type Active = { meeting_id: string; start_wall_ms: number; paused: boolean; meeting_code: string | null };
+export type Active = {
+  meeting_id: string;
+  start_wall_ms: number;
+  paused: boolean;
+  source: string;
+  meeting_code: string | null;
+  app_call: string | null;
+};
+
+/**
+ * A call in a desktop meeting app. `app` is the bundle ID, which is also the recording source.
+ * The participants, the speakers, and the mute state come from the app window when names from the call app are on.
+ */
+export type AppCall = {
+  app: string;
+  name: string;
+  since: number;
+  participants: Participant[];
+  speaking: string[];
+  mic_muted: boolean | null;
+};
 
 export type Bootstrap = {
   self_name: string;
@@ -96,6 +116,8 @@ export type Bootstrap = {
   auto_summary: boolean;
   /** The number of days that new meetings keep their audio. */
   audio_retention_days: number;
+  call_reading: boolean;
+  accessibility: boolean;
   summaries: { available: boolean; reason?: string };
   filevault: boolean;
   models_installed: boolean;
@@ -107,6 +129,7 @@ export type Bootstrap = {
   data_dir: string;
   active: Active | null;
   extension: ExtensionState;
+  calls: AppCall[];
 };
 
 export type Source = { id: string; name: string; playing: boolean };
@@ -134,6 +157,9 @@ export const api = {
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   installModels: () => invoke<unknown>("install_models"),
   requestMicrophone: () => invoke<{ granted: boolean }>("request_microphone"),
+  requestAccessibility: () => invoke<{ granted: boolean }>("request_accessibility"),
+  openAccessibilitySettings: () => invoke<void>("open_accessibility_settings"),
+  saveCallReport: (app: string, path: string) => invoke<void>("save_call_report", { app, path }),
   listSources: () => invoke<{ sources: Source[]; default_input: string; route: "speakers" | "headphones" }>("list_sources"),
   listMeetings: (includeArchived: boolean) =>
     invoke<{ meetings: Meeting[]; folders: string[] }>("list_meetings", { includeArchived }),

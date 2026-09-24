@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The main window can use the app commands and file dialogs.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-theme", "dialog:allow-open"]
+  "permissions": ["core:default", "core:window:allow-set-theme", "dialog:allow-open", "dialog:allow-save"]
 }

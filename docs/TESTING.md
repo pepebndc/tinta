@@ -32,12 +32,31 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 ## After the meeting
 
 1. Wait for the final pass. The self-test ran 30 seconds of audio in 1.8 seconds. A one-hour meeting is not measured yet. The target is 10 minutes or less.
-2. Check the speaker names. Names from Meet show "Automatic (Meet)". Click Play sample to hear a speaker.
+2. Check the speaker names. Names from the call show "Automatic (call app)". Click Play sample to hear a speaker.
 3. Correct wrong names, merge split speakers, or move a single turn to another speaker.
 4. Click a transcript turn to correct its text.
 5. Export the meeting as Markdown, JSON, SRT, or VTT, or click Copy.
 
 6. Read the summary above the notes. Check the facts, the names, and the action items against the transcript.
+
+## Zoom and Microsoft Teams (beta)
+
+Use the Zoom Workplace or the Microsoft Teams desktop app. Do the setup once:
+
+1. In Tinta, open Settings. Under Calls, turn on "Get speaker names from Zoom and Microsoft Teams".
+2. macOS asks for Accessibility access. Open System Settings, then Privacy & Security, then Accessibility, and turn on Tinta.
+3. In Tinta, click Check again. The warning about Accessibility access goes away.
+
+During the call:
+
+1. Join the call in the app. Home shows "Zoom call detected" or "Microsoft Teams call detected", with the number of people.
+2. Tell everyone in the call that you record and transcribe the meeting.
+3. Click Record this call. The meeting view shows the participants that Tinta reads from the app.
+4. Mute your microphone in the app and speak. The microphone meter shows "muted in Zoom" or "muted in Microsoft Teams". Unmute and check that your speech appears again.
+5. If the participant count stays at zero, or names are wrong, open Settings and click "Save a report of the Zoom window" or "Save a report of the Microsoft Teams window" while the call is open. Read the file, remove private text, and send it to the Tinta team.
+6. Leave the call. After about 5 seconds, Tinta stops the recording and shows a message.
+
+After the call, check the speaker names as for Meet. For each call, also write down the app, the app version (in Zoom: zoom.us, About Zoom; in Teams: Settings, About Teams), and the language of the app.
 
 ## What to record for the pilot
 

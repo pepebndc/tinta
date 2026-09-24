@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
@@ -92,17 +93,41 @@ enum CoreAudioQuery {
         let object: AudioObjectID
         let pid: pid_t
         let bundleID: String
+        /// The bundle ID of the app that is responsible for the process, when it is a different process.
+        /// A web view plays its audio from a WebKit process, which has a WebKit bundle ID.
+        let appBundleID: String
+        let isRunningInput: Bool
         let isRunningOutput: Bool
+
+        /// True when the bundle ID of the process or of its responsible app starts with the prefix.
+        func belongs(to prefix: String) -> Bool {
+            bundleID.hasPrefix(prefix) || appBundleID.hasPrefix(prefix)
+        }
     }
 
     static func processes() -> [AudioProcess] {
         array(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyProcessObjectList).map { object in
-            AudioProcess(
+            let pid = property(object, kAudioProcessPropertyPID, pid_t(-1))
+            return AudioProcess(
                 object: object,
-                pid: property(object, kAudioProcessPropertyPID, pid_t(-1)),
+                pid: pid,
                 bundleID: string(object, kAudioProcessPropertyBundleID) ?? "",
+                appBundleID: appBundleID(pid: pid),
+                isRunningInput: property(object, kAudioProcessPropertyIsRunningInput, UInt32(0)) != 0,
                 isRunningOutput: property(object, kAudioProcessPropertyIsRunningOutput, UInt32(0)) != 0)
         }
+    }
+
+    /// `responsibility_get_pid_responsible_for_pid` from libSystem. macOS has no public API for the responsible process.
+    private static let responsiblePID: (@convention(c) (pid_t) -> pid_t)? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid")
+        else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (pid_t) -> pid_t).self)
+    }()
+
+    private static func appBundleID(pid: pid_t) -> String {
+        guard pid > 0, let responsible = responsiblePID?(pid), responsible > 0, responsible != pid else { return "" }
+        return NSRunningApplication(processIdentifier: responsible)?.bundleIdentifier ?? ""
     }
 
     static func defaultOutputUID() -> String? {
@@ -126,17 +151,29 @@ enum CoreAudioQuery {
 
 /// Captures the output of the selected app with a Core Audio process tap.
 /// The source is a bundle ID prefix, or "all" for all system audio except this engine.
-/// The capture scans for matching processes every two seconds, because an app creates
-/// its audio process only when it plays audio.
+/// A process matches the prefix by its own bundle ID or by the bundle ID of its responsible app.
+/// The capture scans for matching processes every second, because an app creates
+/// its audio process only when it plays audio. It also builds a new tap when the default
+/// output device or the tap format changes, and when a matching process plays audio but
+/// the tap delivers only silence for 2.5 seconds. A device change can leave a tap silent.
 final class ProcessTapCapture: @unchecked Sendable {
     private let source: String
     private let handler: SampleHandler
     private let onState: (_ capturing: Bool, _ processes: Int) -> Void
-    private let queue = DispatchQueue(label: "tinta.tap", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "tinta.tap")
+    /// The IO callback has its own queue. The audio IO thread waits for this queue, so a
+    /// teardown on `queue` can stop the device while a callback is due.
+    private let ioQueue = DispatchQueue(label: "tinta.tap.io", qos: .userInteractive)
+    private let lock = NSLock()
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var tappedObjects: [AudioObjectID] = []
+    private var tappedOutput: String?
+    private var tappedFormat: AudioStreamBasicDescription?
+    /// The last time the tap delivered sound, or the time of the build. `lock` protects it.
+    private var lastSound = Date()
+    private static let silenceLimit = 2.5
     private var timer: DispatchSourceTimer?
     private let resampler = Resampler()
     private(set) var isCapturing = false
@@ -150,7 +187,7 @@ final class ProcessTapCapture: @unchecked Sendable {
     func start() {
         queue.sync { self.refresh() }
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
         timer.setEventHandler { [weak self] in self?.refresh() }
         timer.resume()
         self.timer = timer
@@ -162,25 +199,43 @@ final class ProcessTapCapture: @unchecked Sendable {
         queue.sync { self.teardown() }
     }
 
-    private func matchingObjects() -> [AudioObjectID] {
-        let own = getpid()
-        let processes = CoreAudioQuery.processes().filter { $0.pid != own }
-        if source == "all" { return [] }
-        return processes.filter { $0.bundleID.hasPrefix(source) }.map(\.object).sorted()
+    /// The processes to tap. The engine and this helper do not count.
+    private func matchingProcesses() -> [CoreAudioQuery.AudioProcess] {
+        let own: Set<pid_t> = [getpid(), getppid()]
+        return CoreAudioQuery.processes().filter { !own.contains($0.pid) && (source == "all" || $0.belongs(to: source)) }
+            .sorted { $0.object < $1.object }
     }
 
     private func refresh() {
-        let objects = matchingObjects()
+        let processes = matchingProcesses()
+        let objects = source == "all" ? [] : processes.map(\.object)
         if source != "all" && objects.isEmpty {
             if isCapturing { teardown() }
             return
         }
-        if isCapturing && objects == tappedObjects { return }
+        let output = CoreAudioQuery.defaultOutputUID()
+        if isCapturing && objects == tappedObjects && output == tappedOutput {
+            lock.lock()
+            let silent = Date().timeIntervalSince(lastSound)
+            lock.unlock()
+            if tapFormat().map({ !Self.sameFormat($0, tappedFormat) }) ?? false {
+                Output.shared.log("process tap restarts: the tap format changed")
+            } else if silent >= Self.silenceLimit && processes.contains(where: \.isRunningOutput) {
+                Output.shared.log("process tap restarts: no sound for \(Int(silent)) seconds while the app plays audio")
+            } else {
+                return
+            }
+        }
         teardown()
         do {
             try build(objects: objects)
             tappedObjects = objects
+            tappedOutput = output
             isCapturing = true
+            if source != "all" {
+                let names = processes.map { $0.appBundleID.isEmpty ? $0.bundleID : "\($0.bundleID) (\($0.appBundleID))" }
+                Output.shared.log("process tap: \(names.joined(separator: ", "))")
+            }
             onState(true, objects.count)
         } catch {
             Output.shared.log("process tap failed: \(error)")
@@ -223,23 +278,26 @@ final class ProcessTapCapture: @unchecked Sendable {
         guard status == noErr else { throw EngineError("AudioHardwareCreateAggregateDevice status \(status)") }
         aggregateID = device
 
-        var streamDescription = AudioStreamBasicDescription()
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        status = AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &streamDescription)
-        guard status == noErr, let format = AVAudioFormat(streamDescription: &streamDescription) else {
-            throw EngineError("tap format status \(status)")
+        guard var streamDescription = tapFormat(), let format = AVAudioFormat(streamDescription: &streamDescription) else {
+            throw EngineError("no tap format")
         }
+        tappedFormat = streamDescription
+        lock.lock()
+        lastSound = Date()
+        lock.unlock()
 
         let handler = self.handler
         let resampler = self.resampler
-        status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, input, inputTime, _, _ in
+        status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { [weak self] _, input, inputTime, _, _ in
             guard
                 let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input, deallocator: nil)
             else { return }
             let samples = resampler.convert(buffer)
+            if let self, samples.contains(where: { $0 != 0 }) {
+                self.lock.lock()
+                self.lastSound = Date()
+                self.lock.unlock()
+            }
             if !samples.isEmpty {
                 handler(samples, inputTime.pointee.mHostTime)
             }
@@ -247,6 +305,22 @@ final class ProcessTapCapture: @unchecked Sendable {
         guard status == noErr, let procID else { throw EngineError("IO proc status \(status)") }
         status = AudioDeviceStart(aggregateID, procID)
         guard status == noErr else { throw EngineError("AudioDeviceStart status \(status)") }
+    }
+
+    private func tapFormat() -> AudioStreamBasicDescription? {
+        guard tapID != kAudioObjectUnknown else { return nil }
+        var description = AudioStreamBasicDescription()
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        return AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &description) == noErr ? description : nil
+    }
+
+    private static func sameFormat(_ a: AudioStreamBasicDescription, _ b: AudioStreamBasicDescription?) -> Bool {
+        guard let b else { return false }
+        return a.mSampleRate == b.mSampleRate && a.mChannelsPerFrame == b.mChannelsPerFrame
+            && a.mFormatID == b.mFormatID && a.mFormatFlags == b.mFormatFlags
     }
 
     private func teardown() {
@@ -268,24 +342,31 @@ final class ProcessTapCapture: @unchecked Sendable {
             onState(false, 0)
         }
         tappedObjects = []
+        tappedOutput = nil
+        tappedFormat = nil
     }
 }
 
 // MARK: - Microphone
 
-/// Captures the default input device. Voice processing removes echo from the speakers.
-/// With voice processing, channel 0 carries the processed voice. The other channels carry
-/// raw microphone and reference signals, so the capture uses channel 0 only.
+/// Captures the default input device. Voice processing removes echo when the sound plays
+/// through speakers. With headphones, the capture records the microphone directly, because
+/// voice processing there only makes other audio quieter. With voice processing, channel 0
+/// carries the processed voice. The other channels carry raw microphone and reference
+/// signals, so the capture uses channel 0 only.
 ///
 /// AVAudioEngine stops when the audio hardware changes its configuration, for example when
 /// Bluetooth headphones switch to their microphone mode as a call app unmutes. The capture
-/// then starts a new engine. It also starts a new engine when no audio arrives for 2 seconds.
+/// then starts a new engine. It also starts a new engine when no audio arrives for 2 seconds,
+/// and when the sound moves between speakers and headphones.
 final class MicCapture: @unchecked Sendable {
     private var engine = AVAudioEngine()
     private let handler: SampleHandler
-    private let echoCancellation: Bool
     private let resampler = Resampler()
-    private(set) var echoCancellationActive = false
+    /// The output route of the current engine. Only `queue` uses it.
+    private var route = OutputRoute.speakers
+    /// True after the warning that echo removal is not available. Only `queue` uses it.
+    private var warnedNoEchoRemoval = false
 
     private let queue = DispatchQueue(label: "tinta.mic")
     private let lock = NSLock()
@@ -296,8 +377,7 @@ final class MicCapture: @unchecked Sendable {
     private var observer: NSObjectProtocol?
     private static let silenceLimit = 2.0
 
-    init(echoCancellation: Bool, handler: @escaping SampleHandler) {
-        self.echoCancellation = echoCancellation
+    init(handler: @escaping SampleHandler) {
         self.handler = handler
     }
 
@@ -317,20 +397,20 @@ final class MicCapture: @unchecked Sendable {
         lock.lock()
         lastBuffer = Date()
         lock.unlock()
-        if echoCancellation {
+        route = OutputRoute.current()
+        if route == .speakers {
             do {
                 try startEngine(voiceProcessing: true)
-                echoCancellationActive = true
                 return
             } catch {
                 Output.shared.log("voice processing failed, recording without echo removal: \(error)")
                 resetEngine()
-                if !echoCancellationActive {
+                if !warnedNoEchoRemoval {
+                    warnedNoEchoRemoval = true
                     Output.shared.event(
                         "warning",
                         ["message": "Echo removal is not available with this audio device. Use headphones to avoid echo."])
                 }
-                echoCancellationActive = false
             }
         }
         try startEngine(voiceProcessing: false)
@@ -345,7 +425,7 @@ final class MicCapture: @unchecked Sendable {
         engine = AVAudioEngine()
     }
 
-    /// Starts a new engine after a configuration change or a silent input. Runs on `queue`.
+    /// Starts a new engine after a configuration change, a silent input, or a route change. Runs on `queue`.
     private func restart(_ reason: String) {
         guard running, Date().timeIntervalSince(lastRestart) >= Self.silenceLimit else { return }
         lastRestart = Date()
@@ -362,7 +442,11 @@ final class MicCapture: @unchecked Sendable {
         lock.lock()
         let silent = Date().timeIntervalSince(lastBuffer)
         lock.unlock()
-        if silent >= Self.silenceLimit { restart("no audio for \(Int(silent)) seconds") }
+        if silent >= Self.silenceLimit {
+            restart("no audio for \(Int(silent)) seconds")
+        } else if OutputRoute.current() != route {
+            restart("the sound moved to \(OutputRoute.current().rawValue)")
+        }
     }
 
     private func startEngine(voiceProcessing: Bool) throws {

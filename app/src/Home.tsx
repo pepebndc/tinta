@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Active, Bootstrap, clock, dateTime, ExtensionState, Meeting } from "./api";
+import { Active, AppCall, Bootstrap, clock, dateTime, ExtensionState, Meeting } from "./api";
 import { Icon, InkMark } from "./Brand";
 
 type Props = {
@@ -7,10 +7,11 @@ type Props = {
   meetings: Meeting[];
   active: Active | null;
   extension: ExtensionState | null;
+  calls: AppCall[];
   onOpen: (id: string) => void;
   onNew: () => void;
   onImport: () => void;
-  onRecordCall: () => void;
+  onRecordCall: (source: string) => void;
   onSettings: () => void;
   onRetry: (id: string) => void;
   granolaExport: string | null;
@@ -26,7 +27,7 @@ function greeting(name: string, now: Date): string {
   return first ? `${part}, ${first}` : part;
 }
 
-export function Home({ boot, meetings, active, extension, onOpen, onNew, onImport, onRecordCall, onSettings, onRetry, granolaExport, onGranola }: Props) {
+export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, onImport, onRecordCall, onSettings, onRetry, granolaExport, onGranola }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -34,6 +35,7 @@ export function Home({ boot, meetings, active, extension, onOpen, onNew, onImpor
   }, []);
 
   const inCall = !!(extension?.meeting_code && extension.last_seen && now - extension.last_seen < 30_000);
+  const appCall = calls[0];
   const everConnected = !!extension?.connected_at;
   const recording = active ? meetings.find((m) => m.id === active.meeting_id) : undefined;
   const ready = boot?.models_installed ?? false;
@@ -101,7 +103,24 @@ export function Home({ boot, meetings, active, extension, onOpen, onNew, onImpor
               {extension?.participants.length} people in the call. Tell everyone that you record and transcribe this meeting.
             </p>
           </div>
-          <button className="primary big" disabled={!ready} onClick={onRecordCall} title={ready ? "" : "Install the speech models first"}>
+          <button className="primary big" disabled={!ready} onClick={() => onRecordCall("com.google.Chrome")} title={ready ? "" : "Install the speech models first"}>
+            Record this call
+          </button>
+        </section>
+      ) : appCall ? (
+        <section className="hero hero-call">
+          <InkMark size={44} />
+          <div className="hero-text">
+            <div className="eyebrow">{appCall.name} call detected</div>
+            <h2>{appCall.name} call</h2>
+            <p>
+              {appCall.participants.length > 0
+                ? `${appCall.participants.length} people in the call. Names come from ${appCall.name} (beta). `
+                : "You name the speakers after the call. "}
+              Tell everyone that you record and transcribe this meeting.
+            </p>
+          </div>
+          <button className="primary big" disabled={!ready} onClick={() => onRecordCall(appCall.app)} title={ready ? "" : "Install the speech models first"}>
             Record this call
           </button>
         </section>
@@ -113,7 +132,7 @@ export function Home({ boot, meetings, active, extension, onOpen, onNew, onImpor
             <h2>
               Stay in the <em>conversation.</em>
             </h2>
-            <p>Join a Google Meet call in Chrome, and Tinta offers to record it. For other apps, create a new meeting.</p>
+            <p>Join a call in Google Meet, Zoom, or Microsoft Teams, and Tinta offers to record it. For other apps, create a new meeting.</p>
           </div>
         </section>
       )}

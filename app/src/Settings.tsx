@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Access, api, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
-import { open } from "@tauri-apps/plugin-dialog";
+import { Access, api, AppCall, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { setTheme, ThemeChoice } from "./theme";
 import { ExtensionSteps, useModelInstall } from "./Onboarding";
 
-export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChanged: () => void; onError: (e: string) => void }) {
+type Props = { boot: Bootstrap; calls: AppCall[]; onChanged: () => void; onError: (e: string) => void };
+
+export function Settings({ boot, calls, onChanged, onError }: Props) {
   const [name, setName] = useState(boot.self_name);
   const { progress, install } = useModelInstall(onChanged, onError);
 
@@ -30,6 +32,28 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
   }
 
   const set = (key: string, value: string) => api.setSetting(key, value).then(onChanged).catch((e) => onError(String(e)));
+
+  async function setCallReading(enabled: boolean) {
+    try {
+      await api.setSetting("call_reading", String(enabled));
+      if (enabled && !(await api.requestAccessibility()).granted) {
+        await api.openAccessibilitySettings();
+      }
+      onChanged();
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
+  async function saveReport(call: AppCall) {
+    const path = await save({ title: `Save a report of the ${call.name} window`, defaultPath: `Tinta ${call.name} report.txt` });
+    if (!path) return;
+    try {
+      await api.saveCallReport(call.app, path);
+    } catch (e) {
+      onError(String(e));
+    }
+  }
 
   return (
     <div className="settings">
@@ -100,14 +124,50 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
       </section>
 
       <section className="panel">
-        <h2>Google Meet extension</h2>
+        <h2>Calls</h2>
         <label>
           <input type="checkbox" checked={boot.auto_stop} onChange={(e) => set("auto_stop", String(e.target.checked))} /> Stop the
-          recording when the Meet call ends
+          recording when the call ends
         </label>
         <p className="small muted">
-          Tinta stops 3 seconds after you leave. A rejoin in this time keeps the recording. When you mute your microphone in Meet, Tinta does not record it.
+          Tinta detects calls in Google Meet with the extension, and in the Zoom and Microsoft Teams apps from their use of the
+          microphone. It stops 3 seconds after you leave. A rejoin in this time keeps the recording.
         </p>
+        <label>
+          <input type="checkbox" checked={boot.call_reading} onChange={(e) => setCallReading(e.target.checked)} /> Get speaker names
+          from Zoom and Microsoft Teams <span className="tag">Beta</span>
+        </label>
+        <p className="small muted">
+          Tinta reads the participant names, who speaks, and whether your microphone is muted from the window of the call app.
+          It does not keep other text of the window. This needs Accessibility access in macOS.
+        </p>
+        {boot.call_reading && !boot.accessibility && (
+          <div className="row">
+            <span className="warn small">macOS does not allow Accessibility access for Tinta.</span>
+            <button onClick={() => api.openAccessibilitySettings().catch((e) => onError(String(e)))}>Open Accessibility settings</button>
+            <button onClick={onChanged}>Check again</button>
+          </div>
+        )}
+        {boot.call_reading && calls.length > 0 && (
+          <>
+            <div className="row">
+              {calls.map((c) => (
+                <button key={c.app} onClick={() => saveReport(c)}>
+                  Save a report of the {c.name} window
+                </button>
+              ))}
+            </div>
+            <p className="small muted">
+              If names are missing or wrong, save a report during the call and send it to the Tinta team. The report can contain
+              any text of the window, such as chat messages. Read it before you send it.
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="panel">
+        <h2>Google Meet extension</h2>
+        <p className="small muted">When you mute your microphone in Meet, Tinta does not record it.</p>
         {boot.extension.connected_at ? (
           <p>The extension is connected. Its ID is {boot.extension_id}.</p>
         ) : (

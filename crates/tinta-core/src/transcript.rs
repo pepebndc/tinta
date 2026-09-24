@@ -125,12 +125,19 @@ pub fn build(
         let mut labels: Vec<String> = labeled.iter().map(|(l, _)| l.clone()).collect();
         labels.sort();
         labels.dedup();
+        // In a call with one other participant, the one remote voice is that participant.
+        let remote_participants: Vec<&Participant> = participants.iter().filter(|p| !p.is_self).collect();
+        let only_remote = match (labels.len(), remote_participants.as_slice()) {
+            (1, [only]) => Some(only.name.clone()),
+            _ => None,
+        };
         for label in &labels {
             let decision = decisions.get(label);
             let name = decision
                 .and_then(|d| d.participant.as_deref())
                 .and_then(|p| names.get(p))
-                .map(|n| n.to_string());
+                .map(|n| n.to_string())
+                .or_else(|| only_remote.clone());
             if name.is_some() {
                 named += 1;
             }
@@ -190,5 +197,39 @@ mod tests {
         assert_eq!(s1.name.as_deref(), Some("Alice"));
         let s2 = built.speakers.iter().find(|s| s.label == "S2").unwrap();
         assert_eq!(s2.name, None);
+    }
+
+    fn one_remote_voice() -> FinalResult {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            "remote".into(),
+            TrackResult {
+                words: vec![word("Hi", 2.0, 2.4), word("Bye", 10.0, 10.5)],
+                diarization: vec![Segment { speaker: "S1".into(), s: 1.8, e: 12.0 }],
+            },
+        );
+        FinalResult { tracks, duration: 12.0, language: None }
+    }
+
+    #[test]
+    fn names_the_only_remote_participant_without_events() {
+        let participants = vec![
+            Participant { participant_id: "Sam".into(), name: "Sam".into(), is_self: true },
+            Participant { participant_id: "Alice".into(), name: "Alice".into(), is_self: false },
+        ];
+        let built = build(&one_remote_voice(), "Sam", &participants, &[], Some(1_000_000));
+        assert_eq!(built.speakers[0].name.as_deref(), Some("Alice"));
+        assert_eq!(built.speakers[0].name_source.as_deref(), Some("platform"));
+        assert_eq!(built.named, 1);
+    }
+
+    #[test]
+    fn does_not_guess_with_two_remote_participants() {
+        let participants = vec![
+            Participant { participant_id: "Alice".into(), name: "Alice".into(), is_self: false },
+            Participant { participant_id: "Bob".into(), name: "Bob".into(), is_self: false },
+        ];
+        let built = build(&one_remote_voice(), "Sam", &participants, &[], Some(1_000_000));
+        assert_eq!(built.speakers[0].name, None);
     }
 }
