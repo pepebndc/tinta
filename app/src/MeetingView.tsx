@@ -757,8 +757,8 @@ function MeetingTools({ detail, onError, onDeleted, onMessage }: { detail: Meeti
       <button
         className="quiet danger"
         onClick={() =>
-          confirm("Delete this meeting, its audio, notes, and transcript now? You cannot undo this.") &&
-          api.deleteMeeting(m.id).then(onDeleted).catch((e) => onError(String(e)))
+          confirm("Move this meeting to the trash? The app deletes it permanently after 7 days.") &&
+          api.trashMeeting(m.id).then(onDeleted).catch((e) => onError(String(e)))
         }
       >
         Delete

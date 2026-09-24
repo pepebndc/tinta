@@ -245,14 +245,27 @@ export function Settings({ boot, calls, onChanged, onError }: Props) {
 
 export function Trash({ onError, onChanged }: { onError: (e: string) => void; onChanged: () => void }) {
   const [items, setItems] = useState<Meeting[]>([]);
+  const [armed, setArmed] = useState<string | null>(null);
   const load = () => api.trash().then(setItems).catch((e) => onError(String(e)));
   useEffect(() => {
     void load();
   }, []);
+  const deleteNow = (m: Meeting) => {
+    const what = m.deleted_at ? "this meeting, its audio, notes, and transcript" : "the audio of this meeting";
+    if (!confirm(`Delete ${what} permanently? You cannot undo this.`)) return;
+    const action = m.deleted_at ? api.deleteMeeting(m.id) : api.deleteAudio(m.id).then(() => api.restore(m.id));
+    action
+      .then(() => setArmed(null))
+      .then(load)
+      .then(onChanged)
+      .catch((e) => onError(String(e)));
+  };
   return (
     <div className="settings">
       <h1>Trash</h1>
-      <p className="muted">Deletions through MCP stay here for 7 days. Deletions that you make in the app are immediate.</p>
+      <p className="muted">
+        Deleted meetings and audio that MCP clients delete stay here for 7 days. Then the app deletes them permanently.
+      </p>
       {items.length === 0 && <p className="muted">The trash is empty.</p>}
       {items.map((m) => (
         <div key={m.id} className="panel row">
@@ -262,17 +275,21 @@ export function Trash({ onError, onChanged }: { onError: (e: string) => void; on
               {m.deleted_at ? `Meeting deleted ${dateTime(m.deleted_at)}` : `Audio deleted ${dateTime(m.audio_trashed_at)}`}
             </div>
           </div>
-          <button onClick={() => api.restore(m.id).then(load).then(onChanged).catch((e) => onError(String(e)))}>Restore</button>
-          <button
-            className="danger"
-            onClick={() => {
-              if (!confirm("Delete permanently now?")) return;
-              const action = m.deleted_at ? api.deleteMeeting(m.id) : api.deleteAudio(m.id).then(() => api.restore(m.id));
-              action.then(load).then(onChanged).catch((e) => onError(String(e)));
-            }}
-          >
-            Delete now
-          </button>
+          {armed === m.id ? (
+            <>
+              <button onClick={() => setArmed(null)}>Cancel</button>
+              <button className="danger" onClick={() => deleteNow(m)}>
+                Delete permanently
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => api.restore(m.id).then(load).then(onChanged).catch((e) => onError(String(e)))}>Restore</button>
+              <button className="danger" onClick={() => setArmed(m.id)}>
+                Delete now
+              </button>
+            </>
+          )}
         </div>
       ))}
     </div>

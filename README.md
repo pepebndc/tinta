@@ -22,7 +22,9 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Call detection.** Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, offers to record them, and stops when you leave.
 - **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
 - **Your library.** Search, folders, tags, and export to Markdown, JSON, SRT, and VTT.
-- **Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
+- **Delete a meeting.** Click **Delete** on the meeting. The meeting goes to the trash for 7 days, and then Tinta deletes it permanently. To get it back, open **Trash** and click **Restore**. To delete it at once, click **Delete now**, then **Delete permanently**, and confirm.
+
+**Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
 - **MCP server.** Connect Claude or another MCP client to your meetings when you choose to.
 
 Tinta has no chat and no cloud AI. The transcription, the speaker separation, and the summaries run on your Mac.
@@ -126,7 +128,7 @@ For Claude Code, run `claude mcp add tinta /Applications/Tinta.app/Contents/MacO
 
 Tinta must be open. The tools can list, search, and read meetings, including notes, transcripts, and summaries. They can also change titles, tags, folders, notes, summaries, speaker names, and transcript text.
 
-Each meeting has an ID. To give a meeting to an AI client, click **ID · Copy** next to the date of the meeting, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to a 7-day trash. The **MCP** screen lists every request and lets you undo each change.
+Each meeting has an ID. To give a meeting to an AI client, click **ID · Copy** next to the date of the meeting, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to the trash. The **MCP** screen lists every request and lets you undo each change.
 
 Meeting text can contain instructions from other people. Do not let an AI client act on them.
 

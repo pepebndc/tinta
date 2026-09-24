@@ -287,12 +287,23 @@ fn clip(meeting_id: &str, track: &str, start: f64, end: f64) -> CommandResult<St
     Ok(result["wav_base64"].as_str().unwrap_or_default().to_string())
 }
 
-/// Deletion by the user is immediate and permanent.
+/// Moves the meeting to the trash. The app deletes it permanently after `TRASH_DAYS`.
 #[tauri::command]
-async fn delete_meeting(id: String) -> CommandResult<()> {
+async fn trash_meeting(id: String) -> CommandResult<()> {
     let s = state();
     if s.active.lock().unwrap().as_ref().map(|a| a.meeting_id == id).unwrap_or(false) {
         return Err("stop the recording first".into());
+    }
+    let result = s.db.lock().unwrap().trash_meeting(&id, Origin::User).map_err(err);
+    result
+}
+
+/// Deletes a meeting in the trash at once and permanently.
+#[tauri::command]
+async fn delete_meeting(id: String) -> CommandResult<()> {
+    let s = state();
+    if s.db.lock().unwrap().meeting(&id).map_err(err)?.deleted_at.is_none() {
+        return Err("move the meeting to the trash first".into());
     }
     s.delete_meeting_files(&id);
     let result = s.db.lock().unwrap().delete_meeting_now(&id).map_err(err);
@@ -514,6 +525,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         edit_turn_text,
         speaker_sample,
         turn_audio,
+        trash_meeting,
         delete_meeting,
         delete_audio,
         set_audio_retention,

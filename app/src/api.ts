@@ -182,6 +182,7 @@ export const api = {
   editTurnText: (turnId: number, text: string) => invoke<void>("edit_turn_text", { turnId, text }),
   speakerSample: (speakerId: string) => invoke<string>("speaker_sample", { speakerId }),
   turnAudio: (turnId: number) => invoke<string>("turn_audio", { turnId }),
+  trashMeeting: (id: string) => invoke<void>("trash_meeting", { id }),
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   deleteAudio: (id: string) => invoke<void>("delete_audio", { id }),
   setAudioRetention: (id: string, days: number) => invoke<number>("set_audio_retention", { id, days }),

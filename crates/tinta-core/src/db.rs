@@ -1030,7 +1030,7 @@ impl Db {
 
     // MARK: Deletion, trash, and retention
 
-    /// Deletion by the user: the caller removes files. The database rows go at once.
+    /// Permanent deletion: the caller removes the files. The database rows go at once.
     pub fn delete_meeting_now(&self, id: &str) -> Result<()> {
         for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
             self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
@@ -1040,7 +1040,7 @@ impl Db {
         Ok(())
     }
 
-    /// Deletion through MCP: the meeting goes to the trash for `TRASH_DAYS`.
+    /// The meeting goes to the trash for `TRASH_DAYS`.
     pub fn trash_meeting(&self, id: &str, origin: Origin) -> Result<()> {
         self.meeting(id)?;
         let now = now_ms();
@@ -1207,6 +1207,20 @@ impl Db {
 mod tests {
     use super::*;
     use crate::keys::Keys;
+
+    #[test]
+    fn user_deletion_goes_to_trash_and_expires() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly sync", None).unwrap();
+        db.trash_meeting(&m.id, Origin::User).unwrap();
+        assert!(db.meetings(true).unwrap().is_empty());
+        assert_eq!(db.trash().unwrap().len(), 1);
+        let now = now_ms();
+        assert!(db.expired_trash(now).unwrap().is_empty());
+        assert_eq!(db.expired_trash(now + TRASH_DAYS * DAY_MS).unwrap(), vec![m.id.clone()]);
+        db.restore(&m.id).unwrap();
+        assert_eq!(db.meetings(true).unwrap().len(), 1);
+    }
 
     #[test]
     fn audio_retention_default_follows_the_setting() {
