@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
@@ -92,19 +93,41 @@ enum CoreAudioQuery {
         let object: AudioObjectID
         let pid: pid_t
         let bundleID: String
+        /// The bundle ID of the app that is responsible for the process, when it is a different process.
+        /// A web view plays its audio from a WebKit process, which has a WebKit bundle ID.
+        let appBundleID: String
         let isRunningInput: Bool
         let isRunningOutput: Bool
+
+        /// True when the bundle ID of the process or of its responsible app starts with the prefix.
+        func belongs(to prefix: String) -> Bool {
+            bundleID.hasPrefix(prefix) || appBundleID.hasPrefix(prefix)
+        }
     }
 
     static func processes() -> [AudioProcess] {
         array(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyProcessObjectList).map { object in
-            AudioProcess(
+            let pid = property(object, kAudioProcessPropertyPID, pid_t(-1))
+            return AudioProcess(
                 object: object,
-                pid: property(object, kAudioProcessPropertyPID, pid_t(-1)),
+                pid: pid,
                 bundleID: string(object, kAudioProcessPropertyBundleID) ?? "",
+                appBundleID: appBundleID(pid: pid),
                 isRunningInput: property(object, kAudioProcessPropertyIsRunningInput, UInt32(0)) != 0,
                 isRunningOutput: property(object, kAudioProcessPropertyIsRunningOutput, UInt32(0)) != 0)
         }
+    }
+
+    /// `responsibility_get_pid_responsible_for_pid` from libSystem. macOS has no public API for the responsible process.
+    private static let responsiblePID: (@convention(c) (pid_t) -> pid_t)? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid")
+        else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (pid_t) -> pid_t).self)
+    }()
+
+    private static func appBundleID(pid: pid_t) -> String {
+        guard pid > 0, let responsible = responsiblePID?(pid), responsible > 0, responsible != pid else { return "" }
+        return NSRunningApplication(processIdentifier: responsible)?.bundleIdentifier ?? ""
     }
 
     static func defaultOutputUID() -> String? {
@@ -128,8 +151,10 @@ enum CoreAudioQuery {
 
 /// Captures the output of the selected app with a Core Audio process tap.
 /// The source is a bundle ID prefix, or "all" for all system audio except this engine.
+/// A process matches the prefix by its own bundle ID or by the bundle ID of its responsible app.
 /// The capture scans for matching processes every two seconds, because an app creates
-/// its audio process only when it plays audio.
+/// its audio process only when it plays audio. It also builds a new tap when the default
+/// output device changes, because the tap clock and format come from that device.
 final class ProcessTapCapture: @unchecked Sendable {
     private let source: String
     private let handler: SampleHandler
@@ -139,6 +164,7 @@ final class ProcessTapCapture: @unchecked Sendable {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var tappedObjects: [AudioObjectID] = []
+    private var tappedOutput: String?
     private var timer: DispatchSourceTimer?
     private let resampler = Resampler()
     private(set) var isCapturing = false
@@ -164,25 +190,32 @@ final class ProcessTapCapture: @unchecked Sendable {
         queue.sync { self.teardown() }
     }
 
-    private func matchingObjects() -> [AudioObjectID] {
-        let own = getpid()
-        let processes = CoreAudioQuery.processes().filter { $0.pid != own }
+    private func matchingProcesses() -> [CoreAudioQuery.AudioProcess] {
         if source == "all" { return [] }
-        return processes.filter { $0.bundleID.hasPrefix(source) }.map(\.object).sorted()
+        let own = getpid()
+        return CoreAudioQuery.processes().filter { $0.pid != own && $0.belongs(to: source) }
+            .sorted { $0.object < $1.object }
     }
 
     private func refresh() {
-        let objects = matchingObjects()
+        let processes = matchingProcesses()
+        let objects = processes.map(\.object)
         if source != "all" && objects.isEmpty {
             if isCapturing { teardown() }
             return
         }
-        if isCapturing && objects == tappedObjects { return }
+        let output = CoreAudioQuery.defaultOutputUID()
+        if isCapturing && objects == tappedObjects && output == tappedOutput { return }
         teardown()
         do {
             try build(objects: objects)
             tappedObjects = objects
+            tappedOutput = output
             isCapturing = true
+            if source != "all" {
+                let names = processes.map { $0.appBundleID.isEmpty ? $0.bundleID : "\($0.bundleID) (\($0.appBundleID))" }
+                Output.shared.log("process tap: \(names.joined(separator: ", "))")
+            }
             onState(true, objects.count)
         } catch {
             Output.shared.log("process tap failed: \(error)")
@@ -270,6 +303,7 @@ final class ProcessTapCapture: @unchecked Sendable {
             onState(false, 0)
         }
         tappedObjects = []
+        tappedOutput = nil
     }
 }
 

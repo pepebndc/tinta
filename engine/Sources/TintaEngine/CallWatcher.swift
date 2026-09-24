@@ -14,13 +14,13 @@ final class CallWatcher: @unchecked Sendable {
         /// The recording source for the app, also used as the call ID.
         let id: String
         let name: String
-        /// Bundle ID prefixes of the app processes that use audio.
-        let prefixes: [String]
+        /// The bundle ID prefix of the app processes that use audio.
+        let prefix: String
     }
 
     static let apps = [
-        App(id: "us.zoom.xos", name: "Zoom", prefixes: ["us.zoom."]),
-        App(id: "com.microsoft.teams2", name: "Microsoft Teams", prefixes: ["com.microsoft.teams2"]),
+        App(id: "us.zoom.xos", name: "Zoom", prefix: "us.zoom."),
+        App(id: "com.microsoft.teams2", name: "Microsoft Teams", prefix: "com.microsoft.teams2"),
     ]
 
     /// The time without audio activity before a call counts as ended.
@@ -73,7 +73,7 @@ final class CallWatcher: @unchecked Sendable {
         let processes = CoreAudioQuery.processes()
         let now = Date()
         for app in Self.apps {
-            let own = processes.filter { process in app.prefixes.contains { process.bundleID.hasPrefix($0) } }
+            let own = processes.filter { $0.belongs(to: app.prefix) }
             let input = own.contains(where: \.isRunningInput)
             let active = input || own.contains(where: \.isRunningOutput)
             if var call = calls[app.id] {

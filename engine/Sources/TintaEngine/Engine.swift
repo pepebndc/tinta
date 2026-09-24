@@ -153,9 +153,9 @@ actor Controller {
     ]
 
     private static func sources() -> [[String: Any]] {
-        let active = Set(CoreAudioQuery.processes().filter(\.isRunningOutput).map(\.bundleID))
+        let active = CoreAudioQuery.processes().filter(\.isRunningOutput)
         var result: [[String: Any]] = knownSources.map { bundle, name in
-            ["id": bundle, "name": name, "playing": active.contains { $0.hasPrefix(bundle) }]
+            ["id": bundle, "name": name, "playing": active.contains { $0.belongs(to: bundle) }]
         }
         result.append(["id": "all", "name": "All system audio", "playing": !active.isEmpty])
         return result
