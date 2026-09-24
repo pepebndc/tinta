@@ -45,6 +45,7 @@ struct AXNode: Hashable {
     var text: String { string(kAXValueAttribute) }
     var identifier: String { string(kAXIdentifierAttribute) }
     var domIdentifier: String { string("AXDOMIdentifier") }
+    var domClasses: [String] { (value("AXDOMClassList") as? [String]) ?? [] }
 
     var children: [AXNode] { ((value(kAXChildrenAttribute) as? [AXUIElement]) ?? []).map(AXNode.init) }
     var windows: [AXNode] { ((value(kAXWindowsAttribute) as? [AXUIElement]) ?? []).map(AXNode.init) }
@@ -210,46 +211,61 @@ enum ZoomReader {
     }
 }
 
-/// Microsoft Teams. The app shows the call in web content, so the tree holds DOM identifiers
-/// and ARIA labels. The microphone button has the DOM ID "microphone-button". Participant
-/// tiles and roster items have labels that start with the participant name. The labels of
-/// Teams change often, so this reader is a best effort.
+/// Microsoft Teams. The app shows the call in Chromium web content, so the tree holds DOM
+/// identifiers, DOM classes, and ARIA labels. Each video tile has a label that starts with the
+/// participant name and ends with a note about its context menu:
+/// - the user: "Myself video, Name, Muted, Has context menu"
+/// - another participant: "Name (Guest), muted, Context menu is available"
+/// Teams draws a frame, with the DOM class `vdi-frame-occlusion`, in the tile of a participant
+/// who speaks. The microphone button has the DOM ID "microphone-button" and the label
+/// "Mute mic" or "Unmute mic". The reader is tested with Teams 26225 in English.
 enum TeamsReader {
     static func read(_ app: AXNode) -> CallSnapshot? {
         var snapshot = CallSnapshot()
-        var names: [String] = []
-        var speaking: [String] = []
-        var muted: Bool?
         var found = false
         for window in app.windows {
             window.walk(maxNodes: 8000) { node, _ in
-                let dom = node.domIdentifier
-                let label = node.label.isEmpty ? node.title : node.label
-                if dom == "microphone-button" || dom == "mic-button" {
+                if node.domIdentifier == "microphone-button" {
                     found = true
-                    muted = CallReader.offersUnmute(label)
+                    snapshot.micMuted = CallReader.offersUnmute(node.label)
                     return
                 }
-                if dom.hasPrefix("roster") || dom.hasPrefix("participant") || dom.contains("video-tile") {
-                    found = true
+                guard let tile = tile(node.label) else { return }
+                found = true
+                if !snapshot.participants.contains(where: { $0.name == tile.name }) {
+                    snapshot.participants.append(.init(name: tile.name, isSelf: tile.isSelf))
                 }
-                guard isParticipantLabel(node, label), let name = ZoomReader.tileName(label) else { return }
-                if !names.contains(name) { names.append(name) }
-                if CallReader.mentionsSpeaking(label), !speaking.contains(name) { speaking.append(name) }
+                if isSpeaking(node), !snapshot.speaking.contains(tile.name) { snapshot.speaking.append(tile.name) }
             }
         }
-        guard found || muted != nil else { return nil }
-        snapshot.participants = names.map { .init(name: $0, isSelf: false) }
-        snapshot.speaking = speaking
-        snapshot.micMuted = muted
-        return snapshot
+        return found ? snapshot : nil
     }
 
-    /// Tiles and roster items have labels such as "Name, Muted, Video off" or "Name, speaking".
-    private static func isParticipantLabel(_ node: AXNode, _ label: String) -> Bool {
-        guard ["AXGroup", "AXListItem", "AXCell", "AXRow", "AXButton"].contains(node.role) else { return false }
-        let lower = label.lowercased()
-        let states = ["muted", "unmuted", "video", "camera", "speaking", "silenciado", "cámara", "vídeo", "hablando"]
-        return label.contains(",") && states.contains { lower.contains($0) }
+    private static let contextMenuNotes = ["has context menu", "context menu is available"]
+    private static let selfMarker = "myself video"
+    /// Parts of a tile label that give a state, not a name.
+    private static let states = ["muted", "unmuted"]
+
+    /// The participant name of a tile label, and whether the tile shows the user.
+    /// A name can contain a comma, as in "Blasco, Pepe", so the name is all the parts that are not a marker or a state.
+    static func tile(_ label: String) -> (name: String, isSelf: Bool)? {
+        var parts = label.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let last = parts.last, contextMenuNotes.contains(last.lowercased()) else { return nil }
+        parts.removeLast()
+        let isSelf = parts.first?.lowercased() == selfMarker
+        if isSelf { parts.removeFirst() }
+        while let state = parts.last, states.contains(state.lowercased()) { parts.removeLast() }
+        var name = parts.joined(separator: ", ")
+        if name.hasSuffix(" (Guest)") { name.removeLast(" (Guest)".count) }
+        return name.isEmpty ? nil : (name, isSelf)
+    }
+
+    /// True when the tile holds the frame that Teams draws around the active speaker.
+    private static func isSpeaking(_ tile: AXNode) -> Bool {
+        var speaking = false
+        tile.walk(maxDepth: 12, maxNodes: 200) { node, _ in
+            if !speaking, node.domClasses.contains("vdi-frame-occlusion") { speaking = true }
+        }
+        return speaking
     }
 }
