@@ -92,6 +92,7 @@ enum CoreAudioQuery {
         let object: AudioObjectID
         let pid: pid_t
         let bundleID: String
+        let isRunningInput: Bool
         let isRunningOutput: Bool
     }
 
@@ -101,6 +102,7 @@ enum CoreAudioQuery {
                 object: object,
                 pid: property(object, kAudioProcessPropertyPID, pid_t(-1)),
                 bundleID: string(object, kAudioProcessPropertyBundleID) ?? "",
+                isRunningInput: property(object, kAudioProcessPropertyIsRunningInput, UInt32(0)) != 0,
                 isRunningOutput: property(object, kAudioProcessPropertyIsRunningOutput, UInt32(0)) != 0)
         }
     }

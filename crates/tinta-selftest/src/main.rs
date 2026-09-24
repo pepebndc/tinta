@@ -1,6 +1,6 @@
 //! End-to-end self-test without the window. It builds a synthetic three-person meeting
 //! with the macOS `say` voices, simulates Meet active-speaker events, runs the final pass,
-//! and checks names, export, MCP tools, undo, trash, and audio retention.
+//! and checks names, export, MCP tools, undo, trash, audio retention, and a simulated Zoom call.
 //!
 //! Run: `TINTA_DATA_DIR=$(mktemp -d) cargo run -p tinta-selftest`
 
@@ -82,6 +82,64 @@ fn check(ok: bool, label: &str, failures: &mut Vec<String>) {
     if !ok {
         failures.push(label.to_string());
     }
+}
+
+/// Simulates the engine events of a Zoom call during a recording: the call start, the participants
+/// and the active speaker from the app window, a mute, and the call end.
+fn desktop_call(state: &std::sync::Arc<tinta_app::AppState>, failures: &mut Vec<String>) -> Result<()> {
+    const ZOOM: &str = "us.zoom.xos";
+    state.db.lock().unwrap().set_setting("self_name", "Test User")?;
+    state.db.lock().unwrap().set_setting("auto_stop", "true")?;
+    state.on_engine_event(json!({"event": "call_started", "app": ZOOM, "name": "Zoom", "since": now_ms()}));
+    check(state.calls.lock().unwrap().iter().any(|c| c.app == ZOOM), "a Zoom call is detected", failures);
+
+    let t0 = now_ms();
+    let id = {
+        let db = state.db.lock().unwrap();
+        let m = db.create_meeting("Zoom self-test", Some("selftest"))?;
+        db.mark_started(&m.id, t0, None)?;
+        m.id
+    };
+    *state.active.lock().unwrap() = Some(tinta_app::Active {
+        meeting_id: id.clone(),
+        start_wall_ms: t0,
+        paused: false,
+        source: ZOOM.into(),
+        meeting_code: None,
+        app_call: Some(ZOOM.into()),
+    });
+    let participants = json!([
+        {"id": "Test User", "name": "Test User", "is_self": false},
+        {"id": "Ada Lovelace", "name": "Ada Lovelace", "is_self": false},
+    ]);
+    for (offset, speaking, muted) in [(0, json!([]), false), (1000, json!(["Ada Lovelace"]), false), (2000, json!(["Ada Lovelace"]), true)] {
+        state.on_engine_event(json!({
+            "event": "call_state", "app": ZOOM, "t": t0 + offset,
+            "participants": participants, "speaking": speaking, "mic_muted": muted,
+        }));
+    }
+    {
+        let db = state.db.lock().unwrap();
+        let stored = db.participants(&id)?;
+        check(
+            stored.len() == 2 && stored.iter().any(|p| p.name == "Test User" && p.is_self),
+            "Zoom participants are stored, and the user is found by name",
+            failures,
+        );
+        let events = db.speaker_events(&id)?;
+        check(events.iter().any(|(_, s)| s == &vec!["Ada Lovelace".to_string()]), "Zoom speaker events are stored", failures);
+    }
+    check(
+        state.calls.lock().unwrap().iter().any(|c| c.app == ZOOM && c.mic_muted == Some(true)),
+        "the Zoom mute state is read",
+        failures,
+    );
+
+    state.on_engine_event(json!({"event": "call_ended", "app": ZOOM, "name": "Zoom", "left_at": now_ms()}));
+    std::thread::sleep(Duration::from_millis(3800));
+    check(state.active.lock().unwrap().is_none(), "the recording stops after the Zoom call ends", failures);
+    check(state.calls.lock().unwrap().is_empty(), "the ended Zoom call is removed", failures);
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -242,6 +300,8 @@ fn main() -> Result<()> {
     );
     let cloud = std::path::Path::new("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs");
     check(state.move_library(cloud).is_err(), "cloud-synced folders are refused", &mut failures);
+
+    desktop_call(&state, &mut failures)?;
 
     state.engine.shutdown();
     if failures.is_empty() {

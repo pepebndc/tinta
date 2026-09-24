@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Active, api, Bootstrap, bytes, clock, dateTime, ExtensionState, MeetingDetail, on, RETENTION_DAYS, Source, Speaker, Turn } from "./api";
+import { Active, api, AppCall, Bootstrap, bytes, clock, dateTime, ExtensionState, MeetingDetail, on, RETENTION_DAYS, Source, Speaker, Turn } from "./api";
 import { Avatar, Icon } from "./Brand";
 import { PlayButton, stopPlayback } from "./Player";
 import { SummaryPanel } from "./Summary";
@@ -9,6 +9,7 @@ type Props = {
   boot: Bootstrap | null;
   active: Active | null;
   extension: ExtensionState | null;
+  calls: AppCall[];
   onActive: (a: Active | null) => void;
   onError: (e: string) => void;
   onDeleted: () => void;
@@ -16,9 +17,20 @@ type Props = {
 
 type EngineEvent = { event: string; [key: string]: unknown };
 
-const NAME_STATE: Record<string, string> = { user: "Confirmed", platform: "Automatic (Meet)", self: "Automatic (microphone)" };
+const NAME_STATE: Record<string, string> = { user: "Confirmed", platform: "Automatic (call app)", self: "Automatic (microphone)" };
 
-export function MeetingView({ id, boot, active, extension, onActive, onError, onDeleted }: Props) {
+/** One line about a detected desktop app call and where the speaker names come from. */
+function callStatus(call: AppCall, boot: Bootstrap | null): string {
+  if (call.participants.length > 0) {
+    return `${call.name}: ${call.participants.length} participants. Names come from ${call.name} (beta).`;
+  }
+  if (boot?.call_reading) {
+    return `${call.name}: call detected. Tinta reads the names when macOS allows Accessibility access and the call window is open.`;
+  }
+  return `${call.name}: call detected. You name the speakers after the call, or turn on names from ${call.name} in Settings.`;
+}
+
+export function MeetingView({ id, boot, active, extension, calls, onActive, onError, onDeleted }: Props) {
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [notes, setNotes] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
@@ -75,7 +87,7 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
       on<{ id: string; named: number; remote_speakers: number }>("final_pass", (p) => {
         if (p.id !== id) return;
         setProgress(null);
-        setMessage(`Final pass done. Meet names found for ${p.named} of ${p.remote_speakers} remote speakers.`);
+        setMessage(`Final pass done. Names from the call found for ${p.named} of ${p.remote_speakers} remote speakers.`);
       }),
     ];
     const tick = setInterval(() => setNow(Date.now()), 1000);
@@ -91,6 +103,12 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
       }
     };
   }, [id]);
+
+  // A detected desktop app call selects its app as the meeting audio.
+  const detectedApp = calls[0]?.app;
+  useEffect(() => {
+    if (detectedApp) setSource(detectedApp);
+  }, [detectedApp]);
 
   function changeNotes(value: string) {
     setNotes(value);
@@ -150,6 +168,7 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
   const ready = m.state === "ready";
   const imported = m.source === "granola";
   const extensionInCall = extension?.meeting_code && extension.last_seen && now - extension.last_seen < 30_000;
+  const callApp = active?.app_call ? (calls.find((c) => c.app === active.app_call)?.name ?? "the call app") : "Meet";
 
   const people = Array.from(
     new Set(
@@ -260,9 +279,11 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
           )}
           {route === "headphones" && <div className="small muted">Headphones detected. Tinta records your microphone directly.</div>}
           <div className="small muted">
-            {extensionInCall
-              ? `Meet: ${extension?.title ?? extension?.meeting_code}, ${extension?.participants.length} participants. Names come from Meet.`
-              : "Meet extension: no call detected. Remote speakers get names only on Google Meet in Chrome with the extension."}
+            {calls.length > 0
+              ? calls.map((c) => callStatus(c, boot)).join(" ")
+              : extensionInCall
+                ? `Meet: ${extension?.title ?? extension?.meeting_code}, ${extension?.participants.length} participants. Names come from Meet.`
+                : "No call detected. Remote speakers get names only on Google Meet in Chrome with the extension."}
           </div>
           {!!active && <div className="warn small">Another meeting is recording.</div>}
         </section>
@@ -273,7 +294,7 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
           <div className="row">
             <span className="rec-dot big" /> <strong>{active?.paused ? "Paused" : "Recording"}</strong>
             <span className="timer">{clock(elapsed ?? 0)}</span>
-            <Meter label={levels.micMuted ? "Microphone (muted in Meet)" : "Microphone"} value={levels.mic} />
+            <Meter label={levels.micMuted ? `Microphone (muted in ${callApp})` : "Microphone"} value={levels.mic} />
             <Meter label={levels.capturing ? "Meeting audio" : "Meeting audio (not detected)"} value={levels.remote} />
             <button onClick={() => pause(!active?.paused)}>{active?.paused ? "Resume" : "Pause"}</button>
             <button className="danger" onClick={stop}>
@@ -281,7 +302,7 @@ export function MeetingView({ id, boot, active, extension, onActive, onError, on
             </button>
           </div>
           {levels.micMuted && (
-            <div className="small muted">Your microphone is muted in Meet. Tinta does not record it until you unmute.</div>
+            <div className="small muted">Your microphone is muted in {callApp}. Tinta does not record it until you unmute.</div>
           )}
           {!levels.capturing && (
             <div className="warn small">

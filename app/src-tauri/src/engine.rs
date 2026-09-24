@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,6 +25,7 @@ pub struct Engine {
     pending: Pending,
     next_id: AtomicU64,
     on_event: EventHandler,
+    stopped: AtomicBool,
 }
 
 /// The engine binary: next to the app executable in the bundle, or the SwiftPM build in development.
@@ -44,10 +45,14 @@ impl Engine {
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
             on_event,
+            stopped: AtomicBool::new(false),
         })
     }
 
     fn ensure_running(&self, slot: &mut Option<Process>) -> Result<()> {
+        if self.stopped.load(Ordering::SeqCst) {
+            bail!("the engine is shut down");
+        }
         if let Some(process) = slot.as_mut() {
             if process.child.try_wait()?.is_none() {
                 return Ok(());
@@ -113,7 +118,9 @@ impl Engine {
         }
     }
 
+    /// Stops the engine. Later calls fail and do not start it again.
     pub fn shutdown(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
         let mut slot = self.process.lock().unwrap();
         if let Some(mut process) = slot.take() {
             let _ = process.stdin.write_all(b"{\"id\":0,\"cmd\":\"shutdown\"}\n");

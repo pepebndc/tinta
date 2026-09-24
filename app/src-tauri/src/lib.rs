@@ -22,8 +22,64 @@ pub struct Active {
     pub meeting_id: String,
     pub start_wall_ms: i64,
     pub paused: bool,
+    /// The meeting audio source: an app bundle ID, or "all".
+    pub source: String,
     /// The Meet call of this recording, when the extension saw one at the start.
     pub meeting_code: Option<String>,
+    /// The desktop app call of this recording, by the app bundle ID. It is the same as `source`.
+    pub app_call: Option<String>,
+}
+
+/// A call in a desktop meeting app, such as Zoom or Microsoft Teams. The engine detects it from the audio of the app.
+#[derive(Debug, Clone, Serialize)]
+pub struct AppCall {
+    /// The bundle ID of the app, which is also its recording source.
+    pub app: String,
+    pub name: String,
+    pub since: i64,
+    /// The participants that the engine reads from the app window. The name is also the participant ID.
+    /// The list is empty when reading is off.
+    pub participants: Vec<Participant>,
+    pub speaking: Vec<String>,
+    /// The microphone state in the app. `None` when the engine cannot read it.
+    pub mic_muted: Option<bool>,
+}
+
+/// Reads a participant list from an extension or engine message.
+fn parse_participants(value: &Value) -> Vec<Participant> {
+    value
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|p| {
+                    Some(Participant {
+                        participant_id: p["id"].as_str()?.chars().take(200).collect(),
+                        name: p["name"].as_str()?.chars().take(200).collect(),
+                        is_self: p["is_self"].as_bool().unwrap_or(false),
+                    })
+                })
+                .take(100)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_names(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|l| l.iter().filter_map(|v| v.as_str().map(|s| s.chars().take(200).collect())).take(100).collect())
+        .unwrap_or_default()
+}
+
+/// The call app does not always mark the user. Then the user's name identifies the user.
+fn mark_self(participants: &mut [Participant], own: &str) {
+    if participants.iter().any(|p| p.is_self) {
+        return;
+    }
+    let own = own.trim().to_lowercase();
+    for p in participants.iter_mut().filter(|p| !own.is_empty() && p.name.trim().to_lowercase() == own) {
+        p.is_self = true;
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -46,13 +102,15 @@ pub struct AppState {
     pub app: Option<AppHandle>,
     pub active: Mutex<Option<Active>>,
     pub extension: Mutex<ExtensionState>,
+    pub calls: Mutex<Vec<AppCall>>,
     pub finalizing: Mutex<HashSet<String>>,
     pub summarizing: Mutex<HashSet<String>>,
-    /// A Meet call that ended during a recording, and the time of the end message.
+    /// A call that ended during a recording, and the time of the end message.
+    /// The call is a Meet meeting code or a desktop app bundle ID.
     pub call_ended: Mutex<Option<(String, i64)>>,
 }
 
-/// The time between leaving a Meet call and the automatic stop. A rejoin in this time cancels the stop.
+/// The time between leaving a call and the automatic stop. A rejoin in this time cancels the stop.
 const CALL_END_GRACE_MS: i64 = 3000;
 
 static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
@@ -95,10 +153,19 @@ impl AppState {
         if meeting.started_at.is_some() {
             bail!("this meeting already has a recording. Create a new meeting.");
         }
-        let extension = self.extension.lock().unwrap().clone();
+        let call = self.calls.lock().unwrap().iter().find(|c| c.app == source).cloned();
+        let app_call = call.as_ref().map(|c| c.app.clone());
+        let mut extension = self.extension.lock().unwrap().clone();
+        // A Meet call in Chrome does not belong to a recording of a desktop app call.
+        if app_call.is_some() {
+            extension = ExtensionState::default();
+        }
         let mut params = self.audio_params(id);
         params["source"] = json!(source);
-        params["mic_muted"] = json!(extension.meeting_code.is_some() && extension.mic_muted == Some(true));
+        params["mic_muted"] = json!(
+            (extension.meeting_code.is_some() && extension.mic_muted == Some(true))
+                || call.as_ref().map(|c| c.mic_muted == Some(true)).unwrap_or(false)
+        );
         let result = self.engine.call("start", params, Duration::from_secs(60))?;
         let start_wall_ms = result["start_wall_ms"].as_i64().unwrap_or_else(now_ms);
         {
@@ -112,13 +179,18 @@ impl AppState {
                     }
                 }
             }
+            if let Some(call) = call.as_ref().filter(|c| !c.participants.is_empty()) {
+                db.upsert_participants(id, &call.participants)?;
+            }
             db.set_setting("last_source", source)?;
         }
         let active = Active {
             meeting_id: id.to_string(),
             start_wall_ms,
             paused: false,
+            source: source.to_string(),
             meeting_code: extension.meeting_code.clone(),
+            app_call,
         };
         *self.active.lock().unwrap() = Some(active.clone());
         self.meeting_changed(id);
@@ -169,7 +241,8 @@ impl AppState {
         participants.into_iter().find(|p| p.participant_id == participant).map(|p| p.name)
     }
 
-    fn on_engine_event(&self, event: Value) {
+    /// Handles an event from the engine. The self-test also sends simulated events.
+    pub fn on_engine_event(&self, event: Value) {
         match event["event"].as_str().unwrap_or_default() {
             "live" => {
                 let Some(active) = self.active.lock().unwrap().clone() else { return };
@@ -187,7 +260,110 @@ impl AppState {
                     self.emit("live_turn", json!(turn));
                 }
             }
+            "call_started" => {
+                let Some(app) = event["app"].as_str().map(str::to_string) else { return };
+                let call = AppCall {
+                    app: app.clone(),
+                    name: event["name"].as_str().unwrap_or(&app).to_string(),
+                    since: event["since"].as_i64().unwrap_or_else(now_ms),
+                    participants: Vec::new(),
+                    speaking: Vec::new(),
+                    mic_muted: None,
+                };
+                self.on_call_started(call);
+            }
+            "call_state" => {
+                let Some(app) = event["app"].as_str() else { return };
+                self.on_call_state(app, &event);
+            }
+            "call_ended" => {
+                let Some(app) = event["app"].as_str() else { return };
+                let name = event["name"].as_str().unwrap_or(app);
+                self.on_call_ended(app, name, event["left_at"].as_i64().unwrap_or_else(now_ms).min(now_ms()));
+            }
+            "engine_exit" => {
+                self.calls.lock().unwrap().clear();
+                self.emit("calls", json!([]));
+                self.emit("engine", event);
+                watch_calls();
+            }
             _ => self.emit("engine", event),
+        }
+    }
+
+    // MARK: Desktop app calls
+
+    fn on_call_started(&self, call: AppCall) {
+        let app = call.app.clone();
+        let calls = {
+            let mut calls = self.calls.lock().unwrap();
+            calls.retain(|c| c.app != app);
+            calls.push(call);
+            calls.clone()
+        };
+        self.emit("calls", json!(calls));
+        // A rejoin in the grace time cancels the automatic stop.
+        let mut call_ended = self.call_ended.lock().unwrap();
+        if call_ended.as_ref().map(|(c, _)| *c == app).unwrap_or(false) {
+            *call_ended = None;
+        }
+        drop(call_ended);
+        // A recording that started before the call joins the call.
+        let mut active = self.active.lock().unwrap();
+        if let Some(current) = active.as_mut().filter(|a| a.source == app && a.meeting_code.is_none()) {
+            current.app_call = Some(app);
+            self.emit("recording", json!(current.clone()));
+        }
+    }
+
+    /// The participants, the active speaker, and the microphone state that the engine reads from the app.
+    /// The engine sends the state when it changes, and every few seconds.
+    fn on_call_state(&self, app: &str, event: &Value) {
+        let t = event["t"].as_i64().unwrap_or_else(now_ms);
+        let mut participants = parse_participants(&event["participants"]);
+        mark_self(&mut participants, &self.self_name());
+        let speaking = parse_names(&event["speaking"]);
+        let muted = event["mic_muted"].as_bool();
+        let (calls, muted_before) = {
+            let mut calls = self.calls.lock().unwrap();
+            let Some(call) = calls.iter_mut().find(|c| c.app == app) else { return };
+            let before = call.mic_muted;
+            call.participants = participants.clone();
+            call.speaking = speaking.clone();
+            call.mic_muted = muted;
+            (calls.clone(), before)
+        };
+        self.emit("calls", json!(calls));
+        let Some(active) = self.active.lock().unwrap().clone() else { return };
+        if active.app_call.as_deref() != Some(app) {
+            return;
+        }
+        {
+            let db = self.db.lock().unwrap();
+            let _ = db.upsert_participants(&active.meeting_id, &participants);
+            if !active.paused {
+                let _ = db.add_speaker_event(&active.meeting_id, t, &speaking);
+            }
+        }
+        if let Some(muted) = muted.filter(|m| Some(*m) != muted_before) {
+            // This runs on the engine reader thread, which must stay free to read the reply.
+            let engine = self.engine.clone();
+            std::thread::spawn(move || {
+                let _ = engine.call("mic_muted", json!({"muted": muted, "t": t}), Duration::from_secs(5));
+            });
+        }
+    }
+
+    fn on_call_ended(&self, app: &str, name: &str, left_at: i64) {
+        let calls = {
+            let mut calls = self.calls.lock().unwrap();
+            calls.retain(|c| c.app != app);
+            calls.clone()
+        };
+        self.emit("calls", json!(calls));
+        let active = self.active.lock().unwrap().clone();
+        if let Some(active) = active.filter(|a| a.app_call.as_deref() == Some(app)) {
+            self.schedule_auto_stop(&active.meeting_id, app, name, left_at);
         }
     }
 
@@ -313,29 +489,9 @@ impl AppState {
                     ext.meeting_code = code.clone();
                     ext.title = message["title"].as_str().map(str::to_string);
                     ext.self_name = message["self_name"].as_str().map(str::to_string);
-                    ext.participants = message["participants"]
-                        .as_array()
-                        .map(|list| {
-                            list.iter()
-                                .filter_map(|p| {
-                                    Some(Participant {
-                                        participant_id: p["id"].as_str()?.chars().take(200).collect(),
-                                        name: p["name"].as_str()?.chars().take(200).collect(),
-                                        is_self: p["is_self"].as_bool().unwrap_or(false),
-                                    })
-                                })
-                                .take(100)
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    // Meet does not always mark the user's own tile. Then the user's name identifies it.
-                    if !ext.participants.iter().any(|p| p.is_self) {
-                        let own = ext.self_name.clone().unwrap_or_else(|| self.self_name());
-                        let own = own.trim().to_lowercase();
-                        for p in ext.participants.iter_mut().filter(|p| !own.is_empty() && p.name.trim().to_lowercase() == own) {
-                            p.is_self = true;
-                        }
-                    }
+                    ext.participants = parse_participants(&message["participants"]);
+                    let own = ext.self_name.clone().unwrap_or_else(|| self.self_name());
+                    mark_self(&mut ext.participants, &own);
                     ext.mic_muted = message["mic_muted"].as_bool();
                     if let Some(active) = &active {
                         let db = self.db.lock().unwrap();
@@ -353,10 +509,7 @@ impl AppState {
                     }
                 }
                 "active_speakers" => {
-                    ext.speaking = message["speaking"]
-                        .as_array()
-                        .map(|l| l.iter().filter_map(|v| v.as_str().map(str::to_string)).take(100).collect())
-                        .unwrap_or_default();
+                    ext.speaking = parse_names(&message["speaking"]);
                     if let Some(active) = &active {
                         if !active.paused {
                             let _ = self.db.lock().unwrap().add_speaker_event(&active.meeting_id, t, &ext.speaking);
@@ -382,7 +535,7 @@ impl AppState {
         }
         // A recording that started before the call joins the call at its first state message.
         let mut active = active;
-        if let Some(current) = active.as_mut().filter(|a| a.meeting_code.is_none() && code.is_some()) {
+        if let Some(current) = active.as_mut().filter(|a| a.meeting_code.is_none() && a.app_call.is_none() && code.is_some()) {
             if message["type"] == "meet_state" {
                 current.meeting_code = code.clone();
                 if let Some(stored) = self.active.lock().unwrap().as_mut().filter(|a| a.meeting_id == current.meeting_id) {
@@ -395,9 +548,9 @@ impl AppState {
             if let Some(muted) = mute_change {
                 let _ = self.engine.call("mic_muted", json!({"muted": muted, "t": t}), Duration::from_secs(5));
             }
-            if ended.is_some() {
+            if let Some(code) = &ended {
                 let left_at = message["left_at"].as_i64().unwrap_or(t).min(now_ms());
-                self.schedule_auto_stop(active, left_at);
+                self.schedule_auto_stop(&active.meeting_id, code, "Meet", left_at);
             }
         }
         json!({
@@ -406,15 +559,16 @@ impl AppState {
         })
     }
 
-    /// Stops the recording after a grace time when its Meet call ends, unless the user rejoins.
-    fn schedule_auto_stop(&self, active: &Active, left_at: i64) {
-        let Some(code) = active.meeting_code.clone() else { return };
+    /// Stops the recording after a grace time when its call ends, unless the user rejoins.
+    /// `call` is the Meet meeting code or the desktop app bundle ID, and `name` is the name of the call app.
+    fn schedule_auto_stop(&self, meeting_id: &str, call: &str, name: &str, left_at: i64) {
         if self.setting("auto_stop", "true") != "true" {
             return;
         }
-        let entry = (code, now_ms());
+        let entry = (call.to_string(), now_ms());
         *self.call_ended.lock().unwrap() = Some(entry.clone());
-        let meeting_id = active.meeting_id.clone();
+        let meeting_id = meeting_id.to_string();
+        let name = name.to_string();
         std::thread::spawn(move || {
             let wait = (left_at + CALL_END_GRACE_MS - now_ms()).max(0) as u64;
             std::thread::sleep(Duration::from_millis(wait));
@@ -424,7 +578,7 @@ impl AppState {
             }
             let same = state.active.lock().unwrap().as_ref().map(|a| a.meeting_id == meeting_id).unwrap_or(false);
             if same && state.stop_recording().is_ok() {
-                state.emit("auto_stopped", json!({"id": meeting_id}));
+                state.emit("auto_stopped", json!({"id": meeting_id, "app": name}));
             }
         });
     }
@@ -538,6 +692,38 @@ impl Drop for FinalizeGuard {
     }
 }
 
+/// Starts the engine, which watches for desktop app calls, sends the reading setting, and reads the current calls.
+/// The engine reader thread calls this after the engine stops, so the call runs on its own thread.
+pub fn watch_calls() {
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_secs(1));
+        let state = state();
+        let read = state.setting("call_reading", "false") == "true";
+        let Ok(result) = state.engine.call("calls", json!({"read": read}), Duration::from_secs(20)) else { return };
+        let calls: Vec<AppCall> = result["calls"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|c| {
+                        Some(AppCall {
+                            app: c["app"].as_str()?.to_string(),
+                            name: c["name"].as_str()?.to_string(),
+                            since: c["since"].as_i64()?,
+                            participants: Vec::new(),
+                            speaking: Vec::new(),
+                            mic_muted: None,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let known: HashSet<String> = state.calls.lock().unwrap().iter().map(|c| c.app.clone()).collect();
+        for call in calls.into_iter().filter(|c| !known.contains(&c.app)) {
+            state.on_call_started(call);
+        }
+    });
+}
+
 /// Opens the library, starts the engine client and the app socket, and starts recovery and retention.
 pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
     let data = paths::data_dir();
@@ -558,11 +744,13 @@ pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
         app,
         active: Mutex::new(None),
         extension: Mutex::new(ExtensionState::default()),
+        calls: Mutex::new(Vec::new()),
         finalizing: Mutex::new(HashSet::new()),
         summarizing: Mutex::new(HashSet::new()),
         call_ended: Mutex::new(None),
     });
     let _ = STATE.set(state.clone());
+    watch_calls();
     // Test runs use their own data folder and must not change the Chrome configuration.
     if std::env::var_os("TINTA_DATA_DIR").is_none() {
         let _ = system::install_native_host();

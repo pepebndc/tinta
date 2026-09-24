@@ -1,9 +1,10 @@
-//! Matches remote speaker labels to Google Meet participants.
+//! Matches remote speaker labels to call participants.
 //!
-//! The Meet extension reports which participants Meet highlights as speaking, with wall
-//! clock times. For each speaker label from diarization, the matcher measures how much of
-//! that label's speech overlaps with each participant's highlighted time over the whole
-//! meeting. It assigns a name only when the evidence is strong and clear.
+//! The Meet extension and the engine reader for Zoom and Teams report which participants
+//! the call app marks as speaking, with wall clock times. For each speaker label from
+//! diarization, the matcher measures how much of that label's speech overlaps with each
+//! participant's highlighted time over the whole meeting. It assigns a name only when the
+//! evidence is strong and clear.
 
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -33,7 +34,7 @@ pub struct Decision {
 }
 
 /// An event holds until the next event, but never longer than this.
-/// The extension sends a heartbeat every 5 seconds.
+/// The extension sends a heartbeat every 5 seconds, and the engine reader every 3 seconds.
 const EVENT_HOLD_SECONDS: f64 = 7.0;
 const MIN_SHARE: f64 = 0.5;
 const MIN_MARGIN: f64 = 0.25;

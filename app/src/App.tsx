@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Active, api, Bootstrap, dateTime, ExtensionState, Meeting, on, SearchHit } from "./api";
+import { Active, api, AppCall, Bootstrap, dateTime, ExtensionState, Meeting, on, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
 import { Mcp, Settings, Trash } from "./Settings";
 import { Icon, Lockup } from "./Brand";
@@ -28,6 +28,7 @@ export function App() {
   const [showArchived, setShowArchived] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
   const [extension, setExtension] = useState<ExtensionState | null>(null);
+  const [calls, setCalls] = useState<AppCall[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function App() {
       setTheme(b.theme);
       setActive(b.active);
       setExtension(b.extension);
+      setCalls(b.calls);
     } catch (e) {
       setError(String(e));
     }
@@ -63,9 +65,10 @@ export function App() {
     const subs = [
       on("meeting_changed", () => void refreshList()),
       on<ExtensionState>("extension", setExtension),
+      on<AppCall[]>("calls", setCalls),
       on<Active | null>("recording", setActive),
-      on("auto_stopped", () => {
-        setNotice("The Meet call ended, so Tinta stopped the recording. The final pass runs on this Mac.");
+      on<{ id: string; app: string }>("auto_stopped", (p) => {
+        setNotice(`The ${p.app} call ended, so Tinta stopped the recording. The final pass runs on this Mac.`);
         void refreshList();
       }),
     ];
@@ -111,10 +114,10 @@ export function App() {
     }
   }
 
-  async function recordCall() {
+  async function recordCall(source: string) {
     try {
       const m = await api.createMeeting();
-      const started = await api.startRecording(m.id, boot?.last_source ?? "com.google.Chrome");
+      const started = await api.startRecording(m.id, source);
       setActive(started);
       await refreshList();
       setView({ kind: "meeting", id: m.id });
@@ -256,6 +259,7 @@ export function App() {
             boot={boot}
             active={active}
             extension={extension}
+            calls={calls}
             onActive={setActive}
             onError={setError}
             onDeleted={() => {
@@ -267,6 +271,7 @@ export function App() {
         {view.kind === "settings" && boot && (
           <Settings
             boot={boot}
+            calls={calls}
             onChanged={() => {
               void refreshBoot();
               void refreshList();
@@ -288,6 +293,7 @@ export function App() {
             meetings={meetings}
             active={active}
             extension={extension}
+            calls={calls}
             onOpen={(id) => setView({ kind: "meeting", id })}
             onNew={newMeeting}
             onImport={importRecording}

@@ -16,6 +16,7 @@ struct Engine {
         ModelPins.setOnline(false)
         let controller = Controller()
         Output.shared.event("ready", ["version": "0.1.0"])
+        Controller.calls.start()
         let reader = Thread {
             while let line = readLine(strippingNewline: true) {
                 handle(line: line, controller: controller)
@@ -58,6 +59,7 @@ struct Engine {
 }
 
 actor Controller {
+    static let calls = CallWatcher()
     private let speech = Speech()
     private var session: RecordingSession?
 
@@ -71,7 +73,7 @@ actor Controller {
             try await speech.install()
             return ["installed": true]
         case "permissions":
-            return ["microphone": Self.micPermission()]
+            return ["microphone": Self.micPermission(), "accessibility": CallReader.trusted]
         case "request_microphone":
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             return ["granted": granted]
@@ -80,6 +82,17 @@ actor Controller {
                 "sources": Self.sources(), "default_input": CoreAudioQuery.defaultInputName() ?? "",
                 "route": OutputRoute.current().rawValue,
             ]
+        case "calls":
+            if let read = params["read"] as? Bool { Self.calls.setReading(read) }
+            return ["calls": Self.calls.current(), "accessibility": CallReader.trusted]
+        case "request_accessibility":
+            return ["granted": CallReader.requestTrust()]
+        case "call_report":
+            let app = try params.string("app")
+            guard let text = CallReader.dump(appID: app) else {
+                throw EngineError("Tinta cannot read the app window. Allow Accessibility access, and keep the call open.")
+            }
+            return ["text": text]
         case "start":
             return try await start(params)
         case "pause":
