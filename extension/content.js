@@ -241,7 +241,29 @@
     return false;
   }
 
+  // Meet can move the call into a Document Picture-in-Picture window when the user switches tabs.
+  // The tiles then leave this document, so the scan keeps the last state until the window closes.
+  function pipWindow() {
+    try {
+      const w = window.documentPictureInPicture && window.documentPictureInPicture.window;
+      return w && !w.closed ? w : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function onPipClosed() {
+    // The tiles come back to this document. The leave grace time starts now.
+    lastTileSeenAt = Date.now();
+    log("picture-in-picture closed");
+    scheduleScan();
+  }
+
   function scan() {
+    if (pipWindow()) {
+      lastTileSeenAt = Date.now();
+      return;
+    }
     const seen = new Set();
     for (const el of document.querySelectorAll(CONFIG.participantSelector)) {
       if (!isOutermostTile(el)) continue;
@@ -556,5 +578,11 @@
   });
   setInterval(scan, CONFIG.rescanIntervalMs);
   window.addEventListener("pagehide", () => endCall());
+  if (window.documentPictureInPicture) {
+    window.documentPictureInPicture.addEventListener("enter", (event) => {
+      log("picture-in-picture opened");
+      event.window.addEventListener("pagehide", onPipClosed);
+    });
+  }
   scan();
 })();
