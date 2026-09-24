@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tinta for Meet",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Sends the Google Meet participant list and active speakers to the Tinta app on this computer.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6Y5It1pcYKq5bPCdT+VU6Ag4MYu3DBvymxI8lXE4SekATTE6b5XLd3rPWAQe08EFTds/m+Uz9NDsiafpmbZAYmsgAE1ZIk1ddMNMWmO0GJ6pF/XA8RJ3p9vwV7HteBnMvnXvVGpEXD7Vf/JGUYV3e3dEDYKW2E+cW18T+rT41LfS6NHkIJpeQC0ifH9Yhq6kprh1wUqueEQ0WD7maxZv6FesXkX43PSyjow7Y3i1pNtutZeV4tgHP2PA3NoIqw+sErwE2vJpfTy2Od7qWk1pcSgowxXMjlPF97gZSGFdb234yfJRIZfLXFEFPVsJDUXsS2JVw8EthNyhZOgH0O2w0QIDAQAB",
   "minimum_chrome_version": "116",

@@ -178,7 +178,7 @@ See the [test guide](docs/TESTING.md) for a first real meeting.
 - The extension installs unpacked. It is not in the Chrome Web Store yet.
 - Speaker names come from the Meet page. When Google changes the page, names can stop until the extension gets an update.
 - A Meet room device shows as one participant, so Tinta cannot name the people in the room.
-- Tinta records the macOS default microphone.
+- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track has a gap of about 2 seconds.
 - With speakers, other audio plays a little quieter during a recording.
 
 ## License

@@ -276,6 +276,10 @@ final class ProcessTapCapture: @unchecked Sendable {
 /// Captures the default input device. Voice processing removes echo from the speakers.
 /// With voice processing, channel 0 carries the processed voice. The other channels carry
 /// raw microphone and reference signals, so the capture uses channel 0 only.
+///
+/// AVAudioEngine stops when the audio hardware changes its configuration, for example when
+/// Bluetooth headphones switch to their microphone mode as a call app unmutes. The capture
+/// then starts a new engine. It also starts a new engine when no audio arrives for 2 seconds.
 final class MicCapture: @unchecked Sendable {
     private var engine = AVAudioEngine()
     private let handler: SampleHandler
@@ -283,12 +287,36 @@ final class MicCapture: @unchecked Sendable {
     private let resampler = Resampler()
     private(set) var echoCancellationActive = false
 
+    private let queue = DispatchQueue(label: "tinta.mic")
+    private let lock = NSLock()
+    private var lastBuffer = Date()
+    private var lastRestart = Date.distantPast
+    private var running = false
+    private var watchdog: DispatchSourceTimer?
+    private var observer: NSObjectProtocol?
+    private static let silenceLimit = 2.0
+
     init(echoCancellation: Bool, handler: @escaping SampleHandler) {
         self.echoCancellation = echoCancellation
         self.handler = handler
     }
 
     func start() throws {
+        try queue.sync {
+            try startCapture()
+            running = true
+        }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in self?.checkFlow() }
+        timer.resume()
+        watchdog = timer
+    }
+
+    private func startCapture() throws {
+        lock.lock()
+        lastBuffer = Date()
+        lock.unlock()
         if echoCancellation {
             do {
                 try startEngine(voiceProcessing: true)
@@ -296,15 +324,45 @@ final class MicCapture: @unchecked Sendable {
                 return
             } catch {
                 Output.shared.log("voice processing failed, recording without echo removal: \(error)")
-                engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
-                engine = AVAudioEngine()
-                Output.shared.event(
-                    "warning",
-                    ["message": "Echo removal is not available with this audio device. Use headphones to avoid echo."])
+                resetEngine()
+                if !echoCancellationActive {
+                    Output.shared.event(
+                        "warning",
+                        ["message": "Echo removal is not available with this audio device. Use headphones to avoid echo."])
+                }
+                echoCancellationActive = false
             }
         }
         try startEngine(voiceProcessing: false)
+    }
+
+    /// Stops the current engine and replaces it with a new one. Runs on `queue`.
+    private func resetEngine() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        engine = AVAudioEngine()
+    }
+
+    /// Starts a new engine after a configuration change or a silent input. Runs on `queue`.
+    private func restart(_ reason: String) {
+        guard running, Date().timeIntervalSince(lastRestart) >= Self.silenceLimit else { return }
+        lastRestart = Date()
+        Output.shared.log("microphone capture restarts: \(reason)")
+        resetEngine()
+        do {
+            try startCapture()
+        } catch {
+            Output.shared.log("microphone restart failed: \(error)")
+        }
+    }
+
+    private func checkFlow() {
+        lock.lock()
+        let silent = Date().timeIntervalSince(lastBuffer)
+        lock.unlock()
+        if silent >= Self.silenceLimit { restart("no audio for \(Int(silent)) seconds") }
     }
 
     private func startEngine(voiceProcessing: Bool) throws {
@@ -321,7 +379,12 @@ final class MicCapture: @unchecked Sendable {
         let firstChannel = voiceProcessing && format.channelCount > 1
         let mono = AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false)!
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, time in
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
+            if let self {
+                self.lock.lock()
+                self.lastBuffer = Date()
+                self.lock.unlock()
+            }
             var source = buffer
             if firstChannel, let data = buffer.floatChannelData,
                 let copy = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
@@ -337,10 +400,19 @@ final class MicCapture: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
+        observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            self?.queue.async { self?.restart("the audio configuration changed") }
+        }
     }
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        watchdog?.cancel()
+        watchdog = nil
+        queue.sync {
+            running = false
+            resetEngine()
+        }
     }
 }

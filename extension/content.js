@@ -315,10 +315,11 @@
 
   // Microphone state.
 
+  // Only a visible button counts. A hidden copy, such as the button of the join screen, can keep an old state.
   function micMuted() {
     for (const el of document.querySelectorAll(CONFIG.mutedButtonSelector)) {
       const label = [el.getAttribute("aria-label"), el.getAttribute("data-tooltip"), el.getAttribute("title")].join(" ");
-      if (!CONFIG.micLabelPattern.test(label)) continue;
+      if (!CONFIG.micLabelPattern.test(label) || el.getClientRects().length === 0) continue;
       const value = el.getAttribute("data-is-muted");
       if (value === "true") return true;
       if (value === "false") return false;
@@ -400,6 +401,8 @@
     }
     tracker.tick(performance.now());
     sendSpeakers(false);
+    // The observer reports a mute at once. This check also catches a change that the observer misses.
+    checkMic();
     if (debug) paintSpeaking(new Set(currentSpeakers()));
   }
 
