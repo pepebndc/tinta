@@ -189,7 +189,7 @@ See the [test guide](docs/TESTING.md) for a first real meeting.
 - Names from Zoom and Teams are a beta. Tinta reads the labels of the call window. When Zoom or Microsoft changes the window, names can stop until Tinta gets an update. The Zoom reader reads English and Spanish labels, and it is tested with Zoom Workplace 7.0 on macOS. The Teams reader reads English labels only, and it is tested with Teams 26225 on macOS.
 - In Teams, Tinta reads the names from the video tiles. In a large meeting, Teams does not show a tile for each person, so Tinta does not get the names of the people without a tile.
 - Zoom marks the last person who spoke as the active speaker until another person speaks. Short replies can get the name of the previous speaker, so check the names after the call.
-- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track has a gap of about 2 seconds.
+- Tinta records the macOS default microphone. When the audio device changes during a recording, for example when Bluetooth headphones switch to their microphone mode, your microphone track and the meeting audio can have a gap of up to 3 seconds.
 - With speakers, other audio plays a little quieter during a recording.
 
 ## License

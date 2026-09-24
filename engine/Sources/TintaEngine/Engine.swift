@@ -175,10 +175,7 @@ actor Controller {
             micMuted: params["mic_muted"] as? Bool ?? false)
         try recording.start()
         session = recording
-        return [
-            "start_wall_ms": recording.startWallMs, "route": recording.route.rawValue,
-            "echo_cancellation": recording.echoCancellationActive,
-        ]
+        return ["start_wall_ms": recording.startWallMs]
     }
 
     private func finalize(_ params: [String: Any]) async throws -> [String: Any] {

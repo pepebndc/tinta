@@ -129,8 +129,6 @@ final class RecordingSession: @unchecked Sendable {
     private var paused = false
     private var levels: [Track: Float] = [:]
     private var levelTimer: DispatchSourceTimer?
-    let route: OutputRoute
-    private var routeWarned = false
     /// Remote levels by sample range, for the live echo check. Kept for 60 seconds.
     private var remoteLevels: [(start: Int64, end: Int64, level: Float)] = []
     /// Microphone audio waits here before it is stored or transcribed. A mute in Meet reaches the
@@ -144,7 +142,6 @@ final class RecordingSession: @unchecked Sendable {
         self.directory = directory
         startHost = Clock.now()
         startWallMs = Int64(Date().timeIntervalSince1970 * 1000)
-        route = OutputRoute.current()
         if micMuted { muteChanges = [(0, true)] }
         var writers: [Track: ChunkWriter] = [:]
         var segmenters: [Track: LiveSegmenter] = [:]
@@ -168,7 +165,7 @@ final class RecordingSession: @unchecked Sendable {
         tap = RemoteTap(source: source) { [weak self] samples, host in
             self?.receive(.remote, samples, host)
         }
-        mic = MicCapture(echoCancellation: route == .speakers) { [weak self] samples, host in
+        mic = MicCapture { [weak self] samples, host in
             self?.receive(.mic, samples, host)
         }
     }
@@ -285,12 +282,6 @@ final class RecordingSession: @unchecked Sendable {
     }
 
     private func emitLevels() {
-        if route == .headphones && !routeWarned && OutputRoute.current() == .speakers {
-            routeWarned = true
-            Output.shared.event(
-                "warning",
-                ["message": "The sound now plays through speakers. Echo removal is off for this recording, so use headphones."])
-        }
         let muted = micMutedNow
         lock.lock()
         let mic = muted ? 0 : levels[.mic] ?? 0
@@ -304,8 +295,6 @@ final class RecordingSession: @unchecked Sendable {
                 "mic_muted": muted,
             ])
     }
-
-    var echoCancellationActive: Bool { mic?.echoCancellationActive ?? false }
 
     private final class WeakBox: @unchecked Sendable {
         weak var session: RecordingSession?
