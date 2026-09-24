@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Active, api, Bootstrap, bytes, clock, dateTime, ExtensionState, MeetingDetail, on, Source, Speaker, Turn } from "./api";
+import { Active, api, Bootstrap, bytes, clock, dateTime, ExtensionState, MeetingDetail, on, RETENTION_DAYS, Source, Speaker, Turn } from "./api";
 import { Avatar, Icon } from "./Brand";
 import { PlayButton, stopPlayback } from "./Player";
 import { SummaryPanel } from "./Summary";
@@ -634,7 +634,7 @@ function AudioAndLanguage({ detail, onError, onChanged }: { detail: MeetingDetai
                 api.setAudioRetention(m.id, Number(e.target.value)).then(onChanged).catch((err) => onError(String(err)))
               }
             >
-              {[0, 1, 2, 3, 7, 14, 21, 30].map((d) => (
+              {RETENTION_DAYS.map((d) => (
                 <option key={d} value={d}>
                   {d} days
                 </option>

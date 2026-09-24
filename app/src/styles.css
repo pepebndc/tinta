@@ -446,7 +446,7 @@ input, select, textarea {
   cursor: pointer;
 }
 
-/* Settings, trash, and MCP activity */
+/* Settings, trash, and MCP */
 .settings { padding: 36px 40px; max-width: 840px; }
 .settings .panel h2 { font-size: 14px; }
 .settings ol { line-height: 1.8; padding-left: 20px; }

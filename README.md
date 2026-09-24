@@ -33,7 +33,7 @@ Tinta has no chat and no cloud AI. The transcription, the speaker separation, an
 | **Processing** | Transcription and speaker separation run on your Mac. Tinta has no server and no cloud service. |
 | **Network** | Tinta downloads the speech models once, when you click Install. After that, it makes no network requests: no analytics, no crash reports, and no update checks. |
 | **Storage** | SQLCipher encrypts the library, and AES-GCM encrypts the audio. The key is in your macOS Keychain. Time Machine does not back up the library. |
-| **Audio** | Tinta deletes the audio 7 days after a meeting. You can keep it for up to 30 days, or delete it at once. |
+| **Audio** | By default, Tinta deletes the audio 7 days after a meeting. In Settings, under Storage, you can change this default from 0 to 30 days. You can also change the period of one meeting, or delete its audio at once. |
 | **Summaries** | The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server. A summary can contain mistakes, so check it against the transcript. |
 | **Browser** | The Meet extension reads only participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
 | **MCP** | MCP access is local. An AI client that reads your meetings sends that content to its own model provider. Tinta records every MCP change, so you can undo it. |
@@ -105,7 +105,7 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 ## Connect an MCP client
 
-Settings shows the configuration. For Claude Desktop, add:
+Open **MCP** in the sidebar, and turn on "Allow MCP clients to read and change meetings". The MCP screen shows the configuration. For Claude Desktop, add:
 
 ```json
 {
@@ -119,7 +119,7 @@ For Claude Code, run `claude mcp add tinta /Applications/Tinta.app/Contents/MacO
 
 Tinta must be open. The tools can list, search, and read meetings, including notes, transcripts, and summaries. They can also change titles, tags, folders, notes, summaries, speaker names, and transcript text.
 
-Each meeting has an ID. To give a meeting to an AI client, click **ID · Copy** next to the date of the meeting, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to a 7-day trash. **MCP activity** in the sidebar lists every request and lets you undo each change.
+Each meeting has an ID. To give a meeting to an AI client, click **ID · Copy** next to the date of the meeting, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to a 7-day trash. The **MCP** screen lists every request and lets you undo each change.
 
 Meeting text can contain instructions from other people. Do not let an AI client act on them.
 
@@ -168,7 +168,7 @@ This repository does not include the models. Tinta downloads them at pinned revi
 
 The self-test builds a synthetic meeting with the macOS voices. It runs the final pass, name matching, export, the MCP tools, undo, the trash, and audio retention. It uses its own data folder and does not touch your library. Install the speech models before you run it.
 
-The interface preview accepts these views after `index.html`: `#setup`, `#meeting`, `#recording`, `#settings`, `#onboarding` (with the intro), and `#onboarding-welcome`, `#onboarding-models`, `#onboarding-microphone`, `#onboarding-meet`, or `#onboarding-done`. Production builds do not include the sample data.
+The interface preview accepts these views after `index.html`: `#setup`, `#meeting`, `#recording`, `#settings`, `#mcp`, `#onboarding` (with the intro), and `#onboarding-welcome`, `#onboarding-models`, `#onboarding-microphone`, `#onboarding-meet`, or `#onboarding-done`. Production builds do not include the sample data.
 
 See the [test guide](docs/TESTING.md) for a first real meeting.
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Access, api, Bootstrap, bytes, dateTime, Meeting, on, Revision, StorageUsage } from "./api";
+import { Access, api, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { setTheme, ThemeChoice } from "./theme";
 import { ExtensionSteps, useModelInstall } from "./Onboarding";
@@ -30,7 +30,6 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
   }
 
   const set = (key: string, value: string) => api.setSetting(key, value).then(onChanged).catch((e) => onError(String(e)));
-  const config = JSON.stringify(boot.mcp_config, null, 2);
 
   return (
     <div className="settings">
@@ -63,22 +62,6 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
         <h2>Your name</h2>
         <p className="small muted">The app uses this name for the microphone track.</p>
         <input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => set("self_name", name)} />
-      </section>
-
-      <section className="panel">
-        <h2>MCP</h2>
-        <label>
-          <input type="checkbox" checked={boot.mcp_enabled} onChange={(e) => set("mcp_enabled", String(e.target.checked))} /> Allow
-          MCP clients to read and change meetings
-        </label>
-        <p className="small">
-          An AI client that reads meetings through MCP sends that content to its model provider. Only use clients that your organization
-          approves. Meeting text can contain instructions from other people. Do not let a client act on them.
-        </p>
-        <p className="small muted">Add this server to Claude Desktop or another MCP client:</p>
-        <pre className="code">{config}</pre>
-        <p className="small muted">Claude Code:</p>
-        <pre className="code">claude mcp add tinta "{boot.mcp_path}"</pre>
       </section>
 
       <section className="panel">
@@ -152,6 +135,23 @@ export function Settings({ boot, onChanged, onError }: { boot: Bootstrap; onChan
             <dd className="muted">{bytes(usage.models)}, in a separate folder</dd>
           </dl>
         )}
+        <label>
+          Keep the audio of new meetings for{" "}
+          <select
+            value={boot.audio_retention_days}
+            onChange={(e) => api.setAudioRetentionDays(Number(e.target.value)).then(onChanged).catch((err) => onError(String(err)))}
+          >
+            {RETENTION_DAYS.map((d) => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="small muted">
+          The app deletes the audio this many days after the final pass. The notes and the transcript stay. Existing meetings keep their
+          period. To change one meeting, use the Audio section of the meeting.
+        </p>
         <div className="row">
           <button onClick={changeLocation} disabled={moving}>
             {moving ? "Moving the library…" : "Change location"}
@@ -219,7 +219,10 @@ export function Trash({ onError, onChanged }: { onError: (e: string) => void; on
   );
 }
 
-export function McpActivity({ onError, boot }: { onError: (e: string) => void; boot: Bootstrap | null }) {
+type McpProps = { boot: Bootstrap | null; onChanged: () => void; onError: (e: string) => void };
+
+/** MCP access, the client configuration, the changes by MCP clients, and the access log. */
+export function Mcp({ boot, onChanged, onError }: McpProps) {
   const [data, setData] = useState<{ revisions: Revision[]; access: Access[] }>({ revisions: [], access: [] });
   const load = () => api.mcpActivity().then(setData).catch((e) => onError(String(e)));
   useEffect(() => {
@@ -229,8 +232,34 @@ export function McpActivity({ onError, boot }: { onError: (e: string) => void; b
   }, []);
   return (
     <div className="settings">
-      <h1>MCP activity</h1>
-      {boot && !boot.mcp_enabled && <p className="warn">MCP access is off.</p>}
+      <h1>MCP</h1>
+      {boot && (
+        <section className="panel">
+          <h2>Access</h2>
+          <label>
+            <input
+              type="checkbox"
+              checked={boot.mcp_enabled}
+              onChange={(e) => api.setSetting("mcp_enabled", String(e.target.checked)).then(onChanged).catch((err) => onError(String(err)))}
+            />{" "}
+            Allow MCP clients to read and change meetings
+          </label>
+          <p className="small">
+            An AI client that reads meetings through MCP sends that content to its model provider. Only use clients that your
+            organization approves. Meeting text can contain instructions from other people. Do not let a client act on them.
+          </p>
+        </section>
+      )}
+      {boot && (
+        <section className="panel">
+          <h2>Connect a client</h2>
+          <p className="small muted">Add this server to Claude Desktop or another MCP client:</p>
+          <pre className="code">{JSON.stringify(boot.mcp_config, null, 2)}</pre>
+          <p className="small muted">Claude Code:</p>
+          <pre className="code">claude mcp add tinta "{boot.mcp_path}"</pre>
+          <p className="small muted">Tinta must be open while the client uses it.</p>
+        </section>
+      )}
       <section className="panel">
         <h2>Changes by MCP clients</h2>
         {data.revisions.length === 0 && <p className="muted">No changes.</p>}

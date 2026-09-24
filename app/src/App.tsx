@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Active, api, Bootstrap, dateTime, ExtensionState, Meeting, on, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
-import { McpActivity, Settings, Trash } from "./Settings";
+import { Mcp, Settings, Trash } from "./Settings";
 import { Icon, Lockup } from "./Brand";
 import { Home } from "./Home";
 import { GranolaImport } from "./GranolaImport";
@@ -19,6 +19,7 @@ export function App() {
     const preview = import.meta.env.MODE === "mock" ? window.location.hash.slice(1) : null;
     if (preview === "meeting" || preview === "recording") return { kind: "meeting", id: "m1" };
     if (preview === "settings") return { kind: "settings" };
+    if (preview === "mcp") return { kind: "mcp" };
     return { kind: "home" };
   });
   const [query, setQuery] = useState("");
@@ -216,7 +217,7 @@ export function App() {
             {extensionLive ? (extension?.meeting_code ? `Meet: in call, ${extension.participants.length} people` : "Meet extension connected") : "Meet extension not connected"}
           </div>
           <button className={`quiet ${view.kind === "mcp" ? "current" : ""}`} onClick={() => setView({ kind: "mcp" })}>
-            <Icon name="activity" size={15} /> MCP activity
+            <Icon name="activity" size={15} /> MCP
           </button>
           <button className={`quiet ${view.kind === "trash" ? "current" : ""}`} onClick={() => setView({ kind: "trash" })}>
             <Icon name="trash" size={15} /> Trash
@@ -280,7 +281,7 @@ export function App() {
             <GranolaImport onError={setError} onDone={refreshList} />
           </div>
         )}
-        {view.kind === "mcp" && <McpActivity onError={setError} boot={boot} />}
+        {view.kind === "mcp" && <Mcp boot={boot} onChanged={() => void refreshBoot()} onError={setError} />}
         {view.kind === "home" && boot && (
           <Home
             boot={boot}

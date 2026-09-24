@@ -94,6 +94,8 @@ export type Bootstrap = {
   onboarded: boolean;
   auto_stop: boolean;
   auto_summary: boolean;
+  /** The number of days that new meetings keep their audio. */
+  audio_retention_days: number;
   summaries: { available: boolean; reason?: string };
   filevault: boolean;
   models_installed: boolean;
@@ -123,6 +125,9 @@ export type GranolaPreview = { path: string; total: number; mine: number; shared
 export type GranolaSummary = { imported: number; skipped: number; failed: { title: string; error: string }[] };
 export type StorageUsage = { library: number; audio: number; total: number; models: number };
 export type Access = { id: number; ts: number; session: string; tool: string; meeting_ids: string[]; result: string };
+
+/** The audio retention periods, in days, that the app offers. */
+export const RETENTION_DAYS = [0, 1, 2, 3, 7, 14, 21, 30];
 
 export const api = {
   bootstrap: () => invoke<Bootstrap>("bootstrap"),
@@ -154,6 +159,7 @@ export const api = {
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   deleteAudio: (id: string) => invoke<void>("delete_audio", { id }),
   setAudioRetention: (id: string, days: number) => invoke<number>("set_audio_retention", { id, days }),
+  setAudioRetentionDays: (days: number) => invoke<void>("set_audio_retention_days", { days }),
   exportText: (id: string, format: string) => invoke<string>("export_text", { id, format }),
   exportFile: (id: string, format: string) => invoke<string>("export_file", { id, format }),
   moveLibrary: (parent: string) => invoke<string>("move_library", { parent }),

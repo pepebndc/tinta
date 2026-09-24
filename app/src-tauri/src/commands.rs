@@ -30,6 +30,7 @@ async fn bootstrap() -> CommandResult<Value> {
         "onboarded": setting("onboarded", "false") == "true",
         "auto_stop": setting("auto_stop", "true") == "true",
         "auto_summary": setting("auto_summary", "true") == "true",
+        "audio_retention_days": db.audio_retention_days().map_err(err)?,
         "summaries": summaries,
         "filevault": system::filevault_on(),
         "models_installed": models["installed"].as_bool().unwrap_or(false),
@@ -278,6 +279,12 @@ async fn delete_audio(id: String) -> CommandResult<()> {
     Ok(())
 }
 
+/// Sets how many days new meetings keep their audio. Existing meetings keep their own period.
+#[tauri::command]
+async fn set_audio_retention_days(days: i64) -> CommandResult<()> {
+    state().db.lock().unwrap().set_audio_retention_days(days).map_err(err)
+}
+
 #[tauri::command]
 async fn set_audio_retention(id: String, days: i64) -> CommandResult<i64> {
     state().db.lock().unwrap().set_audio_retention(&id, days, Origin::User).map_err(err)
@@ -476,6 +483,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         delete_meeting,
         delete_audio,
         set_audio_retention,
+        set_audio_retention_days,
         export_text,
         export_file,
         move_library,

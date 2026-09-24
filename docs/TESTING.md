@@ -79,7 +79,7 @@ Imported meetings are in the folder "Granola" with the tag `granola`. Meetings t
 
 ## Connect an MCP client
 
-1. Open Settings and copy the MCP configuration.
-2. Add it to Claude Desktop, or run the `claude mcp add` command in the settings.
+1. Open MCP in the sidebar, turn on MCP access, and copy the configuration.
+2. Add it to Claude Desktop, or run the `claude mcp add` command from the MCP screen.
 3. Keep the app open. The MCP server works only while the app runs.
-4. Check MCP activity in the sidebar. You can undo each change that a client makes.
+4. On the MCP screen, you can undo each change that a client makes.

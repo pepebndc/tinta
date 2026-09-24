@@ -68,7 +68,7 @@ function detail(): MeetingDetail {
 }
 
 const boot: Bootstrap = {
-  self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), auto_stop: true, auto_summary: true, summaries: { available: true }, mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
+  self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), auto_stop: true, auto_summary: true, audio_retention_days: 7, summaries: { available: true }, mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
   models_path: "~/Library/Application Support/FluidAudio/Models", microphone: "granted",
   mcp_path: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp",
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },

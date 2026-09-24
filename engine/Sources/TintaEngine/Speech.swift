@@ -22,6 +22,27 @@ enum ModelPins {
     }
 
     static var modelsRoot: URL { MLModelConfigurationUtils.defaultModelsDirectory() }
+
+    /// The model folder of each pinned repository.
+    static let folders: [String: String] = [
+        "parakeet-tdt-0.6b-v3": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+        "silero-vad": "FluidInference/silero-vad-coreml",
+        "speaker-diarization": "FluidInference/speaker-diarization-coreml",
+    ]
+
+    /// FluidAudio downloads a model folder again when its revision marker is missing or different.
+    /// Other FluidAudio clients on this Mac share the folders and can replace a marker. The engine
+    /// calls this only after every file matches the pinned manifest, so the pinned revision is correct.
+    static func writeRevisionMarkers() {
+        for (folder, repo) in folders {
+            guard let revision = revisions[repo] else { continue }
+            let marker = modelsRoot.appendingPathComponent(folder).appendingPathComponent(".fluidaudio-revision")
+            let current = (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if current != revision {
+                try? Data((revision + "\n").utf8).write(to: marker, options: .atomic)
+            }
+        }
+    }
 }
 
 struct Word {
@@ -63,6 +84,7 @@ actor Speech {
                 throw EngineError("model file does not match its pinned hash: \(path). Install the models again.")
             }
         }
+        ModelPins.writeRevisionMarkers()
         verified = true
     }
 

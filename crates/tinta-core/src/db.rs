@@ -1,5 +1,7 @@
 use crate::keys::Keys;
 use crate::{now_ms, DAY_MS, DEFAULT_AUDIO_RETENTION_DAYS, MAX_AUDIO_RETENTION_DAYS, TRASH_DAYS};
+
+const AUDIO_RETENTION_SETTING: &str = "audio_retention_days";
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
@@ -417,6 +419,20 @@ impl Db {
         Ok(())
     }
 
+    /// The number of days that new meetings keep their audio: the `audio_retention_days` setting,
+    /// or `DEFAULT_AUDIO_RETENTION_DAYS`.
+    pub fn audio_retention_days(&self) -> Result<i64> {
+        let stored = self.setting(AUDIO_RETENTION_SETTING)?.and_then(|v| v.parse::<i64>().ok());
+        Ok(stored.filter(|d| (0..=MAX_AUDIO_RETENTION_DAYS).contains(d)).unwrap_or(DEFAULT_AUDIO_RETENTION_DAYS))
+    }
+
+    pub fn set_audio_retention_days(&self, days: i64) -> Result<()> {
+        if !(0..=MAX_AUDIO_RETENTION_DAYS).contains(&days) {
+            bail!("the retention period must be between 0 and {MAX_AUDIO_RETENTION_DAYS} days");
+        }
+        self.set_setting(AUDIO_RETENTION_SETTING, &days.to_string())
+    }
+
     // MARK: Meetings
 
     pub fn create_meeting(&self, title: &str, source: Option<&str>) -> Result<Meeting> {
@@ -765,6 +781,7 @@ impl Db {
             bail!("the transcript has user edits; the final pass does not overwrite them");
         }
         let live = self.turns(id)?;
+        let audio_until = now_ms() + self.audio_retention_days()? * DAY_MS;
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM turns WHERE meeting_id = ?1", [id])?;
         tx.execute("DELETE FROM speakers WHERE meeting_id = ?1", [id])?;
@@ -797,7 +814,6 @@ impl Db {
                 params![id, t.track, speaker_id, t.start, t.end, t.text, live_name, changed as i64],
             )?;
         }
-        let audio_until = now_ms() + DEFAULT_AUDIO_RETENTION_DAYS * DAY_MS;
         tx.execute(
             "UPDATE meetings SET state = 'ready', error = NULL, duration = ?2, language = COALESCE(?3, language), audio_until = COALESCE(audio_until, ?4) WHERE id = ?1",
             params![id, duration, language, audio_until],
@@ -1088,6 +1104,7 @@ impl Db {
     /// Meetings whose audio must go now: expired audio, audio in the trash for 7 days,
     /// and unfinished meetings older than the default period.
     pub fn expired_audio(&self, now: i64) -> Result<Vec<String>> {
+        let default_days = self.audio_retention_days()?;
         let mut stmt = self.conn.prepare(
             "SELECT id FROM meetings WHERE audio_deleted = 0 AND state NOT IN ('recording', 'processing') AND (
                 (audio_until IS NOT NULL AND audio_until <= ?1)
@@ -1095,7 +1112,7 @@ impl Db {
                 OR (audio_until IS NULL AND created_at <= ?3))",
         )?;
         let rows = stmt.query_map(
-            params![now, now - TRASH_DAYS * DAY_MS, now - DEFAULT_AUDIO_RETENTION_DAYS * DAY_MS],
+            params![now, now - TRASH_DAYS * DAY_MS, now - default_days * DAY_MS],
             |r| r.get(0),
         )?;
         rows.map(|r| r.map_err(Into::into)).collect()
@@ -1183,5 +1200,21 @@ impl Db {
             Ok(SearchHit { meeting_id: r.get(0)?, title: r.get(1)?, kind: r.get(2)?, snippet: r.get(3)? })
         })?;
         rows.map(|r| r.map_err(Into::into)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keys::Keys;
+
+    #[test]
+    fn audio_retention_default_follows_the_setting() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        assert_eq!(db.audio_retention_days().unwrap(), DEFAULT_AUDIO_RETENTION_DAYS);
+        db.set_audio_retention_days(14).unwrap();
+        assert_eq!(db.audio_retention_days().unwrap(), 14);
+        assert!(db.set_audio_retention_days(MAX_AUDIO_RETENTION_DAYS + 1).is_err());
+        assert_eq!(db.audio_retention_days().unwrap(), 14);
     }
 }

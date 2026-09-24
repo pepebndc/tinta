@@ -129,7 +129,7 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
       <Markdown text={summary.content} />
       <p className="small muted summary-note">
         {summary.written_by === "MCP client"
-          ? `Changed by an MCP client, ${dateTime(summary.updated_at)}. Undo the change in MCP activity.`
+          ? `Changed by an MCP client, ${dateTime(summary.updated_at)}. Undo the change on the MCP screen.`
           : `Written by the ${summary.written_by} on this Mac, ${dateTime(summary.updated_at)}.`}{" "}
         It can contain mistakes. Check it against the transcript.
       </p>
