@@ -645,7 +645,7 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 .summary-panel.empty { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .summary-panel.empty p { margin: 0; }
 .summary-actions { display: flex; gap: 6px; }
-.summary-text { font-size: 13px; line-height: 1.65; color: var(--text); max-width: 900px; }
+.summary-text { font-size: 13px; line-height: 1.65; color: var(--text); }
 .summary-text p { margin: 0 0 10px; }
 .summary-text h3 { font-size: 12px; font-weight: 600; color: var(--ink); margin: 14px 0 6px; }
 .summary-text ul { margin: 0 0 8px; padding-left: 18px; }
@@ -701,3 +701,5 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 @media (max-width: 1100px) {
   .mcp-layout { grid-template-columns: minmax(0, 1fr); }
 }
+.info-bar > span.export-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-bar > button.quiet { flex-shrink: 0; font-size: 12px; }

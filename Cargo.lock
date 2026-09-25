@@ -3664,13 +3664,14 @@ dependencies = [
 
 [[package]]
 name = "tinta"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "block2",
  "libc",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "objc2-user-notifications",
  "serde",
@@ -3684,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3703,7 +3704,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-mcp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3713,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-native-host"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3722,7 +3723,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-selftest"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde_json",

@@ -134,3 +134,21 @@ pub fn open_call(link: &tinta_core::calendar::Link) -> String {
     // The default browser is not known, so the recording takes all system audio.
     "all".to_string()
 }
+
+/// Puts a file on the clipboard, so the user can paste the file in Finder, Mail, or a chat app.
+pub fn copy_file(path: &Path) -> Result<()> {
+    use objc2::runtime::ProtocolObject;
+    use objc2_app_kit::{NSPasteboard, NSPasteboardWriting};
+    use objc2_foundation::{NSArray, NSString, NSURL};
+    if !path.is_file() {
+        anyhow::bail!("{} does not exist", path.display());
+    }
+    let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+    let objects: [objc2::rc::Retained<ProtocolObject<dyn NSPasteboardWriting>>; 1] = [ProtocolObject::from_retained(url)];
+    let board = NSPasteboard::generalPasteboard();
+    board.clearContents();
+    if !board.writeObjects(&NSArray::from_retained_slice(&objects)) {
+        anyhow::bail!("Tinta cannot put the file on the clipboard");
+    }
+    Ok(())
+}

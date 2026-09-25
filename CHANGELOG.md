@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 (2026-09-25)
+
+### Added
+- After an export, the notice has **Copy path** and **Copy file** buttons. Paste the copied file in Finder, Mail, or a chat app.
+
+### Fixed
+- The summary text uses the full width of the summary card.
+
 ## 0.3.0 (2026-09-25)
 
 ### Added

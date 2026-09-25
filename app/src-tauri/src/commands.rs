@@ -466,6 +466,12 @@ fn export_to_downloads(id: &str, format: &str) -> CommandResult<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Puts an exported file on the clipboard.
+#[tauri::command]
+async fn copy_file(path: String) -> CommandResult<()> {
+    system::copy_file(std::path::Path::new(&path)).map_err(err)
+}
+
 /// The usual export folder, if it exists.
 #[tauri::command]
 async fn granola_default_path() -> CommandResult<Option<String>> {
@@ -636,6 +642,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_audio_retention_days,
         export_text,
         export_file,
+        copy_file,
         move_library,
         show_library,
         prepare_extension,

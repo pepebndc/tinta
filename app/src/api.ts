@@ -238,6 +238,8 @@ export const api = {
   setAudioRetentionDays: (days: number) => invoke<void>("set_audio_retention_days", { days }),
   exportText: (id: string, format: string) => invoke<string>("export_text", { id, format }),
   exportFile: (id: string, format: string) => invoke<string>("export_file", { id, format }),
+  /** Puts a file on the clipboard, so the user can paste it in Finder, Mail, or a chat app. */
+  copyFile: (path: string) => invoke<void>("copy_file", { path }),
   moveLibrary: (parent: string) => invoke<string>("move_library", { parent }),
   showLibrary: () => invoke<void>("show_library"),
   prepareExtension: () => invoke<string>("prepare_extension"),

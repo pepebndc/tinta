@@ -136,6 +136,7 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     granola_preview: { path: "/Users/sam/granola-export", total: 128, mine: 120, shared: 8, already_imported: 0 },
     trash: [],
     storage_usage: { library: 4_200_000, audio: 312_000_000, total: 316_200_000, models: 486_000_000 },
+    export_file: "/Users/sam/Downloads/Design review.md",
     prepare_extension: "/Users/sam/Library/Application Support/Tinta/Chrome extension",
     mcp_activity: {
       revisions: [],

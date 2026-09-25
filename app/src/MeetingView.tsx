@@ -74,6 +74,8 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
   const [source, setSource] = useState(boot?.last_source ?? "com.google.Chrome");
   const [progress, setProgress] = useState<{ stage: string; fraction: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  /** The path of the last export, for the notice with the copy buttons. */
+  const [exported, setExported] = useState<string | null>(null);
   const [busy, setBusy] = useState<"starting" | "stopping" | null>(null);
   const notesTimer = useRef<number | undefined>(undefined);
   const notesSaving = useRef(0);
@@ -264,7 +266,7 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
             {dateTime(m.started_at ?? m.created_at)}
             {m.language && <> · {languageName(m.language)}</>}
           </div>
-          <MeetingTools detail={detail} recording={recordingHere} onError={onError} onDeleted={onDeleted} onMessage={setMessage} onChanged={load} />
+          <MeetingTools detail={detail} recording={recordingHere} onError={onError} onDeleted={onDeleted} onMessage={setMessage} onExported={setExported} onChanged={load} />
         </div>
         <input
           className="title"
@@ -302,6 +304,7 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
           <CloseButton onClick={() => setMessage(null)} />
         </div>
       )}
+      {exported && <ExportedBar path={exported} onError={onError} onClose={() => setExported(null)} />}
 
       {m.state === "draft" && !recordingHere && (
         <section className="panel record-panel">
@@ -1027,15 +1030,44 @@ type ToolsProps = {
   onError: (e: string) => void;
   onDeleted: (id: string, title: string) => void;
   onMessage: (m: string) => void;
+  onExported: (path: string) => void;
   onChanged: () => void;
 };
 
-function MeetingTools({ detail, recording, onError, onDeleted, onMessage, onChanged }: ToolsProps) {
+/** The notice after an export, with buttons that copy the path or the file. */
+function ExportedBar({ path, onError, onClose }: { path: string; onError: (e: string) => void; onClose: () => void }) {
+  const [copied, setCopied] = useState<"path" | "file" | null>(null);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(null), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  useEffect(() => setCopied(null), [path]);
+  const copy = (kind: "path" | "file") =>
+    (kind === "path" ? navigator.clipboard.writeText(path) : api.copyFile(path))
+      .then(() => setCopied(kind))
+      .catch((e) => onError(String(e)));
+  return (
+    <div className="info-bar" role="status">
+      <span className="export-path" title={path}>
+        Exported to {path}
+      </span>
+      <button className="quiet" onClick={() => copy("path")}>
+        {copied === "path" ? "Copied" : "Copy path"}
+      </button>
+      <button className="quiet" onClick={() => copy("file")} title="Copy the file, to paste it in Finder, Mail, or a chat app">
+        {copied === "file" ? "Copied" : "Copy file"}
+      </button>
+      <CloseButton onClick={onClose} />
+    </div>
+  );
+}
+
+function MeetingTools({ detail, recording, onError, onDeleted, onMessage, onExported, onChanged }: ToolsProps) {
   const m = detail.meeting;
   async function exportAs(format: string) {
     try {
-      const path = await api.exportFile(m.id, format);
-      onMessage(`Exported to ${path}`);
+      onExported(await api.exportFile(m.id, format));
     } catch (e) {
       onError(String(e));
     }
