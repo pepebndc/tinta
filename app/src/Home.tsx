@@ -15,6 +15,7 @@ type Props = {
   onOpen: (id: string) => void;
   onRecordCall: (source: string) => void;
   onSettings: () => void;
+  onAllowMicrophone: () => void;
   onRetry: (id: string) => void;
   /** A new meeting or a recording is starting. */
   busy: boolean;
@@ -29,7 +30,7 @@ function greeting(name: string, now: Date): string {
   return first ? `${part}, ${first}` : part;
 }
 
-export function Home({ boot, meetings, previews, onFilter, active, extension, calls, onOpen, onRecordCall, onSettings, onRetry, busy }: Props) {
+export function Home({ boot, meetings, previews, onFilter, active, extension, calls, onOpen, onRecordCall, onSettings, onAllowMicrophone, onRetry, busy }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -45,7 +46,9 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
   const setup = boot
     ? [
         { done: boot.models_installed, label: "Install the speech models", detail: "About 500 MB, once. This is the only download.", action: onSettings },
-        { done: boot.microphone === "granted", label: "Allow the microphone", detail: "macOS asks at the first recording.", action: onSettings },
+        boot.microphone === "denied"
+          ? { done: false, label: "Allow the microphone", detail: "macOS blocks it. Turn on Tinta in the Microphone settings.", action: onAllowMicrophone }
+          : { done: boot.microphone === "granted", label: "Allow the microphone", detail: "macOS asks you one time.", action: onAllowMicrophone },
         { done: everConnected, label: "Connect the Meet extension", detail: "Remote speakers get names on Google Meet in Chrome.", action: onSettings },
         { done: boot.filevault, label: "Turn on FileVault", detail: "System Settings, Privacy and Security.", action: undefined },
       ]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Active, api, AppCall, Bootstrap, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
+import { Active, allowMicrophone, api, AppCall, Bootstrap, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
 import { MeetingList, Notice, pressable, tagList } from "./MeetingList";
 import { Mcp, Settings, Trash } from "./Settings";
@@ -70,6 +70,15 @@ export function App() {
   useEffect(() => {
     void refreshBoot();
   }, [refreshBoot]);
+
+  // A change in System Settings shows when the user comes back to Tinta.
+  const micAllowed = boot?.microphone === "granted";
+  useEffect(() => {
+    if (!boot || micAllowed) return;
+    const focus = () => void refreshBoot();
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
+  }, [!!boot, micAllowed, refreshBoot]);
 
   useEffect(() => {
     void refreshList();
@@ -390,6 +399,12 @@ export function App() {
             busy={creating}
             onRecordCall={recordCall}
             onSettings={() => setView({ kind: "settings" })}
+            onAllowMicrophone={() =>
+              boot &&
+              allowMicrophone(boot.microphone)
+                .then(refreshBoot)
+                .catch((e) => setError(String(e)))
+            }
             onRetry={(id) => api.runFinalPass(id, null).then(refreshList).catch((e) => setError(String(e)))}
           />
         )}

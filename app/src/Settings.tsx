@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Access, api, AppCall, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
+import { Access, allowMicrophone, api, AppCall, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { setTheme, ThemeChoice } from "./theme";
@@ -53,7 +53,7 @@ export function Settings({ boot, calls, onGranola, onChanged, onError }: Props) 
     try {
       await api.setSetting("call_reading", String(enabled));
       if (enabled && !(await api.requestAccessibility()).granted) {
-        await api.openAccessibilitySettings();
+        await api.openPrivacySettings("accessibility");
       }
       onChanged();
     } catch (e) {
@@ -151,7 +151,9 @@ export function Settings({ boot, calls, onGranola, onChanged, onError }: Props) 
         ) : (
           <div className="row">
             <span>{boot.microphone === "denied" ? "macOS does not allow microphone access for Tinta." : "Tinta does not have microphone access yet."}</span>
-            <button onClick={() => api.requestMicrophone().then(onChanged).catch((e) => onError(String(e)))}>Allow microphone</button>
+            <button onClick={() => allowMicrophone(boot.microphone).then(onChanged).catch((e) => onError(String(e)))}>
+              {boot.microphone === "denied" ? "Open Microphone settings" : "Allow microphone"}
+            </button>
           </div>
         )}
         <p className="small">
@@ -184,7 +186,7 @@ export function Settings({ boot, calls, onGranola, onChanged, onError }: Props) 
         {boot.call_reading && !boot.accessibility && (
           <div className="row">
             <span className="warn small">macOS does not allow Accessibility access for Tinta.</span>
-            <button onClick={() => api.openAccessibilitySettings().catch((e) => onError(String(e)))}>Open Accessibility settings</button>
+            <button onClick={() => api.openPrivacySettings("accessibility").catch((e) => onError(String(e)))}>Open Accessibility settings</button>
             <button onClick={onChanged}>Check again</button>
           </div>
         )}

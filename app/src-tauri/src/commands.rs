@@ -82,11 +82,16 @@ async fn request_accessibility() -> CommandResult<Value> {
     blocking(|| state().engine.call("request_accessibility", json!({}), Duration::from_secs(10)).map_err(err)).await
 }
 
-/// Opens the Accessibility pane of System Settings.
+/// Opens a Privacy and Security pane of System Settings: "accessibility" or "microphone".
 #[tauri::command]
-async fn open_accessibility_settings() -> CommandResult<()> {
+async fn open_privacy_settings(pane: String) -> CommandResult<()> {
+    let anchor = match pane.as_str() {
+        "accessibility" => "Privacy_Accessibility",
+        "microphone" => "Privacy_Microphone",
+        other => return Err(format!("unknown settings pane {other}")),
+    };
     std::process::Command::new("/usr/bin/open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .arg(format!("x-apple.systempreferences:com.apple.preference.security?{anchor}"))
         .status()
         .map_err(err)?;
     Ok(())
@@ -568,7 +573,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         install_models,
         request_microphone,
         request_accessibility,
-        open_accessibility_settings,
+        open_privacy_settings,
         save_call_report,
         list_sources,
         list_meetings,

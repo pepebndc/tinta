@@ -159,7 +159,7 @@ export const api = {
   installModels: () => invoke<unknown>("install_models"),
   requestMicrophone: () => invoke<{ granted: boolean }>("request_microphone"),
   requestAccessibility: () => invoke<{ granted: boolean }>("request_accessibility"),
-  openAccessibilitySettings: () => invoke<void>("open_accessibility_settings"),
+  openPrivacySettings: (pane: "accessibility" | "microphone") => invoke<void>("open_privacy_settings", { pane }),
   saveCallReport: (app: string, path: string) => invoke<void>("save_call_report", { app, path }),
   listSources: () => invoke<{ sources: Source[]; default_input: string; route: "speakers" | "headphones" }>("list_sources"),
   /** All meetings that are not in the trash, archived meetings too. */
@@ -207,6 +207,14 @@ export const api = {
   mcpActivity: () => invoke<{ revisions: Revision[]; access: Access[] }>("mcp_activity"),
   undo: (revisionId: number) => invoke<void>("undo", { revisionId }),
 };
+
+/**
+ * Asks macOS for the microphone. macOS shows its prompt only one time, so after a denial
+ * this opens the Microphone pane of System Settings.
+ */
+export function allowMicrophone(status: Bootstrap["microphone"]): Promise<unknown> {
+  return status === "denied" ? api.openPrivacySettings("microphone") : api.requestMicrophone();
+}
 
 // One model installation at a time, shared by the setup flow and Settings.
 let installation: Promise<unknown> | null = null;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Bootstrap, ExtensionState, installModels, installRunning, on } from "./api";
+import { allowMicrophone, api, Bootstrap, ExtensionState, installModels, installRunning, on } from "./api";
 import { CloseButton, CopyButton, Icon, InkMark, Wordmark } from "./Brand";
 import { setTheme, ThemeChoice } from "./theme";
 
@@ -260,22 +260,20 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
                 <p className="step-done">
                   <span className="check">✓</span> Tinta can use the microphone.
                 </p>
-              ) : boot.microphone === "denied" ? (
-                <p className="warn">
-                  macOS blocks the microphone. Open System Settings, Privacy and Security, Microphone, and turn on Tinta.
-                </p>
               ) : (
-                <button
-                  className="primary big"
-                  onClick={() =>
-                    api
-                      .requestMicrophone()
-                      .then(onChanged)
-                      .catch((e) => onError(String(e)))
-                  }
-                >
-                  Allow microphone
-                </button>
+                <>
+                  {boot.microphone === "denied" && <p className="warn">macOS blocks the microphone. Turn on Tinta in the Microphone settings.</p>}
+                  <button
+                    className="primary big"
+                    onClick={() =>
+                      allowMicrophone(boot.microphone)
+                        .then(onChanged)
+                        .catch((e) => onError(String(e)))
+                    }
+                  >
+                    {boot.microphone === "denied" ? "Open Microphone settings" : "Allow microphone"}
+                  </button>
+                </>
               )}
               <p className="small muted">Headphones give the best transcript. With speakers, Tinta removes the echo of the call.</p>
             </>

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 (2026-09-25)
+
+### Changed
+- **Allow the microphone** on Home asks macOS at once, and does not open Settings.
+- When macOS blocks the microphone, Home, Settings, and the first-run setup open the Microphone pane of System Settings.
+- Home shows the new microphone state when you come back to Tinta from System Settings.
+
 ## 0.2.1 (2026-09-25)
 
 ### Fixed
