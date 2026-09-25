@@ -15,7 +15,7 @@ struct Engine {
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.2.0"])
+        Output.shared.event("ready", ["version": "0.2.1"])
         Controller.calls.start()
         Task.detached { await controller.prewarm() }
         let reader = Thread {

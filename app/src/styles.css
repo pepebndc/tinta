@@ -385,7 +385,8 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 .rec-dot.big { width: 12px; height: 12px; margin-top: 0; }
 .rec-dot.paused { animation: none; opacity: 0.5; }
 @keyframes pulse { 50% { opacity: 0.35; } }
-.meter { width: 170px; }
+/* The meters shrink on narrow windows, so Pause and Stop stay on the row. */
+.meter { flex: 1 1 110px; min-width: 90px; max-width: 170px; }
 .meter .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meter-bar { height: 5px; background: var(--back); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .meter-bar div { height: 100%; background: var(--accent-strong); transform-origin: left; transform: scaleX(0); transition: transform 0.2s; }
@@ -600,11 +601,14 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 }
 
 /* Meeting workspace: notes and transcript fill the window. */
-.workspace { display: grid; flex: 1 0 auto; min-height: 380px; margin-bottom: 20px; }
-.workspace.stacked { min-height: 560px; }
+/* The notes and the transcript get their size from the window, never from their content. Their content scrolls inside them.
+   During a recording, the panes fill the rest of the window. A small window keeps a minimum size, and the page scrolls to it. */
+.workspace { display: grid; flex: 1 1 0; min-height: clamp(320px, 55vh, 640px); margin-bottom: 20px; }
+.workspace.side { grid-template-rows: minmax(0, 1fr); }
+.workspace.stacked { min-height: clamp(480px, 72vh, 900px); }
 /* With speakers and audio below, the panes get a fixed share of the window, so the page shows the sections below. */
-.workspace.with-details { flex: 0 0 auto; min-height: 0; height: clamp(360px, 58vh, 960px); }
-.workspace.stacked.with-details { height: clamp(560px, 76vh, 1500px); }
+.workspace.with-details { flex: none; min-height: 0; height: clamp(360px, 62vh, 960px); }
+.workspace.stacked.with-details { height: clamp(520px, 80vh, 1400px); }
 .workspace .column { margin: 0; display: flex; flex-direction: column; min-width: 0; min-height: 180px; }
 .workspace.side .column { min-width: 260px; }
 .workspace .column-head { flex-shrink: 0; }

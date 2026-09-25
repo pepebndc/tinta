@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 (2026-09-25)
+
+### Fixed
+- During a recording, a long transcript scrolls inside its box. The page no longer grows with the transcript.
+- The notes and the transcript get their size from the window, with a minimum size for small windows.
+- On narrow windows, Pause and Stop stay on the row of the recording controls.
+
 ## 0.2.0 (2026-09-25)
 
 ### Added
