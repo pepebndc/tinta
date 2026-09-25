@@ -1,6 +1,6 @@
 //! Commands for the app window.
 
-use crate::{names_for, state, system};
+use crate::{copy_dir, state, system, MCP_ENABLED_DEFAULT};
 use tinta_core::db::Origin;
 use tinta_core::export::{self, Document};
 use tinta_core::paths;
@@ -13,39 +13,55 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// Runs work that blocks, such as an engine call or a file copy, on the blocking thread pool.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> CommandResult<T> + Send + 'static) -> CommandResult<T> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(err)?
+}
+
 #[tauri::command]
 async fn bootstrap() -> CommandResult<Value> {
-    let s = state();
-    let models = s.engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
-    let permissions = s.engine.call("permissions", json!({}), Duration::from_secs(10)).unwrap_or(json!({}));
-    let summaries = s.engine.call("summary_status", json!({}), Duration::from_secs(10)).unwrap_or(json!({"available": false}));
-    let db = s.db.lock().unwrap();
-    let setting = |key: &str, default: &str| db.setting(key).ok().flatten().unwrap_or_else(|| default.to_string());
-    let mcp_path = system::helper_path("tinta-mcp");
-    Ok(json!({
-        "self_name": db.setting("self_name").ok().flatten().unwrap_or_else(system::full_name),
-        "mcp_enabled": setting("mcp_enabled", "true") == "true",
-        "last_source": setting("last_source", "com.google.Chrome"),
-        "theme": setting("theme", "system"),
-        "onboarded": setting("onboarded", "false") == "true",
-        "auto_stop": setting("auto_stop", "true") == "true",
-        "auto_summary": setting("auto_summary", "true") == "true",
-        "audio_retention_days": db.audio_retention_days().map_err(err)?,
-        "call_reading": setting("call_reading", "false") == "true",
-        "accessibility": permissions["accessibility"].as_bool().unwrap_or(false),
-        "summaries": summaries,
-        "filevault": system::filevault_on(),
-        "models_installed": models["installed"].as_bool().unwrap_or(false),
-        "models_path": models["path"],
-        "microphone": permissions["microphone"],
-        "mcp_path": mcp_path,
-        "mcp_config": {"mcpServers": {"tinta": {"command": mcp_path}}},
-        "extension_id": system::EXTENSION_ID,
-        "data_dir": paths::data_dir(),
-        "active": *s.active.lock().unwrap(),
-        "extension": *s.extension.lock().unwrap(),
-        "calls": *s.calls.lock().unwrap(),
-    }))
+    blocking(|| {
+        let s = state();
+        let models = s.engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
+        let permissions = s.engine.call("permissions", json!({}), Duration::from_secs(10)).unwrap_or(json!({}));
+        let summaries =
+            s.engine.call("summary_status", json!({}), Duration::from_secs(10)).unwrap_or(json!({"available": false}));
+        let mcp_path = system::helper_path("tinta-mcp");
+        let mut result = {
+            let db = s.db.lock().unwrap();
+            let setting = |key: &str, default: &str| db.setting(key).ok().flatten().unwrap_or_else(|| default.to_string());
+            json!({
+                "self_name": db.setting("self_name").ok().flatten().unwrap_or_else(system::full_name),
+                "mcp_enabled": setting("mcp_enabled", MCP_ENABLED_DEFAULT) == "true",
+                "last_source": setting("last_source", "com.google.Chrome"),
+                "theme": setting("theme", "system"),
+                "onboarded": setting("onboarded", "false") == "true",
+                "auto_stop": setting("auto_stop", "true") == "true",
+                "auto_summary": setting("auto_summary", "true") == "true",
+                "audio_retention_days": db.audio_retention_days().map_err(err)?,
+                "call_reading": setting("call_reading", "false") == "true",
+            })
+        };
+        // The app takes the locks one at a time.
+        result["active"] = json!(*s.active.lock().unwrap());
+        result["extension"] = json!(*s.extension.lock().unwrap());
+        result["calls"] = json!(*s.calls.lock().unwrap());
+        for (key, value) in [
+            ("accessibility", json!(permissions["accessibility"].as_bool().unwrap_or(false))),
+            ("summaries", summaries),
+            ("filevault", json!(system::filevault_on())),
+            ("models_installed", json!(models["installed"].as_bool().unwrap_or(false))),
+            ("models_path", models["path"].clone()),
+            ("microphone", permissions["microphone"].clone()),
+            ("mcp_config", json!({"mcpServers": {"tinta": {"command": mcp_path}}})),
+            ("mcp_path", json!(mcp_path)),
+            ("data_dir", json!(paths::data_dir())),
+        ] {
+            result[key] = value;
+        }
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -56,14 +72,14 @@ async fn set_setting(key: String, value: String) -> CommandResult<()> {
     }
     state().db.lock().unwrap().set_setting(&key, &value).map_err(err)?;
     if key == "call_reading" {
-        crate::watch_calls();
+        crate::watch_calls(Duration::ZERO);
     }
     Ok(())
 }
 
 #[tauri::command]
 async fn request_accessibility() -> CommandResult<Value> {
-    state().engine.call("request_accessibility", json!({}), Duration::from_secs(10)).map_err(err)
+    blocking(|| state().engine.call("request_accessibility", json!({}), Duration::from_secs(10)).map_err(err)).await
 }
 
 /// Opens the Accessibility pane of System Settings.
@@ -80,31 +96,41 @@ async fn open_accessibility_settings() -> CommandResult<()> {
 /// The dump helps to fix the reading of Zoom and Microsoft Teams. It can contain any text of the window.
 #[tauri::command]
 async fn save_call_report(app: String, path: String) -> CommandResult<()> {
-    let result = state().engine.call("call_report", json!({"app": app}), Duration::from_secs(20)).map_err(err)?;
-    let text = result["text"].as_str().unwrap_or_default();
-    std::fs::write(&path, text).map_err(err)
+    blocking(move || {
+        let result = state().engine.call("call_report", json!({"app": app}), Duration::from_secs(20)).map_err(err)?;
+        let text = result["text"].as_str().unwrap_or_default();
+        std::fs::write(&path, text).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
 async fn install_models() -> CommandResult<Value> {
-    state().engine.call("install_models", json!({}), Duration::from_secs(60 * 60)).map_err(err)
+    blocking(|| state().engine.call("install_models", json!({}), Duration::from_secs(60 * 60)).map_err(err)).await
 }
 
 #[tauri::command]
 async fn request_microphone() -> CommandResult<Value> {
-    state().engine.call("request_microphone", json!({}), Duration::from_secs(120)).map_err(err)
+    blocking(|| state().engine.call("request_microphone", json!({}), Duration::from_secs(120)).map_err(err)).await
 }
 
 #[tauri::command]
 async fn list_sources() -> CommandResult<Value> {
-    state().engine.call("list_sources", json!({}), Duration::from_secs(10)).map_err(err)
+    blocking(|| state().engine.call("list_sources", json!({}), Duration::from_secs(10)).map_err(err)).await
 }
 
+/// The number of meetings that Home shows as cards.
+const HOME_CARDS: usize = 8;
+
 #[tauri::command]
-async fn list_meetings(include_archived: bool) -> CommandResult<Value> {
+async fn list_meetings() -> CommandResult<Value> {
     let s = state();
     let db = s.db.lock().unwrap();
-    Ok(json!({"meetings": db.meetings(include_archived).map_err(err)?, "folders": db.folders().map_err(err)?}))
+    Ok(json!({
+        "meetings": db.meetings(true).map_err(err)?,
+        "folders": db.folders().map_err(err)?,
+        "previews": db.previews(HOME_CARDS).map_err(err)?,
+    }))
 }
 
 #[tauri::command]
@@ -126,27 +152,35 @@ async fn create_meeting(title: Option<String>) -> CommandResult<Value> {
 
 #[tauri::command]
 async fn get_meeting(id: String) -> CommandResult<Value> {
-    let s = state();
-    let db = s.db.lock().unwrap();
-    let doc = Document::load(&db, &id).map_err(err)?;
-    Ok(json!({
-        "meeting": doc.meeting,
-        "notes": doc.notes,
-        "speakers": doc.speakers.iter().filter(|sp| sp.merged_into.is_none()).collect::<Vec<_>>(),
-        "turns": doc.turns,
-        "names": names_for(&db, &id).map_err(err)?,
-        "participants": db.participants(&id).map_err(err)?,
-        "has_edits": db.has_edits(&id).map_err(err)?,
-        "finalizing": s.finalizing.lock().unwrap().contains(&id),
-        "audio_bytes": dir_size(&paths::audio_dir(&id)),
-        "summary": db.summary(&id).map_err(err)?,
-        "summarizing": s.summarizing.lock().unwrap().contains(&id),
-    }))
+    blocking(move || {
+        let s = state();
+        let (doc, participants, has_edits, summary) = {
+            let db = s.db.lock().unwrap();
+            let doc = Document::load(&db, &id).map_err(err)?;
+            (doc, db.participants(&id).map_err(err)?, db.has_edits(&id).map_err(err)?, db.summary(&id).map_err(err)?)
+        };
+        Ok(json!({
+            "names": doc.names(),
+            "meeting": doc.meeting,
+            "notes": doc.notes,
+            "speakers": doc.speakers.iter().filter(|sp| sp.merged_into.is_none()).collect::<Vec<_>>(),
+            "turns": doc.turns,
+            "participants": participants,
+            "has_edits": has_edits,
+            "audio_bytes": dir_size(&paths::audio_dir(&id)),
+            "summary": summary,
+            "summarizing": s.summarizing.lock().unwrap().contains(&id),
+        }))
+    })
+    .await
 }
 
 #[tauri::command]
 async fn set_title(id: String, title: String) -> CommandResult<()> {
-    state().db.lock().unwrap().set_title(&id, &title, Origin::User).map_err(err)
+    let s = state();
+    s.db.lock().unwrap().set_title(&id, &title, Origin::User).map_err(err)?;
+    s.meeting_changed(&id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -156,38 +190,65 @@ async fn set_notes(id: String, content: String) -> CommandResult<()> {
 
 #[tauri::command]
 async fn set_tags(id: String, tags: Vec<String>) -> CommandResult<()> {
-    state().db.lock().unwrap().set_tags(&id, &tags, Origin::User).map_err(err)
+    let s = state();
+    s.db.lock().unwrap().set_tags(&id, &tags, Origin::User).map_err(err)?;
+    s.meeting_changed(&id);
+    Ok(())
 }
 
 #[tauri::command]
 async fn set_folder(id: String, folder: Option<String>) -> CommandResult<()> {
-    state().db.lock().unwrap().set_folder(&id, folder.as_deref(), Origin::User).map_err(err)
+    let s = state();
+    s.db.lock().unwrap().set_folder(&id, folder.as_deref(), Origin::User).map_err(err)?;
+    s.meeting_changed(&id);
+    Ok(())
+}
+
+#[tauri::command]
+async fn rename_folder(folder: String, name: String) -> CommandResult<()> {
+    let s = state();
+    let ids = s.db.lock().unwrap().rename_folder(&folder, &name).map_err(err)?;
+    ids.iter().for_each(|id| s.meeting_changed(id));
+    Ok(())
+}
+
+#[tauri::command]
+async fn remove_folder(folder: String) -> CommandResult<()> {
+    let s = state();
+    let ids = s.db.lock().unwrap().remove_folder(&folder).map_err(err)?;
+    ids.iter().for_each(|id| s.meeting_changed(id));
+    Ok(())
 }
 
 #[tauri::command]
 async fn set_archived(id: String, archived: bool) -> CommandResult<()> {
-    state().db.lock().unwrap().set_archived(&id, archived).map_err(err)
+    let s = state();
+    s.db.lock().unwrap().set_archived(&id, archived).map_err(err)?;
+    s.meeting_changed(&id);
+    Ok(())
 }
 
 #[tauri::command]
 async fn start_recording(id: String, source: String) -> CommandResult<Value> {
-    Ok(json!(state().start_recording(&id, &source).map_err(err)?))
+    blocking(move || Ok(json!(state().start_recording(&id, &source).map_err(err)?))).await
 }
 
 #[tauri::command]
 async fn pause_recording(paused: bool) -> CommandResult<()> {
-    state().set_paused(paused).map_err(err)
+    blocking(move || state().set_paused(paused).map_err(err)).await
 }
 
 #[tauri::command]
 async fn stop_recording() -> CommandResult<String> {
-    state().stop_recording().map_err(err)
+    blocking(|| state().stop_recording().map_err(err)).await
 }
 
+/// Starts the final pass. The pre-check errors return at once, and the final pass runs on its own thread.
 #[tauri::command]
 async fn run_final_pass(id: String, language: Option<String>) -> CommandResult<()> {
     let s = state();
-    std::thread::spawn(move || s.finalize_logged(&id, language));
+    let guard = s.begin_finalize(&id).map_err(err)?;
+    std::thread::spawn(move || s.run_finalize(guard, language));
     Ok(())
 }
 
@@ -208,23 +269,26 @@ async fn delete_summary(id: String) -> CommandResult<()> {
 
 #[tauri::command]
 async fn import_recording(path: String) -> CommandResult<Value> {
-    let s = state();
-    let name = std::path::Path::new(&path)
-        .file_stem()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Imported recording".into());
-    let meeting = s.db.lock().unwrap().create_meeting(&name, Some("import")).map_err(err)?;
-    let params = json!({
-        "dir": paths::meeting_dir(&meeting.id).to_string_lossy(),
-        "audio_key": s.keys.audio_base64(),
-        "path": path,
-    });
-    s.engine.call("import_audio", params, Duration::from_secs(600)).map_err(err)?;
-    s.db.lock().unwrap().mark_stopped(&meeting.id).map_err(err)?;
-    let id = meeting.id.clone();
-    let worker = s.clone();
-    std::thread::spawn(move || worker.finalize_logged(&id, None));
-    Ok(json!(meeting))
+    blocking(move || {
+        let s = state();
+        let name = std::path::Path::new(&path)
+            .file_stem()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Imported recording".into());
+        let meeting = s.db.lock().unwrap().create_meeting(&name, Some("import")).map_err(err)?;
+        let params = json!({
+            "dir": paths::meeting_dir(&meeting.id).to_string_lossy(),
+            "audio_key": s.keys.audio_base64(),
+            "path": path,
+        });
+        s.engine.call("import_audio", params, Duration::from_secs(600)).map_err(err)?;
+        s.db.lock().unwrap().mark_stopped(&meeting.id).map_err(err)?;
+        let id = meeting.id.clone();
+        let worker = s.clone();
+        std::thread::spawn(move || worker.finalize_logged(&id, None));
+        Ok(json!(meeting))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -250,26 +314,32 @@ async fn edit_turn_text(turn_id: i64, text: String) -> CommandResult<()> {
 /// Returns a WAV clip as base64 for a speaker: the longest turn, at most 8 seconds.
 #[tauri::command]
 async fn speaker_sample(speaker_id: String) -> CommandResult<String> {
-    let s = state();
-    let (meeting_id, track, start, end) = {
-        let db = s.db.lock().unwrap();
-        let speaker = db.speaker(&speaker_id).map_err(err)?;
-        let turn = db
-            .turns(&speaker.meeting_id)
-            .map_err(err)?
-            .into_iter()
-            .filter(|t| t.speaker_id.as_deref() == Some(speaker_id.as_str()))
-            .max_by(|a, b| (a.end - a.start).total_cmp(&(b.end - b.start)))
-            .ok_or("this speaker has no turns")?;
-        (speaker.meeting_id, turn.track, turn.start, turn.end.min(turn.start + 8.0))
-    };
-    clip(&meeting_id, &track, start, end)
+    blocking(move || {
+        let s = state();
+        let (meeting_id, track, start, end) = {
+            let db = s.db.lock().unwrap();
+            let speaker = db.speaker(&speaker_id).map_err(err)?;
+            let turn = db
+                .turns(&speaker.meeting_id)
+                .map_err(err)?
+                .into_iter()
+                .filter(|t| t.speaker_id.as_deref() == Some(speaker_id.as_str()))
+                .max_by(|a, b| (a.end - a.start).total_cmp(&(b.end - b.start)))
+                .ok_or("this speaker has no turns")?;
+            (speaker.meeting_id, turn.track, turn.start, turn.end.min(turn.start + 8.0))
+        };
+        clip(&meeting_id, &track, start, end)
+    })
+    .await
 }
 
 #[tauri::command]
 async fn turn_audio(turn_id: i64) -> CommandResult<String> {
-    let turn = state().db.lock().unwrap().turn(turn_id).map_err(err)?;
-    clip(&turn.meeting_id, &turn.track, turn.start, turn.end)
+    blocking(move || {
+        let turn = state().db.lock().unwrap().turn(turn_id).map_err(err)?;
+        clip(&turn.meeting_id, &turn.track, turn.start, turn.end)
+    })
+    .await
 }
 
 fn clip(meeting_id: &str, track: &str, start: f64, end: f64) -> CommandResult<String> {
@@ -287,24 +357,32 @@ fn clip(meeting_id: &str, track: &str, start: f64, end: f64) -> CommandResult<St
     Ok(result["wav_base64"].as_str().unwrap_or_default().to_string())
 }
 
-/// Deletion by the user is immediate and permanent.
+/// Moves the meeting to the trash. The app deletes it permanently after `TRASH_DAYS`.
+#[tauri::command]
+async fn trash_meeting(id: String) -> CommandResult<()> {
+    let s = state();
+    s.check_idle(&id, true).map_err(err)?;
+    let trashed = s.db.lock().unwrap().trash_meeting(&id, Origin::User);
+    trashed.map_err(err)
+}
+
+/// Deletes a meeting in the trash at once and permanently.
 #[tauri::command]
 async fn delete_meeting(id: String) -> CommandResult<()> {
     let s = state();
-    if s.active.lock().unwrap().as_ref().map(|a| a.meeting_id == id).unwrap_or(false) {
-        return Err("stop the recording first".into());
+    s.check_idle(&id, true).map_err(err)?;
+    if s.db.lock().unwrap().meeting(&id).map_err(err)?.deleted_at.is_none() {
+        return Err("move the meeting to the trash first".into());
     }
     s.delete_meeting_files(&id);
-    let result = s.db.lock().unwrap().delete_meeting_now(&id).map_err(err);
-    result
+    let deleted = s.db.lock().unwrap().delete_meeting_now(&id);
+    deleted.map_err(err)
 }
 
 #[tauri::command]
 async fn delete_audio(id: String) -> CommandResult<()> {
     let s = state();
-    if s.active.lock().unwrap().as_ref().map(|a| a.meeting_id == id).unwrap_or(false) {
-        return Err("stop the recording first".into());
-    }
+    s.check_idle(&id, false).map_err(err)?;
     s.delete_audio_files(&id).map_err(err)?;
     s.meeting_changed(&id);
     Ok(())
@@ -331,17 +409,21 @@ async fn export_text(id: String, format: String) -> CommandResult<String> {
 /// Writes an export to the Downloads folder and returns the path.
 #[tauri::command]
 async fn export_file(id: String, format: String) -> CommandResult<String> {
+    blocking(move || export_to_downloads(&id, &format)).await
+}
+
+fn export_to_downloads(id: &str, format: &str) -> CommandResult<String> {
     let s = state();
     let (title, text) = {
         let db = s.db.lock().unwrap();
-        let doc = Document::load(&db, &id).map_err(err)?;
-        (doc.meeting.title.clone(), export::render(&doc, &format).map_err(err)?)
+        let doc = Document::load(&db, id).map_err(err)?;
+        (doc.meeting.title.clone(), export::render(&doc, format).map_err(err)?)
     };
     let safe: String = title
         .chars()
         .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
         .collect();
-    let extension = if format == "markdown" { "md" } else { format.as_str() };
+    let extension = if format == "markdown" { "md" } else { format };
     let dir = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default().join("Downloads");
     let mut path = dir.join(format!("{}.{extension}", safe.trim()));
     let mut n = 2;
@@ -362,34 +444,38 @@ async fn granola_default_path() -> CommandResult<Option<String>> {
 
 #[tauri::command]
 async fn granola_preview(path: String) -> CommandResult<Value> {
-    let s = state();
-    let db = s.db.lock().unwrap();
-    Ok(json!(tinta_core::granola::preview(&db, std::path::Path::new(&path)).map_err(err)?))
+    blocking(move || {
+        let s = state();
+        let db = s.db.lock().unwrap();
+        Ok(json!(tinta_core::granola::preview(&db, std::path::Path::new(&path)).map_err(err)?))
+    })
+    .await
 }
 
 /// Imports the meetings of a Granola export. It sends `granola_progress` events.
 #[tauri::command]
 async fn import_granola(path: String, include_summaries: bool) -> CommandResult<Value> {
-    let s = state();
-    let summary = {
-        let mut db = s.db.lock().unwrap();
-        let emitter = s.clone();
-        tinta_core::granola::import(&mut db, std::path::Path::new(&path), include_summaries, |done, total| {
+    blocking(move || {
+        let s = state();
+        let summary = tinta_core::granola::import(&s.db, std::path::Path::new(&path), include_summaries, |done, total| {
             if done % 10 == 0 || done == total {
-                emitter.emit("granola_progress", json!({"done": done, "total": total}));
+                s.emit("granola_progress", json!({"done": done, "total": total}));
             }
         })
-        .map_err(err)?
-    };
-    s.emit("meeting_changed", json!({"id": ""}));
-    Ok(json!(summary))
+        .map_err(err)?;
+        s.emit("meeting_changed", json!({"id": ""}));
+        Ok(json!(summary))
+    })
+    .await
 }
 
 #[tauri::command]
 async fn move_library(parent: String) -> CommandResult<String> {
-    let s = state();
-    let target = s.move_library(std::path::Path::new(&parent)).map_err(err)?;
-    Ok(target.to_string_lossy().to_string())
+    blocking(move || {
+        let target = state().move_library(std::path::Path::new(&parent)).map_err(err)?;
+        Ok(target.to_string_lossy().to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -404,29 +490,34 @@ async fn show_library() -> CommandResult<()> {
 async fn prepare_extension(app: tauri::AppHandle) -> CommandResult<String> {
     use tauri::Manager;
     let source = app.path().resource_dir().map_err(err)?.join("extension");
-    let target = paths::base_dir().join("Chrome extension");
-    if target.exists() {
-        std::fs::remove_dir_all(&target).map_err(err)?;
-    }
-    copy_dir(&source, &target).map_err(err)?;
-    std::process::Command::new("/usr/bin/open").arg("-R").arg(&target).spawn().map_err(err)?;
-    Ok(target.to_string_lossy().to_string())
+    blocking(move || {
+        let target = paths::base_dir().join("Chrome extension");
+        if target.exists() {
+            std::fs::remove_dir_all(&target).map_err(err)?;
+        }
+        copy_dir(&source, &target).map_err(err)?;
+        std::process::Command::new("/usr/bin/open").arg("-R").arg(&target).spawn().map_err(err)?;
+        Ok(target.to_string_lossy().to_string())
+    })
+    .await
 }
 
 /// Disk use of the library, the audio, and the speech models, in bytes.
 #[tauri::command]
 async fn storage_usage() -> CommandResult<Value> {
-    let s = state();
-    let models = s.engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
-    let data = paths::data_dir();
-    let library: u64 = ["library.db", "library.db-wal", "library.db-shm"]
-        .iter()
-        .filter_map(|name| std::fs::metadata(data.join(name)).ok())
-        .map(|m| m.len())
-        .sum();
-    let meetings = dir_size(&data.join("meetings"));
-    let models = models["path"].as_str().map(|p| dir_size(std::path::Path::new(p))).unwrap_or(0);
-    Ok(json!({"library": library, "audio": meetings, "total": library + meetings, "models": models}))
+    blocking(|| {
+        let models = state().engine.call("models_status", json!({}), Duration::from_secs(20)).unwrap_or(json!({}));
+        let data = paths::data_dir();
+        let library: u64 = ["library.db", "library.db-wal", "library.db-shm"]
+            .iter()
+            .filter_map(|name| std::fs::metadata(data.join(name)).ok())
+            .map(|m| m.len())
+            .sum();
+        let meetings = dir_size(&data.join("meetings"));
+        let models = models["path"].as_str().map(|p| dir_size(std::path::Path::new(p))).unwrap_or(0);
+        Ok(json!({"library": library, "audio": meetings, "total": library + meetings, "models": models}))
+    })
+    .await
 }
 
 /// The total size of the files in a folder. A missing folder has size 0.
@@ -440,20 +531,6 @@ fn dir_size(path: &std::path::Path) -> u64 {
             _ => 0,
         })
         .sum()
-}
-
-fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            copy_dir(&path, &to.join(entry.file_name()))?;
-        } else {
-            std::fs::copy(&path, to.join(entry.file_name()))?;
-        }
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -502,6 +579,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_notes,
         set_tags,
         set_folder,
+        rename_folder,
+        remove_folder,
         set_archived,
         start_recording,
         pause_recording,
@@ -514,6 +593,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         edit_turn_text,
         speaker_sample,
         turn_audio,
+        trash_meeting,
         delete_meeting,
         delete_audio,
         set_audio_retention,

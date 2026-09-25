@@ -56,7 +56,6 @@ function detail(): MeetingDetail {
       { participant_id: "p3", name: "Sam Carter", is_self: false },
     ],
     has_edits: false,
-    finalizing: false,
     audio_bytes: 61_400_000,
     summary: {
       content: "The team reviewed the first screen of the app. They agreed to keep it calm, with speaker names and timestamps, and to give the notes their own space.\n\n### Key points\n\n- The first screen should feel calm.\n- Speaker names and timestamps help people find a part of the conversation.\n- Notes stay on this Mac.\n\n### Action items\n\n- **Sam Carter**: Review the icon at small sizes tomorrow morning.\n",
@@ -72,7 +71,7 @@ const boot: Bootstrap = {
   models_path: "~/Library/Application Support/FluidAudio/Models", microphone: "granted",
   mcp_path: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp",
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
-  extension_id: "ajncjfpbmkmiheokjfhfdlhnmfbaofij", data_dir: "~/Library/Application Support/Tinta",
+  data_dir: "~/Library/Application Support/Tinta",
   models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
   active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null } : null,
   extension: {
@@ -96,7 +95,7 @@ const boot: Bootstrap = {
 export async function mockInvoke<T>(command: string): Promise<T> {
   const results: Record<string, unknown> = {
     bootstrap: boot,
-    list_meetings: { meetings, folders: ["Audits"] },
+    list_meetings: { meetings, folders: ["Audits"], previews: { m1: { summary: "The team agrees to keep the first screen calm, with notes and the transcript side by side.", people: ["Alex Moreno", "Morgan Lee"] } } },
     get_meeting: detail(),
     list_sources: {
       sources: [

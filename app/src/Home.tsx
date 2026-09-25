@@ -1,21 +1,23 @@
 import { useEffect, useState } from "react";
-import { Active, AppCall, Bootstrap, clock, dateTime, ExtensionState, Meeting } from "./api";
-import { Icon, InkMark } from "./Brand";
+import { Active, AppCall, Bootstrap, clock, dateTime, ExtensionState, Meeting, Preview, relativeDate } from "./api";
+import { Icon, InkMark, Name } from "./Brand";
+import { pressable } from "./MeetingList";
 
 type Props = {
   boot: Bootstrap | null;
   meetings: Meeting[];
+  previews: Record<string, Preview>;
+  /** Shows a folder or a tag in the sidebar list. */
+  onFilter: (filter: string) => void;
   active: Active | null;
   extension: ExtensionState | null;
   calls: AppCall[];
   onOpen: (id: string) => void;
-  onNew: () => void;
-  onImport: () => void;
   onRecordCall: (source: string) => void;
   onSettings: () => void;
   onRetry: (id: string) => void;
-  granolaExport: string | null;
-  onGranola: () => void;
+  /** A new meeting or a recording is starting. */
+  busy: boolean;
 };
 
 const DAY = 86_400_000;
@@ -27,7 +29,7 @@ function greeting(name: string, now: Date): string {
   return first ? `${part}, ${first}` : part;
 }
 
-export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, onImport, onRecordCall, onSettings, onRetry, granolaExport, onGranola }: Props) {
+export function Home({ boot, meetings, previews, onFilter, active, extension, calls, onOpen, onRecordCall, onSettings, onRetry, busy }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -53,7 +55,6 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
   const attention = meetings.filter(
     (m) =>
       m.state === "failed" ||
-      m.state === "processing" ||
       (m.state === "ready" && !m.audio_deleted && !m.audio_trashed_at && m.audio_until !== null && m.audio_until - now < 2 * DAY),
   );
   const recent = meetings.filter((m) => m.id !== active?.meeting_id).slice(0, 6);
@@ -72,14 +73,6 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
               : `${week.length} ${week.length === 1 ? "meeting" : "meetings"} this week${weekMinutes > 0 ? `, ${weekMinutes} minutes transcribed` : ""}.`}
           </p>
         </div>
-        <div className="home-actions">
-          <button onClick={onImport}>
-            <Icon name="import" /> Import recording
-          </button>
-          <button className="primary" onClick={onNew}>
-            <Icon name="plus" /> New meeting
-          </button>
-        </div>
       </header>
 
       {recording && active ? (
@@ -88,41 +81,39 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
           <div className="hero-text">
             <div className="eyebrow">{active.paused ? "Paused" : "Recording now"}</div>
             <h2>{recording.title}</h2>
-            <p>Transcribing on this Mac. Write your notes in the meeting.</p>
+            <p>Write your notes in the meeting.</p>
           </div>
           <span className="timer">{clock((now - active.start_wall_ms) / 1000)}</span>
-          <button className="primary">Open meeting</button>
+          <button className="primary" onClick={(e) => (e.stopPropagation(), onOpen(recording.id))}>
+            Open meeting
+          </button>
         </section>
       ) : inCall ? (
         <section className="hero hero-call">
           <InkMark size={44} />
           <div className="hero-text">
-            <div className="eyebrow">Google Meet call detected</div>
+            <div className="eyebrow">Google Meet call</div>
             <h2>{extension?.title || extension?.meeting_code}</h2>
             <p>
-              {extension?.participants.length} people in the call. Tell everyone that you record and transcribe this meeting.
+              {people(extension?.participants.length ?? 0)} Tell everyone that you record the call.
             </p>
           </div>
-          <button className="primary big" disabled={!ready} onClick={() => onRecordCall("com.google.Chrome")} title={ready ? "" : "Install the speech models first"}>
-            Record this call
-          </button>
+          <RecordButton ready={ready} busy={busy} onClick={() => onRecordCall("com.google.Chrome")} />
         </section>
       ) : appCall ? (
         <section className="hero hero-call">
           <InkMark size={44} />
           <div className="hero-text">
-            <div className="eyebrow">{appCall.name} call detected</div>
-            <h2>{appCall.name} call</h2>
+            <div className="eyebrow">Call detected</div>
+            <h2>{appCall.name}</h2>
             <p>
               {appCall.participants.length > 0
-                ? `${appCall.participants.length} people in the call. Names come from ${appCall.name} (beta). `
+                ? `${people(appCall.participants.length)} Names come from ${appCall.name} (beta). `
                 : "You name the speakers after the call. "}
-              Tell everyone that you record and transcribe this meeting.
+              Tell everyone that you record the call.
             </p>
           </div>
-          <button className="primary big" disabled={!ready} onClick={() => onRecordCall(appCall.app)} title={ready ? "" : "Install the speech models first"}>
-            Record this call
-          </button>
+          <RecordButton ready={ready} busy={busy} onClick={() => onRecordCall(appCall.app)} />
         </section>
       ) : (
         <section className="hero">
@@ -137,43 +128,66 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
         </section>
       )}
 
-      <div className="home-grid">
+      <div className={`home-grid ${pending.length > 0 || attention.length > 0 ? "" : "single"}`}>
         <div className="home-main">
           <div className="section-head">
             <h2>Recent meetings</h2>
           </div>
           {recent.length === 0 ? (
             <div className="empty-card">
-              Your meetings appear here. Notes, transcripts, and speaker names stay on this Mac.
+              Your meetings appear here.
             </div>
           ) : (
             <div className="cards">
-              {recent.map((m) => (
-                <button key={m.id} className="meeting-card" onClick={() => onOpen(m.id)}>
+              {recent.map((m) => {
+                const preview = previews[m.id];
+                return (
+                <div key={m.id} className="meeting-card" {...pressable(() => onOpen(m.id))}>
                   <div className="card-top">
                     <Icon name="document" />
-                    {m.state !== "ready" && <span className={`badge ${m.state}`}>{m.state}</span>}
+                    {(m.state === "processing" || m.state === "failed") && (
+                      <span className={`badge ${m.state}`}>{m.state === "failed" ? "Processing failed" : "Processing"}</span>
+                    )}
                   </div>
                   <strong>{m.title}</strong>
                   <span className="muted small">
-                    {dateTime(m.started_at ?? m.created_at)}
+                    {relativeDate(m.started_at ?? m.created_at)}
                     {m.duration > 0 && ` · ${Math.max(1, Math.round(m.duration / 60))} min`}
                   </span>
-                  {m.tags.length > 0 && (
-                    <span className="card-tags">
-                      {m.tags.slice(0, 3).map((t) => (
-                        <span key={t} className="tag">
-                          {t}
+                  {preview && preview.people.length > 0 && (
+                    <span className="card-people" title={preview.people.join(", ")}>
+                      {preview.people.slice(0, 3).map((p, i) => (
+                        <span key={p}>
+                          {i > 0 && ", "}
+                          <Name name={p} />
                         </span>
+                      ))}
+                      {preview.people.length > 3 && ` and ${preview.people.length - 3} more`}
+                    </span>
+                  )}
+                  {preview?.summary && <span className="card-summary">{preview.summary}</span>}
+                  {(m.folder || m.tags.length > 0) && (
+                    <span className="card-tags">
+                      {m.folder && (
+                        <button className="tag tag-button" onClick={(e) => (e.stopPropagation(), onFilter(`folder:${m.folder}`))} title="Show this folder">
+                          <Icon name="folder" size={10} /> {m.folder}
+                        </button>
+                      )}
+                      {m.tags.slice(0, 3).map((t) => (
+                        <button key={t} className="tag tag-button" onClick={(e) => (e.stopPropagation(), onFilter(`tag:${t}`))} title="Show meetings with this tag">
+                          {t}
+                        </button>
                       ))}
                     </span>
                   )}
-                </button>
-              ))}
+                </div>
+                );
+              })}
             </div>
           )}
         </div>
 
+        {(pending.length > 0 || attention.length > 0) && (
         <aside className="home-side">
           {pending.length > 0 && (
             <section className="side-card">
@@ -184,7 +198,7 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
                     <span className="check">{s.done ? "✓" : ""}</span>
                     <div>
                       {s.action && !s.done ? (
-                        <button className="link" onClick={s.action}>
+                        <button className="quiet" onClick={s.action}>
                           {s.label}
                         </button>
                       ) : (
@@ -203,46 +217,35 @@ export function Home({ boot, meetings, active, extension, calls, onOpen, onNew, 
               <h2>Needs attention</h2>
               {attention.map((m) => (
                 <div key={m.id} className="attention-row">
-                  <button className="link" onClick={() => onOpen(m.id)}>
+                  <button className="quiet" onClick={() => onOpen(m.id)}>
                     {m.title}
                   </button>
                   <div className="small muted">
-                    {m.state === "failed" && "The final pass failed."}
-                    {m.state === "processing" && "The final pass is running."}
+                    {m.state === "failed" && "Processing failed."}
                     {m.state === "ready" && m.audio_until && `The audio is deleted ${dateTime(m.audio_until)}.`}
                   </div>
                   {m.state === "failed" && (
-                    <button className="small-button" onClick={() => onRetry(m.id)}>
-                      Run the final pass again
-                    </button>
+                    <button onClick={() => onRetry(m.id)}>Process again</button>
                   )}
                 </div>
               ))}
             </section>
           )}
-
-          {granolaExport && !meetings.some((m) => m.source === "granola") && (
-            <section className="side-card granola-card">
-              <h2>Moving from Granola?</h2>
-              <p className="small muted">Tinta found a Granola export in {granolaExport.replace(/^\/Users\/[^/]+/, "~")}.</p>
-              <button className="primary" onClick={onGranola}>
-                <Icon name="import" /> Import from Granola
-              </button>
-            </section>
-          )}
-
-          <section className="side-card privacy-card">
-            <h2>On this Mac</h2>
-            <p className="small">
-              <Icon name="lock" size={13} /> Audio, notes, and transcripts are encrypted and never leave this Mac.
-            </p>
-            <p className="small muted">
-              MCP access is {boot?.mcp_enabled ? "on" : "off"}.{" "}
-              {boot?.mcp_enabled && "An AI client that you connect sends what it reads to its model provider."}
-            </p>
-          </section>
         </aside>
+        )}
       </div>
     </div>
+  );
+}
+
+function people(count: number): string {
+  return count === 1 ? "1 person in the call." : `${count} people in the call.`;
+}
+
+function RecordButton({ ready, busy, onClick }: { ready: boolean; busy: boolean; onClick: () => void }) {
+  return (
+    <button className="primary big" disabled={!ready || busy} onClick={onClick} title={ready ? "" : "Install the speech models first"}>
+      {busy ? "Starting…" : "Record this call"}
+    </button>
   );
 }

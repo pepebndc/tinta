@@ -48,6 +48,11 @@ final class RemoteTap: @unchecked Sendable {
     private let input = Pipe()
     private let output = Pipe()
     private(set) var isCapturing = false
+    /// The reader thread signals this at the end of the helper output.
+    private let drained = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var started = false
+    private var stopping = false
 
     init(source: String, handler: @escaping SampleHandler) {
         self.source = source
@@ -60,9 +65,30 @@ final class RemoteTap: @unchecked Sendable {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.standardError
+        process.terminationHandler = { [weak self] _ in self?.helperExited() }
         try process.run()
+        lock.lock()
+        started = true
+        lock.unlock()
         let reader = output.fileHandleForReading
-        Thread { [weak self] in self?.read(reader) }.start()
+        let drained = self.drained
+        Thread { [weak self] in
+            self?.read(reader)
+            self?.isCapturing = false
+            drained.signal()
+        }.start()
+    }
+
+    /// Tells the app when the helper ends before `stop`.
+    private func helperExited() {
+        isCapturing = false
+        lock.lock()
+        let expected = stopping
+        lock.unlock()
+        guard !expected else { return }
+        Output.shared.log("the tap helper exited with status \(process.terminationStatus)")
+        Output.shared.event(
+            "warning", ["message": "The meeting audio capture stopped. Stop and start the recording again."])
     }
 
     private func read(_ reader: FileHandle) {
@@ -96,7 +122,13 @@ final class RemoteTap: @unchecked Sendable {
 
     /// Closes the helper input and waits 3 seconds for the helper to exit. A helper that
     /// does not exit gets a kill, so a stuck audio device cannot block the end of a recording.
+    /// Then waits 2 seconds for the reader to receive the last frames.
     func stop() {
+        lock.lock()
+        stopping = true
+        let wasStarted = started
+        lock.unlock()
+        guard wasStarted else { return }
         try? input.fileHandleForWriting.close()
         let deadline = Date().addingTimeInterval(3)
         while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
@@ -104,6 +136,9 @@ final class RemoteTap: @unchecked Sendable {
             Output.shared.log("the tap helper does not stop, so the engine ends it")
             kill(process.processIdentifier, SIGKILL)
             process.waitUntilExit()
+        }
+        if drained.wait(timeout: .now() + 2) == .timedOut {
+            Output.shared.log("the tap helper output does not end, so the last remote audio can be lost")
         }
     }
 }

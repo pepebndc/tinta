@@ -9,6 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 pub const SOURCE: &str = "granola";
 const PLACEHOLDER_NOTES: &str = "_No private notes._";
@@ -61,7 +62,7 @@ fn manifest(dir: &Path) -> Result<Vec<ManifestEntry>> {
     let path = dir.join("manifest.json");
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("{} is not a Granola export: manifest.json is missing", dir.display()))?;
-    Ok(serde_json::from_str(&text).context("manifest.json has an unknown format")?)
+    serde_json::from_str(&text).context("manifest.json has an unknown format")
 }
 
 pub fn preview(db: &Db, dir: &Path) -> Result<Preview> {
@@ -257,16 +258,17 @@ fn parse_utc(s: &str) -> Option<i64> {
 }
 
 /// Imports every meeting that is not in the library yet. `progress` receives (done, total).
-pub fn import(db: &mut Db, dir: &Path, include_summaries: bool, mut progress: impl FnMut(usize, usize)) -> Result<Summary> {
+/// The import locks the library for each meeting only, so other work continues during the import.
+pub fn import(db: &Mutex<Db>, dir: &Path, include_summaries: bool, mut progress: impl FnMut(usize, usize)) -> Result<Summary> {
     let entries = manifest(dir)?;
     let mut summary = Summary::default();
     for (index, entry) in entries.iter().enumerate() {
         progress(index, entries.len());
-        if db.external_exists(&external_id(&entry.id))? {
+        if db.lock().unwrap().external_exists(&external_id(&entry.id))? {
             summary.skipped += 1;
             continue;
         }
-        match parse(dir, &entry.folder, entry.captured_by_me, include_summaries).and_then(|m| db.insert_imported(&m)) {
+        match parse(dir, &entry.folder, entry.captured_by_me, include_summaries).and_then(|m| db.lock().unwrap().insert_imported(&m)) {
             Ok(()) => summary.imported += 1,
             Err(error) => summary.failed.push(Failure { title: entry.title.clone(), error: error.to_string() }),
         }
@@ -309,12 +311,13 @@ mod tests {
     fn imports_once_with_speakers_and_notes() {
         let dir = tempfile::tempdir().unwrap();
         export(dir.path());
-        let mut db = Db::open_in_memory(&Keys::for_tests()).unwrap();
-        assert_eq!(preview(&db, dir.path()).unwrap().total, 1);
-        let summary = import(&mut db, dir.path(), false, |_, _| {}).unwrap();
+        let db = Mutex::new(Db::open_in_memory(&Keys::for_tests()).unwrap());
+        assert_eq!(preview(&db.lock().unwrap(), dir.path()).unwrap().total, 1);
+        let summary = import(&db, dir.path(), false, |_, _| {}).unwrap();
         assert_eq!(summary.imported, 1);
-        let again = import(&mut db, dir.path(), false, |_, _| {}).unwrap();
+        let again = import(&db, dir.path(), false, |_, _| {}).unwrap();
         assert_eq!((again.imported, again.skipped), (0, 1));
+        let db = db.into_inner().unwrap();
 
         let meeting = &db.meetings(true).unwrap()[0];
         assert_eq!(meeting.title, "Weekly sync");
@@ -342,16 +345,17 @@ mod tests {
     fn real_export() {
         let Some(dir) = std::env::var_os("TINTA_GRANOLA_EXPORT") else { return };
         let dir = PathBuf::from(dir);
-        let mut db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let db = Mutex::new(Db::open_in_memory(&Keys::for_tests()).unwrap());
         let started = std::time::Instant::now();
-        let summary = import(&mut db, &dir, false, |_, _| {}).unwrap();
+        let summary = import(&db, &dir, false, |_, _| {}).unwrap();
         println!("imported {} skipped {} failed {} in {:.1} s", summary.imported, summary.skipped, summary.failed.len(), started.elapsed().as_secs_f64());
         for f in summary.failed.iter().take(5) {
             println!("  failed: {}", f.error);
         }
-        let meetings = db.meetings(true).unwrap();
+        let meetings = db.lock().unwrap().meetings(true).unwrap();
         let (mut turns, mut named, mut unnamed, mut with_notes) = (0, 0, 0, 0);
         for m in &meetings {
+            let db = db.lock().unwrap();
             turns += db.turns(&m.id).unwrap().len();
             for s in db.speakers(&m.id).unwrap() {
                 if s.name.is_some() { named += 1 } else { unnamed += 1 }
@@ -359,7 +363,7 @@ mod tests {
             if !db.notes(&m.id).unwrap().is_empty() { with_notes += 1 }
         }
         println!("meetings {} turns {} named speakers {} unnamed speakers {} meetings with notes {}", meetings.len(), turns, named, unnamed, with_notes);
-        let again = import(&mut db, &dir, false, |_, _| {}).unwrap();
+        let again = import(&db, &dir, false, |_, _| {}).unwrap();
         println!("second import: imported {} skipped {}", again.imported, again.skipped);
     }
 

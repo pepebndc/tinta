@@ -23,9 +23,5 @@ export function setTheme(next: ThemeChoice) {
   apply();
 }
 
-export function currentTheme(): ThemeChoice {
-  return choice;
-}
-
 media.addEventListener("change", apply);
 apply();

@@ -12,9 +12,10 @@ use tinta_core::transcript::{self, FinalResult};
 use tinta_core::{now_ms, paths};
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,6 +44,21 @@ pub struct AppCall {
     pub speaking: Vec<String>,
     /// The microphone state in the app. `None` when the engine cannot read it.
     pub mic_muted: Option<bool>,
+}
+
+impl AppCall {
+    /// Reads a call from an engine message. The name is the bundle ID and the start is now when the message has none.
+    fn parse(value: &Value) -> Option<Self> {
+        let app = value["app"].as_str()?.to_string();
+        Some(Self {
+            name: value["name"].as_str().unwrap_or(&app).to_string(),
+            since: value["since"].as_i64().unwrap_or_else(now_ms),
+            app,
+            participants: Vec::new(),
+            speaking: Vec::new(),
+            mic_muted: None,
+        })
+    }
 }
 
 /// Reads a participant list from an extension or engine message.
@@ -108,10 +124,34 @@ pub struct AppState {
     /// A call that ended during a recording, and the time of the end message.
     /// The call is a Meet meeting code or a desktop app bundle ID.
     pub call_ended: Mutex<Option<(String, i64)>>,
+    /// True while a recording starts, so a second start fails.
+    starting: AtomicBool,
+    /// The number of the newest native host connection. Only its disconnection ends the Meet call.
+    extension_connection: AtomicU64,
+    /// The time of the last "ready" event of the engine, and the wait before the next restart.
+    engine_restart: Mutex<(Option<Instant>, Duration)>,
 }
 
 /// The time between leaving a call and the automatic stop. A rejoin in this time cancels the stop.
 const CALL_END_GRACE_MS: i64 = 3000;
+
+/// The default of the `mcp_enabled` setting. The user turns MCP access on.
+pub const MCP_ENABLED_DEFAULT: &str = "false";
+
+/// The first and the longest wait before the app restarts an engine that stopped.
+const ENGINE_RESTART_MIN: Duration = Duration::from_secs(1);
+const ENGINE_RESTART_MAX: Duration = Duration::from_secs(60);
+/// An engine that runs this long before it stops restarts after `ENGINE_RESTART_MIN` again.
+const ENGINE_STABLE: Duration = Duration::from_secs(60);
+
+/// Clears a flag when it goes out of scope.
+struct FlagGuard<'a>(&'a AtomicBool);
+
+impl Drop for FlagGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
 
 static STATE: OnceLock<Arc<AppState>> = OnceLock::new();
 
@@ -139,6 +179,21 @@ impl AppState {
         self.emit("meeting_changed", json!({"id": id}));
     }
 
+    /// Refuses a change to a meeting while it records or while the final pass runs.
+    /// With `summary`, it also refuses the change while a summary is in progress.
+    pub fn check_idle(&self, id: &str, summary: bool) -> Result<()> {
+        if self.active.lock().unwrap().as_ref().map(|a| a.meeting_id == id).unwrap_or(false) {
+            bail!("stop the recording first");
+        }
+        if self.finalizing.lock().unwrap().contains(id) {
+            bail!("wait until Tinta finishes processing this meeting");
+        }
+        if summary && self.summarizing.lock().unwrap().contains(id) {
+            bail!("wait for the summary to finish");
+        }
+        Ok(())
+    }
+
     fn audio_params(&self, id: &str) -> Value {
         json!({"dir": paths::meeting_dir(id).to_string_lossy(), "audio_key": self.keys.audio_base64()})
     }
@@ -146,9 +201,13 @@ impl AppState {
     // MARK: Recording
 
     pub fn start_recording(&self, id: &str, source: &str) -> Result<Active> {
-        if self.active.lock().unwrap().is_some() {
-            bail!("a recording is already active");
+        {
+            let active = self.active.lock().unwrap();
+            if active.is_some() || self.starting.swap(true, Ordering::SeqCst) {
+                bail!("a recording is already active");
+            }
         }
+        let _starting = FlagGuard(&self.starting);
         let meeting = self.db.lock().unwrap().meeting(id)?;
         if meeting.started_at.is_some() {
             bail!("this meeting already has a recording. Create a new meeting.");
@@ -211,18 +270,27 @@ impl AppState {
         Ok(())
     }
 
+    /// Stops the recording and starts the final pass. The final pass also runs when the engine
+    /// fails to stop, on the audio that the engine wrote.
     pub fn stop_recording(self: &Arc<Self>) -> Result<String> {
         let Some(active) = self.active.lock().unwrap().take() else { bail!("no recording is active") };
         *self.call_ended.lock().unwrap() = None;
         self.emit("recording", Value::Null);
-        let result = self.engine.call("stop", json!({}), Duration::from_secs(30));
-        self.db.lock().unwrap().mark_stopped(&active.meeting_id)?;
-        self.meeting_changed(&active.meeting_id);
-        result?;
-        let state = self.clone();
-        let id = active.meeting_id.clone();
-        std::thread::spawn(move || state.finalize_logged(&id, None));
+        let stopped = self.engine.call("stop", json!({}), Duration::from_secs(30));
+        self.finalize_stopped(&active.meeting_id);
+        stopped?;
         Ok(active.meeting_id)
+    }
+
+    /// Marks a meeting as stopped and starts its final pass on a new thread.
+    fn finalize_stopped(self: &Arc<Self>, id: &str) {
+        let marked = self.db.lock().unwrap().mark_stopped(id);
+        self.meeting_changed(id);
+        if marked.is_ok() {
+            let state = self.clone();
+            let id = id.to_string();
+            std::thread::spawn(move || state.finalize_logged(&id, None));
+        }
     }
 
     // MARK: Live pass
@@ -235,14 +303,18 @@ impl AppState {
         let participants = db.participants(meeting_id).ok()?;
         let exclude: HashSet<String> =
             participants.iter().filter(|p| p.is_self).map(|p| p.participant_id.clone()).collect();
-        let events = db.speaker_events(meeting_id).ok()?;
+        // An event holds at most `EVENT_HOLD_SECONDS`, so events farther from the turn do not change the result.
+        let margin = (naming::EVENT_HOLD_SECONDS * 1000.0) as i64 + 1000;
+        let from = start_wall_ms + (s * 1000.0) as i64 - margin;
+        let to = start_wall_ms + (e * 1000.0) as i64 + margin;
+        let events = db.speaker_events_between(meeting_id, from, to).ok()?;
         let highlights = naming::highlights(&events, start_wall_ms, &exclude);
         let participant = naming::live_participant(&highlights, s, e)?;
         participants.into_iter().find(|p| p.participant_id == participant).map(|p| p.name)
     }
 
     /// Handles an event from the engine. The self-test also sends simulated events.
-    pub fn on_engine_event(&self, event: Value) {
+    pub fn on_engine_event(self: &Arc<Self>, mut event: Value) {
         match event["event"].as_str().unwrap_or_default() {
             "live" => {
                 let Some(active) = self.active.lock().unwrap().clone() else { return };
@@ -261,16 +333,9 @@ impl AppState {
                 }
             }
             "call_started" => {
-                let Some(app) = event["app"].as_str().map(str::to_string) else { return };
-                let call = AppCall {
-                    app: app.clone(),
-                    name: event["name"].as_str().unwrap_or(&app).to_string(),
-                    since: event["since"].as_i64().unwrap_or_else(now_ms),
-                    participants: Vec::new(),
-                    speaking: Vec::new(),
-                    mic_muted: None,
-                };
-                self.on_call_started(call);
+                if let Some(call) = AppCall::parse(&event) {
+                    self.on_call_started(call);
+                }
             }
             "call_state" => {
                 let Some(app) = event["app"].as_str() else { return };
@@ -285,10 +350,43 @@ impl AppState {
                 self.calls.lock().unwrap().clear();
                 self.emit("calls", json!([]));
                 self.emit("engine", event);
-                watch_calls();
+                self.on_recording_lost();
+                watch_calls(self.next_restart_delay());
+            }
+            "ready" => {
+                self.engine_restart.lock().unwrap().0 = Some(Instant::now());
+                self.emit("engine", event);
+            }
+            kind @ ("finalize_progress" | "summary_progress") => {
+                // The event has no meeting ID. It belongs to a meeting only when one call of its kind runs.
+                let running = if kind == "finalize_progress" { &self.finalizing } else { &self.summarizing };
+                let running = running.lock().unwrap();
+                if running.len() == 1 {
+                    event["id"] = json!(running.iter().next());
+                }
+                drop(running);
+                self.emit("engine", event);
             }
             _ => self.emit("engine", event),
         }
+    }
+
+    /// The engine stopped during a recording. The final pass runs on the audio that the engine wrote.
+    fn on_recording_lost(self: &Arc<Self>) {
+        let Some(active) = self.active.lock().unwrap().take() else { return };
+        *self.call_ended.lock().unwrap() = None;
+        self.emit("recording", Value::Null);
+        self.emit("recording_lost", json!({"id": active.meeting_id}));
+        self.finalize_stopped(&active.meeting_id);
+    }
+
+    /// The wait before the next engine restart. It doubles after each short run of the engine.
+    fn next_restart_delay(&self) -> Duration {
+        let mut restart = self.engine_restart.lock().unwrap();
+        let stable = restart.0.take().map(|t| t.elapsed() >= ENGINE_STABLE).unwrap_or(false);
+        let delay = if stable { ENGINE_RESTART_MIN } else { restart.1 };
+        restart.1 = (delay * 2).min(ENGINE_RESTART_MAX);
+        delay
     }
 
     // MARK: Desktop app calls
@@ -369,27 +467,55 @@ impl AppState {
 
     // MARK: Final pass
 
+    /// Runs the final pass on this thread. The result is in the meeting state.
     pub fn finalize_logged(self: &Arc<Self>, id: &str, language: Option<String>) {
-        if let Err(error) = self.finalize(id, language) {
-            let _ = self.db.lock().unwrap().set_state(id, "failed", Some(&error.to_string()));
-            self.meeting_changed(id);
-        }
+        let _ = self.finalize(id, language);
     }
 
+    /// Runs the final pass. A failure after the pre-checks sets the meeting state to failed.
     pub fn finalize(self: &Arc<Self>, id: &str, language: Option<String>) -> Result<()> {
+        let guard = self.begin_finalize(id)?;
+        self.run_finalize(guard, language)
+    }
+
+    /// Reserves the final pass of a meeting and sets the state to processing.
+    /// An error here does not change the meeting.
+    pub fn begin_finalize(self: &Arc<Self>, id: &str) -> Result<FinalizeGuard> {
         if !self.finalizing.lock().unwrap().insert(id.to_string()) {
-            bail!("the final pass for this meeting is already running");
+            bail!("Tinta already processes this meeting");
         }
-        let _guard = FinalizeGuard { state: self.clone(), id: id.to_string() };
-        let (participants, events, start_wall_ms) = {
+        let guard = FinalizeGuard { state: self.clone(), id: id.to_string() };
+        {
             let db = self.db.lock().unwrap();
             if db.has_edits(id)? {
-                bail!("the transcript has edits. The final pass does not overwrite them.");
+                bail!("the transcript has edits. Processing again does not overwrite them.");
             }
             db.set_state(id, "processing", None)?;
+        }
+        self.meeting_changed(id);
+        Ok(guard)
+    }
+
+    /// Runs a final pass that `begin_finalize` reserved. A failure sets the state to failed.
+    /// After a shutdown, the meeting stays in processing, and the next start of the app runs the final pass again.
+    pub fn run_finalize(self: &Arc<Self>, guard: FinalizeGuard, language: Option<String>) -> Result<()> {
+        let id = guard.id.clone();
+        let result = self.final_pass(&id, language);
+        if let Err(error) = &result {
+            if !self.engine.is_shut_down() {
+                let _ = self.db.lock().unwrap().set_state(&id, "failed", Some(&error.to_string()));
+            }
+            drop(guard);
+            self.meeting_changed(&id);
+        }
+        result
+    }
+
+    fn final_pass(self: &Arc<Self>, id: &str, language: Option<String>) -> Result<()> {
+        let (participants, events, start_wall_ms) = {
+            let db = self.db.lock().unwrap();
             (db.participants(id)?, db.speaker_events(id)?, db.start_wall_ms(id)?)
         };
-        self.meeting_changed(id);
         let mut params = self.audio_params(id);
         let remote = participants.iter().filter(|p| !p.is_self).count();
         if remote > 0 {
@@ -471,50 +597,38 @@ impl AppState {
 
     // MARK: Extension messages
 
+    /// Handles a message from the Meet extension. The code takes one lock at a time.
     pub fn on_extension_message(&self, message: &Value) -> Value {
         let t = message["t"].as_i64().unwrap_or_else(now_ms);
         let code = message["meeting_code"].as_str().map(str::to_string);
+        let kind = message["type"].as_str().unwrap_or_default();
         let active = self.active.lock().unwrap().clone();
+        let own = (kind == "meet_state" && message["self_name"].as_str().is_none()).then(|| self.self_name());
         let mut mute_change = None;
         let mut ended = None;
-        {
+        let mut store_participants = None;
+        let mut store_speakers = None;
+        let snapshot = {
             let mut ext = self.extension.lock().unwrap();
             let muted_before = ext.mic_muted;
             if ext.connected_at.is_none() {
                 ext.connected_at = Some(now_ms());
             }
             ext.last_seen = Some(now_ms());
-            match message["type"].as_str().unwrap_or_default() {
+            match kind {
                 "meet_state" => {
                     ext.meeting_code = code.clone();
                     ext.title = message["title"].as_str().map(str::to_string);
                     ext.self_name = message["self_name"].as_str().map(str::to_string);
                     ext.participants = parse_participants(&message["participants"]);
-                    let own = ext.self_name.clone().unwrap_or_else(|| self.self_name());
+                    let own = ext.self_name.clone().or(own).unwrap_or_default();
                     mark_self(&mut ext.participants, &own);
                     ext.mic_muted = message["mic_muted"].as_bool();
-                    if let Some(active) = &active {
-                        let db = self.db.lock().unwrap();
-                        let _ = db.upsert_participants(&active.meeting_id, &ext.participants);
-                    }
-                    let mut call_ended = self.call_ended.lock().unwrap();
-                    if call_ended.as_ref().map(|(c, _)| Some(c) == code.as_ref()).unwrap_or(false) {
-                        *call_ended = None;
-                    }
-                    if let Some(name) = ext.self_name.clone() {
-                        let db = self.db.lock().unwrap();
-                        if matches!(db.setting("self_name"), Ok(None)) {
-                            let _ = db.set_setting("self_name", &name);
-                        }
-                    }
+                    store_participants = Some(ext.participants.clone());
                 }
                 "active_speakers" => {
                     ext.speaking = parse_names(&message["speaking"]);
-                    if let Some(active) = &active {
-                        if !active.paused {
-                            let _ = self.db.lock().unwrap().add_speaker_event(&active.meeting_id, t, &ext.speaking);
-                        }
-                    }
+                    store_speakers = Some(ext.speaking.clone());
                 }
                 "mic_state" => ext.mic_muted = message["muted"].as_bool(),
                 "ping" => {}
@@ -531,12 +645,34 @@ impl AppState {
             if ext.mic_muted != muted_before && ext.meeting_code.is_some() {
                 mute_change = ext.mic_muted;
             }
-            self.emit("extension", json!(ext.clone()));
+            ext.clone()
+        };
+        self.emit("extension", json!(snapshot));
+        // Any message from the call cancels the automatic stop of the call, except its end.
+        if ended.is_none() && code.is_some() {
+            let mut call_ended = self.call_ended.lock().unwrap();
+            if call_ended.as_ref().map(|(c, _)| Some(c) == code.as_ref()).unwrap_or(false) {
+                *call_ended = None;
+            }
+        }
+        if let Some(active) = &active {
+            if let Some(participants) = &store_participants {
+                let _ = self.db.lock().unwrap().upsert_participants(&active.meeting_id, participants);
+            }
+            if let Some(speaking) = store_speakers.as_ref().filter(|_| !active.paused) {
+                let _ = self.db.lock().unwrap().add_speaker_event(&active.meeting_id, t, speaking);
+            }
+        }
+        if let Some(name) = snapshot.self_name.as_ref().filter(|_| kind == "meet_state") {
+            let db = self.db.lock().unwrap();
+            if matches!(db.setting("self_name"), Ok(None)) {
+                let _ = db.set_setting("self_name", name);
+            }
         }
         // A recording that started before the call joins the call at its first state message.
         let mut active = active;
         if let Some(current) = active.as_mut().filter(|a| a.meeting_code.is_none() && a.app_call.is_none() && code.is_some()) {
-            if message["type"] == "meet_state" {
+            if kind == "meet_state" {
                 current.meeting_code = code.clone();
                 if let Some(stored) = self.active.lock().unwrap().as_mut().filter(|a| a.meeting_id == current.meeting_id) {
                     stored.meeting_code = code.clone();
@@ -583,8 +719,17 @@ impl AppState {
         });
     }
 
+    /// Registers a new native host connection and returns its number.
+    pub fn extension_connected(&self) -> u64 {
+        self.extension_connection.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
     /// Chrome closed or the native host stopped. An active Meet call counts as ended.
-    pub fn on_extension_disconnected(&self) {
+    /// A disconnection of an older connection does not change the call.
+    pub fn on_extension_disconnected(&self, connection: u64) {
+        if self.extension_connection.load(Ordering::SeqCst) != connection {
+            return;
+        }
         let code = self.extension.lock().unwrap().meeting_code.clone();
         if let Some(code) = code {
             self.on_extension_message(&json!({"type": "meeting_ended", "meeting_code": code}));
@@ -596,7 +741,7 @@ impl AppState {
     /// Moves the library and the audio to `<parent>/Tinta` and opens it there.
     pub fn move_library(&self, parent: &std::path::Path) -> Result<std::path::PathBuf> {
         if self.active.lock().unwrap().is_some() || !self.finalizing.lock().unwrap().is_empty() {
-            bail!("Stop the recording and wait for the final pass before you move the library.");
+            bail!("Stop the recording and wait until processing finishes before you move the library.");
         }
         let target = parent.join("Tinta");
         paths::check_local(&target)?;
@@ -609,14 +754,26 @@ impl AppState {
         }
         std::fs::create_dir_all(&target)?;
         let mut db = self.db.lock().unwrap();
-        db.checkpoint()?;
-        std::fs::copy(current.join("library.db"), target.join("library.db"))?;
         let meetings = current.join("meetings");
-        if meetings.exists() {
-            copy_dir(&meetings, &target.join("meetings"))?;
-        }
-        *db = Db::open(&target.join("library.db"), &self.keys)?;
-        paths::set_data_dir(&target)?;
+        let copy = || -> Result<Db> {
+            db.checkpoint()?;
+            std::fs::copy(current.join("library.db"), target.join("library.db"))?;
+            if meetings.exists() {
+                copy_dir(&meetings, &target.join("meetings"))?;
+            }
+            let moved = Db::open(&target.join("library.db"), &self.keys)?;
+            paths::set_data_dir(&target)?;
+            Ok(moved)
+        };
+        let moved = match copy() {
+            Ok(moved) => moved,
+            Err(error) => {
+                // The target was empty before, so the partial copy goes.
+                let _ = std::fs::remove_dir_all(&target);
+                return Err(error);
+            }
+        };
+        *db = moved;
         system::exclude_from_backup(&target);
         for name in ["library.db", "library.db-wal", "library.db-shm"] {
             let _ = std::fs::remove_file(current.join(name));
@@ -645,18 +802,18 @@ impl AppState {
             let db = self.db.lock().unwrap();
             (db.expired_audio(now).unwrap_or_default(), db.expired_trash(now).unwrap_or_default())
         };
-        for id in audio {
+        for id in audio.into_iter().filter(|id| self.check_idle(id, false).is_ok()) {
             let _ = self.delete_audio_files(&id);
             self.meeting_changed(&id);
         }
-        for id in trash {
+        for id in trash.into_iter().filter(|id| self.check_idle(id, true).is_ok()) {
             self.delete_meeting_files(&id);
             let _ = self.db.lock().unwrap().delete_meeting_now(&id);
         }
     }
 }
 
-fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+pub(crate) fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
@@ -670,7 +827,8 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-struct FinalizeGuard {
+/// A reserved final pass. The reservation ends when the guard goes out of scope.
+pub struct FinalizeGuard {
     state: Arc<AppState>,
     id: String,
 }
@@ -692,31 +850,16 @@ impl Drop for FinalizeGuard {
     }
 }
 
-/// Starts the engine, which watches for desktop app calls, sends the reading setting, and reads the current calls.
+/// Starts the engine after `delay`. The engine watches for desktop app calls. The app sends the reading setting and reads the current calls.
 /// The engine reader thread calls this after the engine stops, so the call runs on its own thread.
-pub fn watch_calls() {
-    std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(1));
+pub fn watch_calls(delay: Duration) {
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
         let state = state();
         let read = state.setting("call_reading", "false") == "true";
         let Ok(result) = state.engine.call("calls", json!({"read": read}), Duration::from_secs(20)) else { return };
-        let calls: Vec<AppCall> = result["calls"]
-            .as_array()
-            .map(|list| {
-                list.iter()
-                    .filter_map(|c| {
-                        Some(AppCall {
-                            app: c["app"].as_str()?.to_string(),
-                            name: c["name"].as_str()?.to_string(),
-                            since: c["since"].as_i64()?,
-                            participants: Vec::new(),
-                            speaking: Vec::new(),
-                            mic_muted: None,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let calls: Vec<AppCall> =
+            result["calls"].as_array().map(|list| list.iter().filter_map(AppCall::parse).collect()).unwrap_or_default();
         let known: HashSet<String> = state.calls.lock().unwrap().iter().map(|c| c.app.clone()).collect();
         for call in calls.into_iter().filter(|c| !known.contains(&c.app)) {
             state.on_call_started(call);
@@ -748,9 +891,12 @@ pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
         finalizing: Mutex::new(HashSet::new()),
         summarizing: Mutex::new(HashSet::new()),
         call_ended: Mutex::new(None),
+        starting: AtomicBool::new(false),
+        extension_connection: AtomicU64::new(0),
+        engine_restart: Mutex::new((None, ENGINE_RESTART_MIN)),
     });
     let _ = STATE.set(state.clone());
-    watch_calls();
+    watch_calls(ENGINE_RESTART_MIN);
     // Test runs use their own data folder and must not change the Chrome configuration.
     if std::env::var_os("TINTA_DATA_DIR").is_none() {
         let _ = system::install_native_host();
@@ -792,7 +938,7 @@ pub fn run() {
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
         .expect("error while building the app")
-        .run(|app, event| {
+        .run(|_, event| {
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
                 if let Some(state) = STATE.get() {
                     if state.active.lock().unwrap().is_some() {
@@ -801,11 +947,6 @@ pub fn run() {
                     state.engine.shutdown();
                 }
                 let _ = std::fs::remove_file(paths::socket_path());
-                let _ = app;
             }
         });
-}
-
-pub fn names_for(db: &Db, id: &str) -> Result<HashMap<String, String>> {
-    Ok(tinta_core::export::Document::load(db, id)?.names())
 }

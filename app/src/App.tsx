@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Active, api, AppCall, Bootstrap, dateTime, ExtensionState, Meeting, on, SearchHit } from "./api";
+import { Active, api, AppCall, Bootstrap, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
+import { MeetingList, Notice, pressable, tagList } from "./MeetingList";
 import { Mcp, Settings, Trash } from "./Settings";
-import { Icon, Lockup } from "./Brand";
+import { CloseButton, CopyButton, Icon, Lockup } from "./Brand";
 import { Home } from "./Home";
 import { GranolaImport } from "./GranolaImport";
 import { Onboarding } from "./Onboarding";
@@ -15,6 +16,7 @@ export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [folders, setFolders] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<Record<string, Preview>>({});
   const [view, setView] = useState<View>(() => {
     const preview = import.meta.env.MODE === "mock" ? window.location.hash.slice(1) : null;
     if (preview === "meeting" || preview === "recording") return { kind: "meeting", id: "m1" };
@@ -23,14 +25,17 @@ export function App() {
     return { kind: "home" };
   });
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
-  const [filter, setFilter] = useState<string>("all");
-  const [showArchived, setShowArchived] = useState(false);
+  // The sidebar filter stays the same after a restart.
+  const [filter, setFilter] = useState<string>(() => localStorage.getItem("tinta-filter") ?? "all");
+  const [loaded, setLoaded] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
   const [extension, setExtension] = useState<ExtensionState | null>(null);
   const [calls, setCalls] = useState<AppCall[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,10 +56,16 @@ export function App() {
   }, []);
 
   const refreshList = useCallback(async () => {
-    const result = await api.listMeetings(showArchived);
-    setMeetings(result.meetings);
-    setFolders(result.folders);
-  }, [showArchived]);
+    try {
+      const result = await api.listMeetings();
+      setMeetings(result.meetings);
+      setFolders(result.folders);
+      setPreviews(result.previews);
+      setLoaded(true);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
 
   useEffect(() => {
     void refreshBoot();
@@ -68,8 +79,15 @@ export function App() {
       on<AppCall[]>("calls", setCalls),
       on<Active | null>("recording", setActive),
       on<{ id: string; app: string }>("auto_stopped", (p) => {
-        setNotice(`The ${p.app} call ended, so Tinta stopped the recording. The final pass runs on this Mac.`);
+        setNotice({ text: `The ${p.app} call ended, so Tinta stopped the recording.` });
         void refreshList();
+      }),
+      on<{ id: string }>("recording_lost", () => {
+        setNotice({ text: "The recording stopped because the Tinta engine quit. Tinta keeps the audio up to that time and processes it." });
+        void refreshList();
+      }),
+      on<{ event: string; message?: string }>("engine", (e) => {
+        if (e.event === "error" || e.event === "warning") setNotice({ text: String(e.message) });
       }),
     ];
     return () => subs.forEach((p) => p.then((u) => u()));
@@ -80,25 +98,65 @@ export function App() {
       setHits(null);
       return;
     }
-    const t = setTimeout(() => api.search(query).then(setHits).catch(() => setHits([])), 200);
-    return () => clearTimeout(t);
+    let current = true;
+    const t = setTimeout(
+      () =>
+        api
+          .search(query)
+          .then((h) => current && setHits(h))
+          .catch(() => current && setHits([])),
+      200,
+    );
+    return () => {
+      current = false;
+      clearTimeout(t);
+    };
   }, [query]);
 
-  const tags = useMemo(() => Array.from(new Set(meetings.flatMap((m) => m.tags))).sort(), [meetings]);
-  const visible = meetings.filter((m) => {
-    if (filter === "all") return true;
-    if (filter.startsWith("folder:")) return m.folder === filter.slice(7);
-    if (filter.startsWith("tag:")) return m.tags.includes(filter.slice(4));
-    return true;
-  });
+  function closeSearch() {
+    setQuery("");
+    setSearchOpen(false);
+  }
+
+  useEffect(() => localStorage.setItem("tinta-filter", filter), [filter]);
+  const tags = useMemo(() => tagList(meetings), [meetings]);
+  const current = useMemo(() => meetings.filter((m) => !m.archived), [meetings]);
+
+  const [creating, setCreating] = useState(false);
+  const shortcuts = useRef({ newMeeting: () => {} });
+  shortcuts.current.newMeeting = () => void newMeeting();
+
+  // Command-F opens the search. Command-N creates a meeting.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.shiftKey || e.altKey) return;
+      const letter = e.key.toLowerCase();
+      if (letter === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+        searchInput.current?.focus();
+      } else if (letter === "n") {
+        e.preventDefault();
+        shortcuts.current.newMeeting();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
 
   async function newMeeting() {
+    if (creating) return;
+    setCreating(true);
     try {
       const m = await api.createMeeting();
+      // A new meeting from an open folder goes into that folder.
+      if (filter.startsWith("folder:")) await api.setFolder(m.id, filter.slice(7));
       await refreshList();
       setView({ kind: "meeting", id: m.id });
     } catch (e) {
       setError(String(e));
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -115,19 +173,46 @@ export function App() {
   }
 
   async function recordCall(source: string) {
+    if (creating) return;
+    setCreating(true);
+    let id: string | null = null;
     try {
-      const m = await api.createMeeting();
-      const started = await api.startRecording(m.id, source);
-      setActive(started);
+      id = (await api.createMeeting()).id;
+      setActive(await api.startRecording(id, source));
       await refreshList();
-      setView({ kind: "meeting", id: m.id });
+      setView({ kind: "meeting", id });
     } catch (e) {
       setError(String(e));
+      // The meeting has no recording, so Tinta does not keep it.
+      if (id) {
+        const failed = id;
+        await api
+          .trashMeeting(failed)
+          .then(() => api.deleteMeeting(failed))
+          .catch(() => undefined);
+      }
       void refreshList();
+    } finally {
+      setCreating(false);
     }
   }
 
-  const extensionLive = extension?.last_seen && Date.now() - extension.last_seen < 30_000;
+  function trashed(id: string, title: string) {
+    setView({ kind: "home" });
+    void refreshList();
+    setNotice({
+      text: `Moved "${title}" to the trash.`,
+      undo: () =>
+        api
+          .restore(id)
+          .then(() => {
+            setNotice(null);
+            setView({ kind: "meeting", id });
+            return refreshList();
+          })
+          .catch((e) => setError(String(e))),
+    });
+  }
 
   if (boot && !boot.onboarded) {
     return (
@@ -156,22 +241,39 @@ export function App() {
           <Icon name="home" size={15} /> Home
         </button>
         <div className="sidebar-actions">
-          <button className="primary" onClick={newMeeting}>
-            <Icon name="plus" /> New meeting
-          </button>
-          <button className="icon-button" onClick={importRecording} title="Import a recording">
-            <Icon name="import" />
-          </button>
+          {searchOpen ? (
+            <label className="search">
+              <Icon name="search" size={15} />
+              <input
+                ref={searchInput}
+                autoFocus
+                placeholder="Search meetings"
+                aria-label="Search meetings"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && closeSearch()}
+                onBlur={() => !query.trim() && setSearchOpen(false)}
+              />
+              <button className="bar-icon" onMouseDown={(e) => e.preventDefault()} onClick={closeSearch} aria-label="Close the search">
+                <Icon name="close" size={13} />
+              </button>
+            </label>
+          ) : (
+            <>
+              <button className="primary" onClick={newMeeting} disabled={creating} title="New meeting (⌘N)">
+                <Icon name="plus" /> New meeting
+              </button>
+              <button className="icon-button" onClick={() => setSearchOpen(true)} title="Search meetings (⌘F)" aria-label="Search meetings">
+                <Icon name="search" />
+              </button>
+            </>
+          )}
         </div>
-        <label className="search">
-          <Icon name="search" size={15} />
-          <input placeholder="Find a conversation" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </label>
         {hits ? (
           <ul className="list">
             {hits.length === 0 && <li className="empty-list">No meetings found.</li>}
             {hits.map((h, i) => (
-              <li key={i} className="item" onClick={() => setView({ kind: "meeting", id: h.meeting_id })}>
+              <li key={i} className="item" {...pressable(() => setView({ kind: "meeting", id: h.meeting_id }))}>
                 <Icon name="document" />
                 <div>
                   <strong>{h.title}</strong>
@@ -182,43 +284,21 @@ export function App() {
           </ul>
         ) : (
           <>
-            <div className="side-label-row">
-              <span className="side-label">YOUR MEETINGS</span>
-              <select className="filter" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter meetings">
-                <option value="all">All</option>
-                {folders.map((f) => <option key={f} value={`folder:${f}`}>Folder: {f}</option>)}
-                {tags.map((t) => <option key={t} value={`tag:${t}`}>Tag: {t}</option>)}
-              </select>
-            </div>
-            <ul className="list">
-              {visible.length === 0 && <li className="empty-list">No meetings yet.</li>}
-              {visible.map((m) => (
-                <li
-                  key={m.id}
-                  className={`item ${view.kind === "meeting" && view.id === m.id ? "selected" : ""}`}
-                  onClick={() => setView({ kind: "meeting", id: m.id })}
-                >
-                  {active?.meeting_id === m.id ? <span className="rec-dot" /> : <Icon name="document" />}
-                  <div>
-                    <strong>{m.title}</strong>
-                    <span>
-                      {dateTime(m.started_at ?? m.created_at)}
-                      {m.state !== "ready" && m.state !== "draft" && <em className={`state state-${m.state}`}> · {m.state}</em>}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <label className="archived-toggle">
-              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
-            </label>
+            <MeetingList
+              meetings={meetings}
+              loaded={loaded}
+              filter={filter}
+              selectedId={view.kind === "meeting" ? view.id : null}
+              activeId={active?.meeting_id ?? null}
+              onFilter={setFilter}
+              onOpen={(id) => setView({ kind: "meeting", id })}
+              onError={setError}
+              onNotice={setNotice}
+            />
           </>
         )}
         <nav className="sidebar-nav">
-          <div className={`ext-status ${extensionLive ? "on" : ""}`}>
-            <span className="dot" />
-            {extensionLive ? (extension?.meeting_code ? `Meet: in call, ${extension.participants.length} people` : "Meet extension connected") : "Meet extension not connected"}
-          </div>
+          <ExtensionStatus extension={extension} />
           <button className={`quiet ${view.kind === "mcp" ? "current" : ""}`} onClick={() => setView({ kind: "mcp" })}>
             <Icon name="activity" size={15} /> MCP
           </button>
@@ -235,22 +315,30 @@ export function App() {
       </aside>
       <main className="main">
         {error && (
-          <div className="bar error-bar" onClick={() => setError(null)} role="alert">
-            {error} <span className="muted">Click to close.</span>
+          <div className="bar error-bar" role="alert">
+            <span>{error}</span>
+            <CopyButton text={error} label="Copy the error" />
+            <CloseButton onClick={() => setError(null)} />
           </div>
         )}
         {notice && (
-          <div className="bar info-notice" onClick={() => setNotice(null)} role="status">
-            {notice} <span className="muted">Click to close.</span>
+          <div className="bar info-notice" role="status">
+            <span>{notice.text}</span>
+            {notice.undo && (
+              <button className="quiet" onClick={notice.undo}>
+                Undo
+              </button>
+            )}
+            <CloseButton onClick={() => setNotice(null)} />
           </div>
         )}
-        {boot && !boot.models_installed && view.kind !== "settings" && (
+        {boot && !boot.models_installed && view.kind !== "settings" && view.kind !== "home" && (
           <div className="bar warn-bar">
-            Install the speech models before your first meeting. <button className="link" onClick={() => setView({ kind: "settings" })}>Open settings</button>
+            <span>Install the speech models before your first meeting.</span>
+            <button className="quiet" onClick={() => setView({ kind: "settings" })}>
+              Open Settings
+            </button>
           </div>
-        )}
-        {boot && !boot.filevault && (
-          <div className="bar warn-bar">FileVault is off. Turn on FileVault in System Settings to protect this Mac when it is off or locked.</div>
         )}
         {view.kind === "meeting" && (
           <MeetingView
@@ -260,18 +348,20 @@ export function App() {
             active={active}
             extension={extension}
             calls={calls}
+            folders={folders}
+            tags={tags}
+            onImport={importRecording}
             onActive={setActive}
             onError={setError}
-            onDeleted={() => {
-              setView({ kind: "home" });
-              void refreshList();
-            }}
+            onDeleted={trashed}
+            onDiscarded={() => void refreshList()}
           />
         )}
         {view.kind === "settings" && boot && (
           <Settings
             boot={boot}
             calls={calls}
+            onGranola={() => setView({ kind: "granola" })}
             onChanged={() => {
               void refreshBoot();
               void refreshList();
@@ -290,21 +380,37 @@ export function App() {
         {view.kind === "home" && boot && (
           <Home
             boot={boot}
-            meetings={meetings}
+            meetings={current}
+            previews={previews}
+            onFilter={setFilter}
             active={active}
             extension={extension}
             calls={calls}
             onOpen={(id) => setView({ kind: "meeting", id })}
-            onNew={newMeeting}
-            onImport={importRecording}
+            busy={creating}
             onRecordCall={recordCall}
             onSettings={() => setView({ kind: "settings" })}
             onRetry={(id) => api.runFinalPass(id, null).then(refreshList).catch((e) => setError(String(e)))}
-            granolaExport={granolaExport}
-            onGranola={() => setView({ kind: "granola" })}
           />
         )}
       </main>
+    </div>
+  );
+}
+
+/** The Meet extension status. It has its own clock, so that the status changes when the extension stops sending. */
+function ExtensionStatus({ extension }: { extension: ExtensionState | null }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, []);
+  const live = !!extension?.last_seen && now - extension.last_seen < 30_000;
+  if (!live) return null;
+  return (
+    <div className="ext-status on">
+      <span className="dot" />
+      {extension?.meeting_code ? `Meet: in call, ${extension.participants.length} people` : "Meet extension connected"}
     </div>
   );
 }

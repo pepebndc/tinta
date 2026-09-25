@@ -62,12 +62,12 @@ struct AXNode: Hashable {
         step(self, 0)
     }
 
-    /// The application element of a running app, with a short timeout, so a busy app does not block the engine.
+    /// The application element of a running app. The timeout on the system-wide element applies to
+    /// every element that the engine reads, so a busy app does not block the engine.
     static func app(bundleID: String) -> AXNode? {
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return nil }
-        let element = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(element, 0.5)
-        return AXNode(element: element)
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
+        return AXNode(element: AXUIElementCreateApplication(app.processIdentifier))
     }
 }
 

@@ -57,7 +57,7 @@ export type Turn = {
   edited: boolean;
 };
 
-export type Participant = { participant_id: string; name: string; is_self: boolean };
+type Participant = { participant_id: string; name: string; is_self: boolean };
 
 export type MeetingDetail = {
   meeting: Meeting;
@@ -67,7 +67,6 @@ export type MeetingDetail = {
   names: Record<string, string>;
   participants: Participant[];
   has_edits: boolean;
-  finalizing: boolean;
   audio_bytes: number;
   summary: { content: string; written_by: string; updated_at: number } | null;
   summarizing: boolean;
@@ -125,12 +124,14 @@ export type Bootstrap = {
   microphone: "granted" | "denied" | "undetermined";
   mcp_path: string;
   mcp_config: unknown;
-  extension_id: string;
   data_dir: string;
   active: Active | null;
   extension: ExtensionState;
   calls: AppCall[];
 };
+
+/** The first line of the summary and the other people of a meeting, for the cards on Home. */
+export type Preview = { summary: string | null; people: string[] };
 
 export type Source = { id: string; name: string; playing: boolean };
 export type SearchHit = { meeting_id: string; title: string; kind: string; snippet: string };
@@ -161,8 +162,8 @@ export const api = {
   openAccessibilitySettings: () => invoke<void>("open_accessibility_settings"),
   saveCallReport: (app: string, path: string) => invoke<void>("save_call_report", { app, path }),
   listSources: () => invoke<{ sources: Source[]; default_input: string; route: "speakers" | "headphones" }>("list_sources"),
-  listMeetings: (includeArchived: boolean) =>
-    invoke<{ meetings: Meeting[]; folders: string[] }>("list_meetings", { includeArchived }),
+  /** All meetings that are not in the trash, archived meetings too. */
+  listMeetings: () => invoke<{ meetings: Meeting[]; folders: string[]; previews: Record<string, Preview> }>("list_meetings"),
   search: (query: string) => invoke<SearchHit[]>("search", { query }),
   createMeeting: (title?: string) => invoke<Meeting>("create_meeting", { title }),
   getMeeting: (id: string) => invoke<MeetingDetail>("get_meeting", { id }),
@@ -170,6 +171,8 @@ export const api = {
   setNotes: (id: string, content: string) => invoke<void>("set_notes", { id, content }),
   setTags: (id: string, tags: string[]) => invoke<void>("set_tags", { id, tags }),
   setFolder: (id: string, folder: string | null) => invoke<void>("set_folder", { id, folder }),
+  renameFolder: (folder: string, name: string) => invoke<void>("rename_folder", { folder, name }),
+  removeFolder: (folder: string) => invoke<void>("remove_folder", { folder }),
   setArchived: (id: string, archived: boolean) => invoke<void>("set_archived", { id, archived }),
   startRecording: (id: string, source: string) => invoke<Active>("start_recording", { id, source }),
   pauseRecording: (paused: boolean) => invoke<void>("pause_recording", { paused }),
@@ -182,6 +185,7 @@ export const api = {
   editTurnText: (turnId: number, text: string) => invoke<void>("edit_turn_text", { turnId, text }),
   speakerSample: (speakerId: string) => invoke<string>("speaker_sample", { speakerId }),
   turnAudio: (turnId: number) => invoke<string>("turn_audio", { turnId }),
+  trashMeeting: (id: string) => invoke<void>("trash_meeting", { id }),
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   deleteAudio: (id: string) => invoke<void>("delete_audio", { id }),
   setAudioRetention: (id: string, days: number) => invoke<number>("set_audio_retention", { id, days }),
@@ -248,4 +252,30 @@ export function bytes(n: number): string {
 export function dateTime(ms: number | null): string {
   if (!ms) return "";
   return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+const DAY = 86_400_000;
+
+/** A date in the last 7 days shows as "Today", "Yesterday", or the weekday, with the time. Older dates show in full. */
+export function relativeDate(ms: number | null, now = Date.now()): string {
+  if (!ms) return "";
+  const date = new Date(ms);
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(ms).setHours(0, 0, 0, 0)) / DAY);
+  if (days === 0) return `Today, ${time}`;
+  if (days === 1) return `Yesterday, ${time}`;
+  if (days > 1 && days < 7) return `${date.toLocaleDateString(undefined, { weekday: "long" })}, ${time}`;
+  return dateTime(ms);
+}
+
+/** The languages of the speech model, by ISO 639-1 code. */
+export const LANGUAGES = [
+  "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it",
+  "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+];
+
+const languageNames = new Intl.DisplayNames(undefined, { type: "language" });
+
+export function languageName(code: string): string {
+  return languageNames.of(code) ?? code;
 }

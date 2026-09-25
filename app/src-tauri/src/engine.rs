@@ -11,18 +11,19 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-type Pending = Arc<Mutex<HashMap<u64, Sender<Result<Value, String>>>>>;
+/// The calls that wait for a reply from one engine process. The map is `None` after the process stops.
+type Pending = Arc<Mutex<Option<HashMap<u64, Sender<Result<Value, String>>>>>>;
 pub type EventHandler = Arc<dyn Fn(Value) + Send + Sync>;
 
 struct Process {
     child: Child,
     stdin: ChildStdin,
+    pending: Pending,
 }
 
 pub struct Engine {
     path: PathBuf,
     process: Mutex<Option<Process>>,
-    pending: Pending,
     next_id: AtomicU64,
     on_event: EventHandler,
     stopped: AtomicBool,
@@ -42,7 +43,6 @@ impl Engine {
         Arc::new(Self {
             path: engine_path(),
             process: Mutex::new(None),
-            pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
             on_event,
             stopped: AtomicBool::new(false),
@@ -66,14 +66,16 @@ impl Engine {
             .with_context(|| format!("cannot start {}", self.path.display()))?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("no engine stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no engine stdout"))?;
-        let pending = self.pending.clone();
+        let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
+        let reader_pending = pending.clone();
         let on_event = self.on_event.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
                 let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
                 if let Some(id) = message.get("id").and_then(Value::as_u64) {
-                    if let Some(sender) = pending.lock().unwrap().remove(&id) {
+                    let sender = reader_pending.lock().unwrap().as_mut().and_then(|p| p.remove(&id));
+                    if let Some(sender) = sender {
                         let result = if message["ok"].as_bool() == Some(true) {
                             Ok(message["result"].clone())
                         } else {
@@ -85,12 +87,13 @@ impl Engine {
                     on_event(message);
                 }
             }
-            for (_, sender) in pending.lock().unwrap().drain() {
+            let waiting = reader_pending.lock().unwrap().take().unwrap_or_default();
+            for (_, sender) in waiting {
                 let _ = sender.send(Err("the engine stopped".into()));
             }
             on_event(json!({"event": "engine_exit"}));
         });
-        *slot = Some(Process { child, stdin });
+        *slot = Some(Process { child, stdin, pending });
         Ok(())
     }
 
@@ -98,24 +101,41 @@ impl Engine {
     pub fn call(&self, cmd: &str, params: Value, timeout: Duration) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (sender, receiver) = channel();
-        self.pending.lock().unwrap().insert(id, sender);
-        {
+        let mut line = serde_json::to_string(&json!({"id": id, "cmd": cmd, "params": params}))?;
+        line.push('\n');
+        let pending = {
             let mut slot = self.process.lock().unwrap();
             self.ensure_running(&mut slot)?;
             let process = slot.as_mut().expect("running");
-            let mut line = serde_json::to_string(&json!({"id": id, "cmd": cmd, "params": params}))?;
-            line.push('\n');
-            process.stdin.write_all(line.as_bytes()).context("cannot write to the engine")?;
-            process.stdin.flush()?;
-        }
+            // The reply can arrive before the write returns, so the call waits in the map before the write.
+            match process.pending.lock().unwrap().as_mut() {
+                Some(waiting) => waiting.insert(id, sender),
+                None => bail!("the engine stopped"),
+            };
+            let written = process.stdin.write_all(line.as_bytes()).and_then(|()| process.stdin.flush());
+            if let Err(error) = written {
+                if let Some(waiting) = process.pending.lock().unwrap().as_mut() {
+                    waiting.remove(&id);
+                }
+                return Err(error).context("cannot write to the engine");
+            }
+            process.pending.clone()
+        };
         match receiver.recv_timeout(timeout) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(error)) => bail!(error),
             Err(_) => {
-                self.pending.lock().unwrap().remove(&id);
+                if let Some(waiting) = pending.lock().unwrap().as_mut() {
+                    waiting.remove(&id);
+                }
                 bail!("the engine did not answer {cmd} in time")
             }
         }
+    }
+
+    /// True after `shutdown`.
+    pub fn is_shut_down(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
     }
 
     /// Stops the engine. Later calls fail and do not start it again.

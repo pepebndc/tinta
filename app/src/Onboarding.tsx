@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, Bootstrap, ExtensionState, installModels, installRunning, on } from "./api";
-import { Icon, InkMark, Wordmark } from "./Brand";
+import { CloseButton, CopyButton, Icon, InkMark, Wordmark } from "./Brand";
 import { setTheme, ThemeChoice } from "./theme";
 
 const COMPONENTS: Record<string, string> = {
@@ -172,8 +172,10 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
       </header>
 
       {error && (
-        <div className="onboarding-error" onClick={() => onError("")} role="alert">
-          {error} <span className="muted">Click to close.</span>
+        <div className="onboarding-error" role="alert">
+          <span>{error}</span>
+          <CopyButton text={error} label="Copy the error" />
+          <CloseButton onClick={() => onError("")} />
         </div>
       )}
 

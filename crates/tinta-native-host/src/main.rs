@@ -7,8 +7,22 @@ use tinta_core::protocol::{Request, Response};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 const MAX_MESSAGE: usize = 256 * 1024;
+const APP_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// An error that the app returns. The app runs, so the connection stays open.
+#[derive(Debug)]
+struct AppError(String);
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for AppError {}
 
 fn read_message(input: &mut impl Read) -> Result<Option<Value>> {
     let mut length = [0u8; 4];
@@ -43,9 +57,13 @@ impl AppLink {
     fn send(&mut self, method: &str, params: Value) -> Result<Value> {
         if self.stream.is_none() {
             let stream = UnixStream::connect(tinta_core::paths::socket_path())?;
+            stream.set_read_timeout(Some(APP_TIMEOUT))?;
             let reader = BufReader::new(stream.try_clone()?);
             self.stream = Some((stream, reader));
-            self.send("hello", json!({"client": "native-host"}))?;
+            if let Err(error) = self.send("hello", json!({"client": "native-host"})) {
+                self.stream = None;
+                return Err(error);
+            }
         }
         self.next_id += 1;
         let request = Request { id: self.next_id, method: method.into(), params };
@@ -60,11 +78,11 @@ impl AppLink {
             }
             let response: Response = serde_json::from_str(&reply)?;
             if let Some(error) = response.error {
-                bail!(error);
+                return Err(AppError(error).into());
             }
             Ok(response.result.unwrap_or(Value::Null))
         })();
-        if result.is_err() {
+        if matches!(&result, Err(error) if !error.is::<AppError>()) {
             self.stream = None;
         }
         result
@@ -88,7 +106,12 @@ fn main() -> Result<()> {
             }
             Err(error) => {
                 eprintln!("tinta-native-host: {error}");
-                write_message(&mut output, &json!({"type": "status", "app": false, "recording": false}))?;
+                let status = if error.is::<AppError>() {
+                    json!({"type": "status", "app": true, "error": error.to_string()})
+                } else {
+                    json!({"type": "status", "app": false, "recording": false})
+                };
+                write_message(&mut output, &status)?;
             }
         }
     }

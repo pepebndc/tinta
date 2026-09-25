@@ -53,8 +53,11 @@ fn wav(samples: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Builds the meeting WAV and returns (path, [(participant, start, end)]).
-fn build_audio(dir: &Path) -> Result<(std::path::PathBuf, Vec<(String, f64, f64)>)> {
+/// The time in which a participant speaks: the participant ID, and the start and the end in seconds.
+type Span = (String, f64, f64);
+
+/// Builds the meeting WAV and returns its path and the spans of the participants.
+fn build_audio(dir: &Path) -> Result<(std::path::PathBuf, Vec<Span>)> {
     let mut all = Vec::new();
     let mut spans = Vec::new();
     for (index, (voice, participant, text)) in SCRIPT.iter().enumerate() {

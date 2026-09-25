@@ -13,15 +13,15 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 7. Click Allow microphone.
 8. Click Show extension folder. Open `chrome://extensions` in Chrome, turn on Developer mode, and drag the "Chrome extension" folder from Finder onto the page.
 9. Check that the extension ID is `ajncjfpbmkmiheokjfhfdlhnmfbaofij`.
-10. Restart Chrome. The setup shows "The Meet extension is connected" when Chrome connects to the app.
+10. Restart Chrome. The setup shows "The Meet extension is connected" when Chrome connects to the app. The app sidebar shows "Meet extension connected".
 
 ## During the meeting
 
 1. Join the Google Meet call in Chrome.
-2. Check that the app sidebar shows "Meet extension: in call" with the participant count.
-3. Tell everyone in the call that you record and transcribe the meeting.
-4. In the app, click New meeting. The title comes from Meet.
-5. Keep "Meeting audio" set to Google Chrome, and click Start recording.
+2. Check that the app sidebar shows "Meet: in call, N people", where N is the participant count.
+3. Check that Home shows "Google Meet call detected".
+4. Tell everyone in the call that you record and transcribe the meeting.
+5. Click Record this call. The title comes from Meet.
 6. Allow the two macOS permission requests: microphone, and audio recording of other apps.
 7. Check both level meters. "Meeting audio" moves when other people speak.
 8. Write notes. Draft text with provisional names appears next to the notes.
@@ -31,7 +31,7 @@ This guide prepares a Mac for a real Google Meet test. Do the setup steps once.
 
 ## After the meeting
 
-1. Wait for the final pass. The self-test ran 30 seconds of audio in 1.8 seconds. A one-hour meeting is not measured yet. The target is 10 minutes or less.
+1. Wait for processing. The self-test ran 30 seconds of audio in 1.8 seconds. A one-hour meeting is not measured yet. The target is 10 minutes or less.
 2. Check the speaker names. Names from the call show "Automatic (call app)". Click Play sample to hear a speaker.
 3. Correct wrong names, merge split speakers, or move a single turn to another speaker.
 4. Click a transcript turn to correct its text.
@@ -81,10 +81,10 @@ Write down these results after each test meeting:
 
 | Symptom | Action |
 |---|---|
-| "Meet extension: not connected" | Open the app, then restart Chrome. Check the extension ID. |
+| "Meet extension not connected" | Open the app, then restart Chrome. Check the extension ID. |
 | "Meeting audio (not detected)" | Check that the meeting plays in Chrome. Select "All system audio" for other apps. |
 | Remote speech appears as your turns | Use headphones. With speakers, Tinta removes most echo, but loud speakers can leave a few words. |
-| The final pass failed | Click "Run the final pass again" in the meeting. The audio stays for 7 days. |
+| Processing failed | Click "Process again" in the meeting. The audio stays for 7 days. |
 
 ## Import from Granola
 

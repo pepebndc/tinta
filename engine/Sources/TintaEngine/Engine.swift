@@ -15,8 +15,9 @@ struct Engine {
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.1.0"])
+        Output.shared.event("ready", ["version": "0.2.1"])
         Controller.calls.start()
+        Task.detached { await controller.prewarm() }
         let reader = Thread {
             while let line = readLine(strippingNewline: true) {
                 handle(line: line, controller: controller)
@@ -62,6 +63,10 @@ actor Controller {
     static let calls = CallWatcher()
     private let speech = Speech()
     private var session: RecordingSession?
+    /// True while `start` waits for permissions and models.
+    private var starting = false
+    /// A `stop` during a pending start sets this, so the start does not open a session.
+    private var startCancelled = false
 
     func handle(_ command: String, _ params: [String: Any]) async throws -> [String: Any] {
         switch command {
@@ -106,6 +111,7 @@ actor Controller {
             session?.setMicMuted(params["muted"] as? Bool ?? false, wallMs: wallMs)
             return [:]
         case "stop":
+            if starting { startCancelled = true }
             session?.stop()
             session = nil
             return [:]
@@ -125,8 +131,15 @@ actor Controller {
     }
 
     func shutdown() {
+        if starting { startCancelled = true }
         session?.stop()
         session = nil
+    }
+
+    /// Loads the speech models in the background, so the first start does not wait for the model check.
+    func prewarm() async {
+        guard await speech.modelsInstalled() else { return }
+        try? await speech.warmUp()
     }
 
     private static func key(_ params: [String: Any]) throws -> SymmetricKey {
@@ -162,7 +175,10 @@ actor Controller {
     }
 
     private func start(_ params: [String: Any]) async throws -> [String: Any] {
-        guard session == nil else { throw EngineError("a recording is already active") }
+        guard session == nil, !starting else { throw EngineError("a recording is already active") }
+        starting = true
+        startCancelled = false
+        defer { starting = false }
         let directory = URL(fileURLWithPath: try params.string("dir"), isDirectory: true)
         let source = params.optionalString("source") ?? "com.google.Chrome"
         if !(await AVCaptureDevice.requestAccess(for: .audio)) {
@@ -170,6 +186,7 @@ actor Controller {
                 "Microphone access is off. Allow Tinta in System Settings, Privacy and Security, Microphone.")
         }
         try await speech.warmUp()
+        if startCancelled { throw EngineError("the recording stopped before it started") }
         let recording = try RecordingSession(
             directory: directory, key: try Self.key(params), source: source, speech: speech,
             micMuted: params["mic_muted"] as? Bool ?? false)

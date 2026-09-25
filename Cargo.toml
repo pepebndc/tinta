@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tinta-core", "crates/tinta-mcp", "crates/tinta-native-host", "crates/tinta-selftest", "app/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 
