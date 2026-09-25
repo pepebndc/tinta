@@ -1,12 +1,17 @@
 "use strict";
 
 const find = (id) => document.getElementById(id);
+const MEET_ORIGIN = "https://meet.google.com";
 let tabId = null;
+let meetTab = false;
+// The participant list changes only when this key changes, so that the list keeps its scroll position.
+let peopleKey = null;
 
-function initials(name) {
-  const parts = String(name).trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+// The same name has the same color as in the Tinta app.
+function nameTone(name) {
+  let hash = 0;
+  for (const c of String(name)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return "name-tone-" + (hash % 6);
 }
 
 function clock(ms) {
@@ -26,7 +31,7 @@ function renderApp(status) {
   } else if (status.appKnown && status.app) {
     dot.className = "dot ok";
     find("app-title").textContent = "Connected to Tinta";
-    find("app-detail").textContent = "Speaker names go to the app on this Mac.";
+    find("app-detail").textContent = status.error ? "Tinta reports an error: " + status.error : "";
   } else if (status.appKnown) {
     dot.className = "dot off";
     find("app-title").textContent = "Tinta is not running";
@@ -47,44 +52,52 @@ function renderApp(status) {
   }
 }
 
-function renderCall(call, status) {
+function renderPeople(call) {
+  const key = call ? JSON.stringify([call.participants, call.speaking]) : null;
+  if (key === peopleKey) return;
+  peopleKey = key;
   const people = find("people");
   people.replaceChildren();
+  if (!call) return;
+  const speaking = new Set(call.speaking);
+  const sorted = [...call.participants].sort((a, b) => Number(speaking.has(b.id)) - Number(speaking.has(a.id)));
+  for (const p of sorted) {
+    const item = document.createElement("li");
+    if (speaking.has(p.id)) item.className = "speaking";
+    const name = document.createElement("span");
+    name.className = "person " + nameTone(p.name);
+    name.textContent = (p.name || "Unknown participant") + (p.is_self ? " (you)" : "");
+    const state = document.createElement("span");
+    state.className = "state";
+    state.textContent = speaking.has(p.id) ? "speaking" : "";
+    item.append(name, state);
+    people.append(item);
+  }
+}
+
+function renderCall(call, status) {
+  renderPeople(call);
   find("debug").hidden = !call;
   const mic = find("mic-state");
   mic.hidden = !call || typeof call.mic_muted !== "boolean";
   if (!mic.hidden) {
     mic.className = call.mic_muted ? "mic-state muted" : "mic-state";
     mic.textContent = call.mic_muted
-      ? "Your microphone is muted in Meet. Tinta does not record it."
+      ? "Your microphone is muted in Meet." + (status.recording ? " Tinta does not record it." : "")
       : "Your microphone is on in Meet.";
   }
   if (!call) {
     find("call-title").textContent = "No Google Meet call in this tab.";
-    find("call-detail").textContent = "Open this popup in the tab of a Meet call.";
+    find("call-detail").textContent = meetTab
+      ? "Join the call to see the participants."
+      : "Open this popup in the tab of a Meet call.";
     return;
   }
   find("call-title").textContent = call.title || call.meeting_code;
   const count = call.participants.length;
+  const canStart = status.appKnown && status.app && status.recordingSince === null;
   find("call-detail").textContent =
-    count + (count === 1 ? " person" : " people") +
-    (status.recordingSince === null ? ". Start the recording in Tinta." : ".");
-  const speaking = new Set(call.speaking);
-  const sorted = [...call.participants].sort((a, b) => Number(speaking.has(b.id)) - Number(speaking.has(a.id)));
-  for (const p of sorted) {
-    const item = document.createElement("li");
-    if (speaking.has(p.id)) item.className = "speaking";
-    const avatar = document.createElement("span");
-    avatar.className = "avatar";
-    avatar.textContent = initials(p.name);
-    const name = document.createElement("span");
-    name.textContent = p.name + (p.is_self ? " (you)" : "");
-    const state = document.createElement("span");
-    state.className = "state";
-    state.textContent = speaking.has(p.id) ? "speaking" : "";
-    item.append(avatar, name, state);
-    people.append(item);
-  }
+    count + (count === 1 ? " person" : " people") + (canStart ? ". Start the recording in Tinta." : ".");
 }
 
 async function refresh() {
@@ -101,6 +114,8 @@ async function refresh() {
 async function start() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab ? tab.id : null;
+  // The content script match gives the extension access to the URL of a Meet tab.
+  meetTab = Boolean(tab && tab.url && tab.url.startsWith(MEET_ORIGIN + "/"));
   const outline = find("outline");
   if (tabId !== null) {
     chrome.tabs

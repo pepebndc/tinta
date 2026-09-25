@@ -5,14 +5,18 @@ const MEET_ORIGIN = "https://meet.google.com";
 const MESSAGE_TYPES = new Set(["meet_state", "active_speakers", "mic_state", "meeting_ended"]);
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
+// While Tinta records, the service worker asks for the state, so that the badge shows an automatic stop.
+const RECORDING_PING_MS = 5000;
 
 let port = null;
 let retryMs = RETRY_MIN_MS;
 let retryTimer = null;
 let nextAttemptAt = 0;
+let pingTimer = null;
 
 // What the popup shows. "host" is "connecting", "connected", or "missing".
-const status = { host: "connecting", app: false, appKnown: false, recording: false, recordingSince: null };
+// "error" is the error text from the app, or null.
+const status = { host: "connecting", app: false, appKnown: false, error: null, recording: false, recordingSince: null };
 // The latest call state for each Meet tab.
 const calls = new Map();
 
@@ -20,6 +24,14 @@ function showStatus() {
   const paused = !status.recording && status.recordingSince !== null;
   chrome.action.setBadgeText({ text: status.recording ? "REC" : paused ? "II" : "" });
   chrome.action.setBadgeBackgroundColor({ color: status.recording ? "#c2413b" : "#292456" });
+  // The badge shows a recording and a paused recording.
+  const active = status.recordingSince !== null;
+  if (active && !pingTimer) {
+    pingTimer = setInterval(() => forward({ type: "ping", t: Date.now() }), RECORDING_PING_MS);
+  } else if (!active && pingTimer) {
+    clearInterval(pingTimer);
+    pingTimer = null;
+  }
 }
 
 function scheduleRetry(delayMs) {
@@ -47,21 +59,27 @@ function connect() {
 
   p.onMessage.addListener((msg) => {
     retryMs = RETRY_MIN_MS;
-    if (msg && msg.type === "status" && typeof msg.recording === "boolean") {
-      status.app = msg.app !== false;
-      status.appKnown = true;
+    if (!msg || msg.type !== "status") return;
+    status.app = msg.app !== false;
+    status.appKnown = true;
+    status.error = typeof msg.error === "string" ? msg.error : null;
+    // An app error does not give the recording state. The last known state stays.
+    if (typeof msg.recording === "boolean") {
       status.recording = msg.recording;
       status.recordingSince = typeof msg.recording_since === "number" ? msg.recording_since : null;
-      showStatus();
     }
+    showStatus();
   });
 
   p.onDisconnect.addListener(() => {
     // Read lastError so that Chrome does not log it as unchecked. A missing host is expected.
     const error = chrome.runtime.lastError;
+    // A port that forward() dropped can disconnect after a new port connects.
+    if (port !== p) return;
     port = null;
     status.app = false;
     status.appKnown = false;
+    status.error = null;
     status.recording = false;
     status.recordingSince = null;
     showStatus();

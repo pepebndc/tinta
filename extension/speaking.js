@@ -24,11 +24,9 @@
       return e;
     }
 
-    // Records attribute mutations for a participant at time t (ms).
+    // Records attribute mutations for a participant at time t (ms). Each event is [t, count].
     record(id, t, count) {
-      const e = this.entry(id);
-      const n = count === undefined ? 1 : count;
-      for (let i = 0; i < n; i++) e.events.push(t);
+      this.entry(id).events.push([t, count === undefined ? 1 : count]);
     }
 
     // Sets a secondary speaking signal (for example an aria-label) for a participant.
@@ -46,9 +44,11 @@
       let changed = false;
       for (const e of this.entries.values()) {
         const from = t - o.windowMs;
-        while (e.events.length && e.events[0] <= from) e.events.shift();
+        let old = 0;
+        while (old < e.events.length && e.events[old][0] <= from) old += 1;
+        if (old > 0) e.events.splice(0, old);
         let count = 0;
-        for (const et of e.events) if (et <= t) count += 1;
+        for (const [et, n] of e.events) if (et <= t) count += n;
         const above = e.hint || count >= o.minMutationsPerWindow;
         if (above) {
           e.aboveCount += 1;

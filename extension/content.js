@@ -20,7 +20,6 @@
     skipSubtreeSelector: "video, canvas, svg, button, i, style, script, .material-icons, .material-icons-extended, .google-material-icons, .google-symbols",
     iconTextPattern: /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/,
     uiTexts: ["more_vert", "mic", "mic_off", "keep", "push_pin", "pin", "Pin", "Unpin", "More options", "Presentation"],
-    speakingIndicatorSelectors: [],
     speakingLabelPattern: /\b(is speaking|speaking|est[aá] hablando|hablando|parle)\b/i,
     ignoreMutationSelector: "video, canvas",
     // The Meet toolbar marks the microphone and camera buttons with data-is-muted.
@@ -52,6 +51,9 @@
     }
   })();
 
+  // True after stop(). The script then does nothing.
+  let stopped = false;
+
   function log(...args) {
     if (debug) console.log("[tinta]", ...args);
   }
@@ -63,6 +65,11 @@
   }
 
   function send(msg) {
+    // An extension reload leaves this script without a runtime. A new copy of the script takes over.
+    if (!chrome.runtime?.id) {
+      stop();
+      return;
+    }
     try {
       chrome.runtime.sendMessage(msg).catch(() => {});
     } catch (e) {
@@ -231,9 +238,6 @@
   }
 
   function hasSpeakingHint(tile) {
-    for (const sel of CONFIG.speakingIndicatorSelectors) {
-      if (tile.querySelector(sel)) return true;
-    }
     for (const el of tile.querySelectorAll("[aria-label], [data-tooltip]")) {
       const label = el.getAttribute("aria-label") || el.getAttribute("data-tooltip") || "";
       if (CONFIG.speakingLabelPattern.test(label)) return true;
@@ -328,7 +332,7 @@
 
   let rescanTimer = null;
   function scheduleScan() {
-    if (rescanTimer) return;
+    if (rescanTimer || stopped) return;
     rescanTimer = setTimeout(() => {
       rescanTimer = null;
       scan();
@@ -338,8 +342,8 @@
   // Microphone state.
 
   // Only a visible button counts. A hidden copy, such as the button of the join screen, can keep an old state.
-  function micMuted() {
-    for (const el of document.querySelectorAll(CONFIG.mutedButtonSelector)) {
+  function micMutedIn(doc) {
+    for (const el of doc.querySelectorAll(CONFIG.mutedButtonSelector)) {
       const label = [el.getAttribute("aria-label"), el.getAttribute("data-tooltip"), el.getAttribute("title")].join(" ");
       if (!CONFIG.micLabelPattern.test(label) || el.getClientRects().length === 0) continue;
       const value = el.getAttribute("data-is-muted");
@@ -349,7 +353,15 @@
     return null;
   }
 
+  // In picture-in-picture, the window can show its own microphone button.
+  function micMuted() {
+    const pip = pipWindow();
+    const muted = pip ? micMutedIn(pip.document) : null;
+    return muted !== null ? muted : micMutedIn(document);
+  }
+
   let lastMicMuted = null;
+  let micFrame = null;
 
   function checkMic() {
     const muted = micMuted();
@@ -358,6 +370,19 @@
     if (!inCall) return;
     send({ type: "mic_state", meeting_code: code, t: Date.now(), muted });
     log("microphone", muted === null ? "unknown" : muted ? "muted" : "on");
+  }
+
+  // Each check reads the layout, so the observer checks at most once in each frame.
+  function onMicMutations(records) {
+    if (micFrame !== null || stopped) return;
+    const relevant = records.some(
+      (r) => r.attributeName === "data-is-muted" || r.target.hasAttribute("data-is-muted"),
+    );
+    if (!relevant) return;
+    micFrame = requestAnimationFrame(() => {
+      micFrame = null;
+      checkMic();
+    });
   }
 
   // Call state and messages.
@@ -391,7 +416,7 @@
 
   function sendState(force) {
     const msg = stateMessage();
-    const key = JSON.stringify([msg.title, msg.self_name, msg.participants, msg.mic_muted]);
+    const key = JSON.stringify([msg.title, msg.self_name, msg.participants]);
     if (!force && key === lastStateKey) return;
     lastStateKey = key;
     send(msg);
@@ -486,14 +511,15 @@
     return radius >= r.width / 2 - 2;
   }
 
-  // The indicator animates, so the most active mutation target leads to it.
-  function indicatorFor(tile, info) {
-    const now = performance.now();
-    const recent = [];
+  function pruneTargets(info, now) {
     for (const [el, t] of info.targets) {
       if (now - t.last > CONFIG.indicatorWindowMs || !el.isConnected) info.targets.delete(el);
-      else recent.push([el, t.n]);
     }
+  }
+
+  // The indicator animates, so the most active mutation target leads to it.
+  function indicatorFor(tile, info) {
+    const recent = [...info.targets].map(([el, t]) => [el, t.n]);
     recent.sort((a, b) => b[1] - a[1]);
     for (const [el] of recent.slice(0, 5)) {
       let node = el;
@@ -505,8 +531,10 @@
   }
 
   function paintSpeaking(ids) {
+    const now = performance.now();
     const next = new Set();
     for (const [tile, info] of tiles) {
+      pruneTargets(info, now);
       const speaking = ids.has(info.id);
       const ring = speaking ? indicatorFor(tile, info) : null;
       if (ring) next.add(ring);
@@ -567,22 +595,45 @@
     reply({ debug });
   });
 
-  // Start.
+  // Start and stop.
 
-  new MutationObserver(scheduleScan).observe(document.documentElement, { childList: true, subtree: true });
-  // A mute changes an attribute of the toolbar button. The observer reports it at once.
-  new MutationObserver(checkMic).observe(document.documentElement, {
+  function onPipOpened(event) {
+    log("picture-in-picture opened");
+    event.window.addEventListener("pagehide", onPipClosed);
+  }
+
+  const pageObserver = new MutationObserver(scheduleScan);
+  pageObserver.observe(document.documentElement, { childList: true, subtree: true });
+  // A mute changes an attribute of the toolbar button. The observer reports it in the next frame.
+  const micObserver = new MutationObserver(onMicMutations);
+  micObserver.observe(document.documentElement, {
     attributes: true,
     subtree: true,
     attributeFilter: ["data-is-muted", "aria-label"],
   });
-  setInterval(scan, CONFIG.rescanIntervalMs);
+  const scanTimer = setInterval(scan, CONFIG.rescanIntervalMs);
   window.addEventListener("pagehide", () => endCall());
-  if (window.documentPictureInPicture) {
-    window.documentPictureInPicture.addEventListener("enter", (event) => {
-      log("picture-in-picture opened");
-      event.window.addEventListener("pagehide", onPipClosed);
-    });
+  if (window.documentPictureInPicture) window.documentPictureInPicture.addEventListener("enter", onPipOpened);
+
+  // Removes all observers and timers.
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    inCall = false;
+    pageObserver.disconnect();
+    micObserver.disconnect();
+    for (const tile of [...tiles.keys()]) detachTile(tile);
+    clearInterval(scanTimer);
+    clearInterval(tickTimer);
+    clearInterval(stateTimer);
+    clearInterval(speakersTimer);
+    clearTimeout(rescanTimer);
+    if (micFrame !== null) cancelAnimationFrame(micFrame);
+    if (window.documentPictureInPicture) window.documentPictureInPicture.removeEventListener("enter", onPipOpened);
+    for (const el of rings) el.removeAttribute(CONFIG.ringAttribute);
+    rings.clear();
+    if (debugStyle) debugStyle.remove();
   }
+
   scan();
 })();

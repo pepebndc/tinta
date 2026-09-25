@@ -170,9 +170,15 @@ final class RecordingSession: @unchecked Sendable {
         }
     }
 
+    /// Stops the parts that started when a part fails to start.
     func start() throws {
-        try tap?.start()
-        try mic?.start()
+        do {
+            try tap?.start()
+            try mic?.start()
+        } catch {
+            stop()
+            throw error
+        }
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         timer.schedule(deadline: .now() + 0.25, repeating: 0.25)
         timer.setEventHandler { [weak self] in self?.emitLevels() }
@@ -260,8 +266,8 @@ final class RecordingSession: @unchecked Sendable {
     func setMicMuted(_ muted: Bool, wallMs: Int64) {
         let index = max(0, (wallMs - startWallMs) * Int64(ChunkFormat.sampleRate) / 1000)
         lock.lock()
-        muteChanges.removeAll { $0.index >= index }
-        muteChanges.append((index, muted))
+        let position = muteChanges.firstIndex { $0.index > index } ?? muteChanges.count
+        muteChanges.insert((index, muted), at: position)
         lock.unlock()
     }
 

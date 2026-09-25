@@ -87,7 +87,7 @@ export function GranolaImport({ onError, onDone }: { onError: (e: string) => voi
           </div>
           {progress && (
             <div className="meter-bar wide">
-              <div style={{ width: `${progress.total ? (100 * progress.done) / progress.total : 0}%` }} />
+              <div style={{ transform: `scaleX(${progress.total ? progress.done / progress.total : 0})` }} />
             </div>
           )}
         </div>

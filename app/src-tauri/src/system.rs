@@ -6,7 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 pub const NATIVE_HOST_NAME: &str = "app.tinta";
 pub const EXTENSION_ID: &str = "ajncjfpbmkmiheokjfhfdlhnmfbaofij";
@@ -24,15 +24,20 @@ pub fn exclude_from_backup(dir: &Path) {
     let _ = Command::new("/usr/bin/tmutil").arg("addexclusion").arg(dir).output();
 }
 
+/// The full name of the macOS user. The app reads it once.
 pub fn full_name() -> String {
-    Command::new("/usr/bin/id")
-        .arg("-F")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Me".into())
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        Command::new("/usr/bin/id")
+            .arg("-F")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Me".into())
+    })
+    .clone()
 }
 
 /// A helper binary next to the app executable, or in the Cargo target directory in development.

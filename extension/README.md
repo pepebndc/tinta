@@ -57,7 +57,8 @@ While that window is open, the tiles are not in the page, so the content script 
 The 3-second time starts again when the window closes.
 
 The microphone button in the Meet toolbar has a `data-is-muted` attribute and a label that names the microphone.
-A mutation observer reports each change of this attribute at once. The extension also checks the state every 200 ms, and it reads only a visible button.
+A mutation observer reports each change of this attribute in the next frame. The extension also checks the state every 200 ms, and it reads only a visible button.
+In picture-in-picture, the extension reads the microphone button of the picture-in-picture window first.
 While Tinta records the call, the app silences your microphone track for each muted interval.
 
 ## Speaker highlight
@@ -92,8 +93,7 @@ The action badge shows `REC` on a red background while Tinta records, and `II` w
 
 ## Debug mode
 
-The popup switch turns the speaker highlight on and off for the current tab.
-To also log each change of speakers to the console:
+The `tinta-debug` key turns on the speaker highlight and the console logs when the page loads. To set the key:
 
 1. Open a Meet page.
 2. Open the Chrome developer tools console.
@@ -136,13 +136,14 @@ The `speaking` array can be empty.
 {"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625203000,"left_at":1758625200000}
 ```
 
-While the popup is open, the service worker sends this message every second, so that the popup shows the current app state:
+`ping`: the service worker sends this message only when the native host is connected. It sends it every second while the popup is open, and every 5 seconds while Tinta records or pauses a recording. The answer updates the popup and the action badge.
 
 ```json
 {"type":"ping","t":1758625200000}
 ```
 
-The native host answers each message with the app state. `app` is false when the Tinta app does not answer. `recording_since` is the start time of the current recording, or null.
+The native host answers each message with the app state. `app` is false when the Tinta app does not answer in 3 seconds or is not running. `recording_since` is the start time of the current recording, or null.
+When the app answers with an error, the status has `app` true and an `error` text, and no recording state.
 
 ```json
 {"type":"status","app":true,"recording":true,"recording_since":1758625200000}
@@ -151,8 +152,11 @@ The native host answers each message with the app state. `app` is false when the
 ## Native host connection
 
 The service worker connects to the native host when it starts.
-If the connection fails, it tries again with a longer delay each time, to a maximum of 30 seconds.
-If the host is not installed, it tries again every 30 seconds and does not show an error.
+If the connection fails, the service worker sets a retry time. The delay increases after each fast failure, to a maximum of 30 seconds.
+If the host is not installed, the delay is 30 seconds, and the popup shows that Tinta is not installed.
+Chrome stops an idle MV3 service worker, and the retry timer stops with it.
+When the service worker gets the next message from a Meet tab after the retry time, it tries again.
+When Chrome starts the service worker again, it connects at once.
 
 ## Tests
 

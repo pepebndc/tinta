@@ -142,8 +142,7 @@ enum ChunkReader {
         let sampleRate = UInt32(ChunkFormat.sampleRate)
         let byteCount = UInt32(samples.count * 2)
         func append<T>(_ value: T) {
-            var copy = value
-            data.append(Data(bytes: &copy, count: MemoryLayout<T>.size))
+            withUnsafeBytes(of: value) { data.append(contentsOf: $0) }
         }
         data.append(Data("RIFF".utf8))
         append(UInt32(36 + byteCount).littleEndian)

@@ -65,7 +65,9 @@ enum CoreAudioQuery {
             mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size = UInt32(MemoryLayout<T>.size)
         var value = fallback
-        let status = AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value)
+        let status = withUnsafeMutableBytes(of: &value) {
+            AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0.baseAddress!)
+        }
         return status == noErr ? value : fallback
     }
 

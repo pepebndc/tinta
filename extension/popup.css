@@ -60,20 +60,23 @@ header img { border-radius: 7px; }
 .call-title { font-size: 15px; font-weight: 600; color: var(--ink); margin: 6px 0 2px; }
 ul { list-style: none; margin: 10px 0 0; padding: 0; max-height: 200px; overflow-y: auto; }
 li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; }
-li .avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--soft);
-  color: var(--ink);
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
 li.speaking { background: var(--soft); }
-li.speaking .avatar { background: var(--accent); color: #292456; }
+/* Each person has one color, the same as in the Tinta app. */
+.person { font-weight: 550; }
+.name-tone-0 { color: #5146b8; }
+.name-tone-1 { color: #1c7466; }
+.name-tone-2 { color: #9c4a24; }
+.name-tone-3 { color: #853b81; }
+.name-tone-4 { color: #2c5f9f; }
+.name-tone-5 { color: #66651b; }
+@media (prefers-color-scheme: dark) {
+  .name-tone-0 { color: #aca4f6; }
+  .name-tone-1 { color: #6fcdbd; }
+  .name-tone-2 { color: #f0a47d; }
+  .name-tone-3 { color: #df9bdb; }
+  .name-tone-4 { color: #8fb7ee; }
+  .name-tone-5 { color: #cfcd78; }
+}
 li .state { margin-left: auto; font-size: 10px; color: var(--muted); }
 li.speaking .state { color: var(--ink); }
 .debug { border-top: 1px solid var(--line); padding: 10px 0; font-size: 11px; color: var(--muted); }

@@ -35,7 +35,7 @@ pub struct Decision {
 
 /// An event holds until the next event, but never longer than this.
 /// The extension sends a heartbeat every 5 seconds, and the engine reader every 3 seconds.
-const EVENT_HOLD_SECONDS: f64 = 7.0;
+pub const EVENT_HOLD_SECONDS: f64 = 7.0;
 const MIN_SHARE: f64 = 0.5;
 const MIN_MARGIN: f64 = 0.25;
 const MIN_OVERLAP_SECONDS: f64 = 2.0;

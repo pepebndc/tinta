@@ -66,9 +66,13 @@ fn arg_list(args: &Value, key: &str) -> Result<Vec<String>> {
         .collect())
 }
 
+/// The tools that only read data. All other tools change data.
+pub const READ_ONLY: &[&str] =
+    &["list_meetings", "search_meetings", "get_notes", "get_meeting", "get_summary", "get_transcript", "list_speakers"];
+
 /// A meeting that MCP can see: it exists and it is not in the trash.
 /// Finds a visible meeting by its full ID, or by the first 8 or more characters of the ID.
-fn resolve(db: &Db, id: &str) -> Result<String> {
+pub fn resolve(db: &Db, id: &str) -> Result<String> {
     let id = id.trim();
     if let Ok(meeting) = db.meeting(id) {
         if meeting.deleted_at.is_none() {
@@ -111,7 +115,7 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
             let meetings: Vec<Value> = db
                 .meetings(true)?
                 .iter()
-                .filter(|m| folder.map(|f| m.folder.as_deref() == Some(f)).unwrap_or(true))
+                .filter(|m| folder.map(|f| m.folder.as_deref().is_some_and(|mf| mf.to_lowercase() == f.to_lowercase())).unwrap_or(true))
                 .filter(|m| tag.as_ref().map(|t| m.tags.contains(t)).unwrap_or(true))
                 .filter(|m| from.map(|f| m.created_at >= f).unwrap_or(true))
                 .filter(|m| to.map(|t| m.created_at <= t).unwrap_or(true))

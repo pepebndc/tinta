@@ -57,6 +57,10 @@ actor Speech {
     private var asr: AsrManager?
     private var vad: VadManager?
     private var diarizer: OfflineDiarizerManager?
+    /// Diarizers with a speaker limit, by the limit.
+    private var limitedDiarizers: [Int: OfflineDiarizerManager] = [:]
+    /// The model load in progress. Concurrent callers wait for this task and do not load the models again.
+    private var loading: Task<Void, Error>?
 
     private var verified = false
 
@@ -109,6 +113,15 @@ actor Speech {
     }
 
     private func loadIfNeeded() async throws {
+        if verified, asr != nil, vad != nil { return }
+        if let loading { return try await loading.value }
+        let task = Task { try await self.load() }
+        loading = task
+        defer { loading = nil }
+        try await task.value
+    }
+
+    private func load() async throws {
         guard modelsInstalled() else { throw EngineError("models are not installed") }
         ModelPins.setOnline(false)
         try verify()
@@ -196,9 +209,14 @@ actor Speech {
         try await loadDiarizerIfNeeded()
         guard var active = diarizer else { return [] }
         if let maxSpeakers, maxSpeakers > 0 {
-            let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig.default.withSpeakers(min: nil, max: maxSpeakers))
-            try await manager.prepareModels()
-            active = manager
+            if let cached = limitedDiarizers[maxSpeakers] {
+                active = cached
+            } else {
+                let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig.default.withSpeakers(min: nil, max: maxSpeakers))
+                try await manager.prepareModels()
+                limitedDiarizers[maxSpeakers] = manager
+                active = manager
+            }
         }
         Output.shared.event("finalize_progress", ["stage": "diarization", "fraction": 0.0])
         let result = try await active.process(audio: samples)
