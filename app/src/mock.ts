@@ -117,6 +117,15 @@ const boot: Bootstrap = {
     : [],
 };
 
+/** Sends sample level meters during a recording. Other events do not occur in the preview. */
+export function mockOn(event: string, handler: (payload: unknown) => void): () => void {
+  if (event !== "engine" || hash() !== "recording") return () => undefined;
+  const send = () => handler({ event: "levels", mic: 0.03 + Math.random() * 0.04, remote: 0.1 + Math.random() * 0.06, remote_capturing: true, mic_muted: false });
+  send();
+  const timer = setInterval(send, 400);
+  return () => clearInterval(timer);
+}
+
 export async function mockInvoke<T>(command: string): Promise<T> {
   const results: Record<string, unknown> = {
     bootstrap: boot,

@@ -291,7 +291,7 @@ export function installRunning(): boolean {
 }
 
 export function on<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
-  if (MOCK) return Promise.resolve(() => undefined);
+  if (MOCK) return import("./mock").then(({ mockOn }) => mockOn(event, handler as (payload: unknown) => void));
   return listen<T>(event, (e) => handler(e.payload));
 }
 

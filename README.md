@@ -11,7 +11,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 > Tinta is in active development. Expect bugs and changes. All feedback is welcome. To report a bug or suggest an improvement, [open an issue](https://github.com/pepebndc/tinta/issues).
 
 <p align="center">
-  <img src="docs/images/meeting.png" alt="A meeting in Tinta: notes on the left, a transcript with speaker names on the right">
+  <img src="docs/images/meeting.png" alt="A meeting in Tinta: a summary at the top, notes on the left, and a transcript with speaker names on the right">
 </p>
 
 ## What Tinta does
@@ -48,11 +48,11 @@ Tinta does not tell other people in a call that you record. Always tell them.
 
 | Home | Recording |
 |---|---|
-| ![Home with a detected Google Meet call](docs/images/home.png) | ![A recording with level meters and a live draft](docs/images/recording.png) |
+| ![Home with a Google Meet call, the recent meetings, and the next meetings from the calendar](docs/images/home.png) | ![A recording with level meters, notes, and a live draft of the transcript](docs/images/recording.png) |
 
 | Dark appearance | Chrome extension |
 |---|---|
-| ![The meeting view in the dark appearance](docs/images/meeting-dark.png) | <img src="docs/images/extension-popup.png" width="320" alt="The extension popup with the participants of a call"> |
+| ![A meeting with its summary in the dark appearance](docs/images/meeting-dark.png) | <img src="docs/images/extension-popup.png" width="320" alt="The extension popup during a recording, with the participants of the call and the active speaker"> |
 
 ## Status
 
@@ -181,7 +181,7 @@ This repository does not include the models. Tinta downloads them at pinned revi
 | Unit tests | `cargo test --workspace` |
 | Extension tests | `node --test extension/test/speaking.test.mjs` |
 | End-to-end self-test | `TINTA_DATA_DIR=$(mktemp -d) cargo run -p tinta-selftest` |
-| Interface preview with sample data | `cd app && pnpm preview:mock`, then open `app/dist-mock/index.html` |
+| Interface preview with sample data | `cd app && pnpm preview:mock && python3 -m http.server -d dist-mock 8765`, then open `http://localhost:8765/index.html` |
 | App bundle | `./scripts/build.sh` |
 
 The self-test builds a synthetic meeting with the macOS voices. It runs processing, name matching, export, the MCP tools, undo, the trash, and audio retention. It uses its own data folder and does not touch your library. Install the speech models before you run it.
