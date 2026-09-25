@@ -140,7 +140,7 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
           <InkMark size={96} />
         </div>
         <div className="intro-word">
-          <Wordmark size={88} />
+          <Wordmark size={96} />
         </div>
         <p className="intro-line">A little ink. A clear record.</p>
         <span className="intro-skip small muted">Click to skip</span>

@@ -1,5 +1,7 @@
+mod calendar;
 mod commands;
 mod engine;
+mod notify;
 mod socket;
 mod system;
 
@@ -119,6 +121,8 @@ pub struct AppState {
     pub active: Mutex<Option<Active>>,
     pub extension: Mutex<ExtensionState>,
     pub calls: Mutex<Vec<AppCall>>,
+    /// The events of the calendars on this Mac.
+    pub calendar: Mutex<calendar::CalendarState>,
     pub finalizing: Mutex<HashSet<String>>,
     pub summarizing: Mutex<HashSet<String>>,
     /// A call that ended during a recording, and the time of the end message.
@@ -341,6 +345,7 @@ impl AppState {
                 let Some(app) = event["app"].as_str() else { return };
                 self.on_call_state(app, &event);
             }
+            "calendar_changed" => self.on_calendar_changed(),
             "call_ended" => {
                 let Some(app) = event["app"].as_str() else { return };
                 let name = event["name"].as_str().unwrap_or(app);
@@ -867,7 +872,7 @@ pub fn watch_calls(delay: Duration) {
     });
 }
 
-/// Opens the library, starts the engine client and the app socket, and starts recovery and retention.
+/// Opens the library, starts the engine client and the app socket, and starts the calendar, recovery, and retention.
 pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
     let data = paths::data_dir();
     std::fs::create_dir_all(&data)?;
@@ -888,6 +893,7 @@ pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
         active: Mutex::new(None),
         extension: Mutex::new(ExtensionState::default()),
         calls: Mutex::new(Vec::new()),
+        calendar: Mutex::new(calendar::CalendarState::default()),
         finalizing: Mutex::new(HashSet::new()),
         summarizing: Mutex::new(HashSet::new()),
         call_ended: Mutex::new(None),
@@ -897,6 +903,7 @@ pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
     });
     let _ = STATE.set(state.clone());
     watch_calls(ENGINE_RESTART_MIN);
+    calendar::watch();
     // Test runs use their own data folder and must not change the Chrome configuration.
     if std::env::var_os("TINTA_DATA_DIR").is_none() {
         let _ = system::install_native_host();

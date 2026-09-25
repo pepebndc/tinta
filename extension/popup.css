@@ -37,11 +37,11 @@ header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 header img { border-radius: 7px; }
 .wordmark {
   font-family: "Brush Script MT", "Brush Script", cursive;
-  font-size: 30px;
+  font-size: 33px;
   line-height: 0.8;
-  letter-spacing: -0.06em;
+  letter-spacing: 0.01em;
   color: var(--ink);
-  transform: rotate(-5deg);
+  transform: rotate(-2deg);
   display: inline-block;
 }
 .for { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-left: auto; }

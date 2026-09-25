@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Active, allowMicrophone, api, AppCall, Bootstrap, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
+import { Active, allowCalendar, allowMicrophone, api, AppCall, Bootstrap, CalendarState, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
 import { MeetingList, Notice, pressable, tagList } from "./MeetingList";
 import { Mcp, Settings, Trash } from "./Settings";
@@ -34,6 +34,7 @@ export function App() {
   const [active, setActive] = useState<Active | null>(null);
   const [extension, setExtension] = useState<ExtensionState | null>(null);
   const [calls, setCalls] = useState<AppCall[]>([]);
+  const [calendar, setCalendar] = useState<CalendarState>({ access: "", calendars: [], events: [] });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function App() {
       setActive(b.active);
       setExtension(b.extension);
       setCalls(b.calls);
+      setCalendar(b.calendar);
     } catch (e) {
       setError(String(e));
     }
@@ -80,9 +82,21 @@ export function App() {
     return () => window.removeEventListener("focus", focus);
   }, [!!boot, micAllowed, refreshBoot]);
 
+  // The calendars change in other apps and in System Settings, so Tinta reads them again when the window gets the focus.
+  useEffect(() => {
+    const focus = () => void api.refreshCalendar().then(setCalendar).catch(() => undefined);
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
+  }, []);
+
   useEffect(() => {
     void refreshList();
     const subs = [
+      on<CalendarState>("calendar", setCalendar),
+      on<{ id: string }>("open_meeting", (p) => {
+        void refreshList();
+        setView({ kind: "meeting", id: p.id });
+      }),
       on("meeting_changed", () => void refreshList()),
       on<ExtensionState>("extension", setExtension),
       on<AppCall[]>("calls", setCalls),
@@ -181,19 +195,20 @@ export function App() {
     }
   }
 
-  async function recordCall(source: string) {
+  /** Records a detected call. A call of a calendar event records into the meeting of the event. */
+  async function recordCall(source: string, eventId?: string) {
     if (creating) return;
     setCreating(true);
     let id: string | null = null;
     try {
-      id = (await api.createMeeting()).id;
+      id = eventId ? await api.openEvent(eventId, false) : (await api.createMeeting()).id;
       setActive(await api.startRecording(id, source));
       await refreshList();
       setView({ kind: "meeting", id });
     } catch (e) {
       setError(String(e));
-      // The meeting has no recording, so Tinta does not keep it.
-      if (id) {
+      // The meeting has no recording, so Tinta does not keep it. The meeting of a calendar event can have notes, so it stays.
+      if (id && !eventId) {
         const failed = id;
         await api
           .trashMeeting(failed)
@@ -204,6 +219,26 @@ export function App() {
     } finally {
       setCreating(false);
     }
+  }
+
+  async function openEvent(eventId: string, join: boolean) {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const id = await api.openEvent(eventId, join);
+      await refreshList();
+      setView({ kind: "meeting", id });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function connectCalendar() {
+    allowCalendar(calendar.access)
+      .then((c) => c && setCalendar(c))
+      .catch((e) => setError(String(e)));
   }
 
   function trashed(id: string, title: string) {
@@ -370,6 +405,8 @@ export function App() {
           <Settings
             boot={boot}
             calls={calls}
+            calendar={calendar}
+            onConnectCalendar={connectCalendar}
             onGranola={() => setView({ kind: "granola" })}
             onChanged={() => {
               void refreshBoot();
@@ -395,9 +432,13 @@ export function App() {
             active={active}
             extension={extension}
             calls={calls}
+            calendar={calendar}
             onOpen={(id) => setView({ kind: "meeting", id })}
             busy={creating}
             onRecordCall={recordCall}
+            onOpenEvent={openEvent}
+            onConnectCalendar={connectCalendar}
+            onInternetAccounts={() => api.openPrivacySettings("internet_accounts").catch((e) => setError(String(e)))}
             onSettings={() => setView({ kind: "settings" })}
             onAllowMicrophone={() =>
               boot &&

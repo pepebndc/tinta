@@ -117,3 +117,20 @@ pub fn trusted_peer(path: &Path) -> bool {
     cache.insert(path.to_path_buf(), valid);
     valid
 }
+
+/// Opens a call link and returns the recording source for the call. Zoom and Microsoft Teams calls open in their
+/// desktop apps when the apps are installed. Other calls open in Chrome, or in the default browser without Chrome.
+pub fn open_call(link: &tinta_core::calendar::Link) -> String {
+    let open = |args: &[&str]| Command::new("/usr/bin/open").args(args).status().map(|s| s.success()).unwrap_or(false);
+    if let (Some(url), Some(bundle)) = (link.app_url(), link.app_bundle()) {
+        if open(&["-b", bundle, &url]) {
+            return bundle.to_string();
+        }
+    }
+    if open(&["-b", "com.google.Chrome", &link.url]) {
+        return "com.google.Chrome".to_string();
+    }
+    let _ = open(&[&link.url]);
+    // The default browser is not known, so the recording takes all system audio.
+    "all".to_string()
+}

@@ -85,7 +85,7 @@ export function Lockup() {
   return (
     <div className="lockup">
       <InkMark size={30} />
-      <Wordmark size={40} />
+      <Wordmark size={44} />
     </div>
   );
 }

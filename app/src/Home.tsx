@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Active, AppCall, Bootstrap, clock, dateTime, ExtensionState, Meeting, Preview, relativeDate } from "./api";
+import { Active, AppCall, Bootstrap, CalendarState, clock, dateTime, ExtensionState, Meeting, PLATFORM_NAMES, Preview, relativeDate } from "./api";
 import { Icon, InkMark, Name } from "./Brand";
 import { pressable } from "./MeetingList";
+import { JOIN_BEFORE_MS, NextMeetings, recorded, startsIn, timeRange } from "./NextMeetings";
 
 type Props = {
   boot: Bootstrap | null;
@@ -12,8 +13,14 @@ type Props = {
   active: Active | null;
   extension: ExtensionState | null;
   calls: AppCall[];
+  calendar: CalendarState;
   onOpen: (id: string) => void;
-  onRecordCall: (source: string) => void;
+  /** Records a detected call. `eventId` is the calendar event of the call, when Tinta knows it. */
+  onRecordCall: (source: string, eventId?: string) => void;
+  /** Opens the meeting of a calendar event. With `join`, Tinta also joins the call and records it. */
+  onOpenEvent: (eventId: string, join: boolean) => void;
+  onConnectCalendar: () => void;
+  onInternetAccounts: () => void;
   onSettings: () => void;
   onAllowMicrophone: () => void;
   onRetry: (id: string) => void;
@@ -22,6 +29,7 @@ type Props = {
 };
 
 const DAY = 86_400_000;
+const CALENDAR_DISMISSED = "tinta-calendar-dismissed";
 
 function greeting(name: string, now: Date): string {
   const hour = now.getHours();
@@ -30,7 +38,10 @@ function greeting(name: string, now: Date): string {
   return first ? `${part}, ${first}` : part;
 }
 
-export function Home({ boot, meetings, previews, onFilter, active, extension, calls, onOpen, onRecordCall, onSettings, onAllowMicrophone, onRetry, busy }: Props) {
+export function Home({
+  boot, meetings, previews, onFilter, active, extension, calls, calendar, onOpen, onRecordCall, onOpenEvent, onConnectCalendar,
+  onInternetAccounts, onSettings, onAllowMicrophone, onRetry, busy,
+}: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -42,6 +53,11 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
   const everConnected = !!extension?.connected_at;
   const recording = active ? meetings.find((m) => m.id === active.meeting_id) : undefined;
   const ready = boot?.models_installed ?? false;
+  const [calendarDismissed, setCalendarDismissed] = useState(() => localStorage.getItem(CALENDAR_DISMISSED) === "true");
+  const showCalendar = calendar.access === "granted" || (calendar.access !== "" && !calendarDismissed);
+  // The calendar event of the Meet call, and the next meeting with a call link that starts soon.
+  const callEvent = inCall ? calendar.events.find((e) => e.link?.code && e.link.code === extension?.meeting_code) : undefined;
+  const soon = calendar.events.find((e) => e.link && e.start - now <= JOIN_BEFORE_MS && e.end > now && !recorded(e, meetings));
 
   const setup = boot
     ? [
@@ -101,7 +117,7 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
               {people(extension?.participants.length ?? 0)} Tell everyone that you record the call.
             </p>
           </div>
-          <RecordButton ready={ready} busy={busy} onClick={() => onRecordCall("com.google.Chrome")} />
+          <RecordButton ready={ready} busy={busy} onClick={() => onRecordCall("com.google.Chrome", callEvent?.id)} />
         </section>
       ) : appCall ? (
         <section className="hero hero-call">
@@ -118,6 +134,29 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
           </div>
           <RecordButton ready={ready} busy={busy} onClick={() => onRecordCall(appCall.app)} />
         </section>
+      ) : soon?.link ? (
+        <section className="hero hero-call">
+          <InkMark size={44} />
+          <div className="hero-text">
+            <div className="eyebrow">
+              {startsIn(soon, now)} · {PLATFORM_NAMES[soon.link.platform]}
+            </div>
+            <h2>{soon.title || "Untitled meeting"}</h2>
+            <p>
+              {timeRange(soon)}
+              {soon.attendees.length > 1 ? `, ${soon.attendees.length} people. ` : ". "}
+              Tell everyone that you record the call.
+            </p>
+          </div>
+          <button
+            className="primary big"
+            disabled={!ready || busy}
+            onClick={() => onOpenEvent(soon.id, true)}
+            title={ready ? "" : "Install the speech models first"}
+          >
+            {busy ? "Starting…" : "Join and take notes"}
+          </button>
+        </section>
       ) : (
         <section className="hero">
           <InkMark size={44} />
@@ -131,7 +170,7 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
         </section>
       )}
 
-      <div className={`home-grid ${pending.length > 0 || attention.length > 0 ? "" : "single"}`}>
+      <div className={`home-grid ${pending.length > 0 || attention.length > 0 || showCalendar ? "" : "single"}`}>
         <div className="home-main">
           <div className="section-head">
             <h2>Recent meetings</h2>
@@ -190,8 +229,24 @@ export function Home({ boot, meetings, previews, onFilter, active, extension, ca
           )}
         </div>
 
-        {(pending.length > 0 || attention.length > 0) && (
+        {(pending.length > 0 || attention.length > 0 || showCalendar) && (
         <aside className="home-side">
+          {showCalendar && (
+          <NextMeetings
+            calendar={calendar}
+            meetings={meetings}
+            now={now}
+            busy={busy}
+            onJoin={(id) => onOpenEvent(id, true)}
+            onNotes={(id) => onOpenEvent(id, false)}
+            onConnect={onConnectCalendar}
+            onInternetAccounts={onInternetAccounts}
+            onDismiss={() => {
+              localStorage.setItem(CALENDAR_DISMISSED, "true");
+              setCalendarDismissed(true);
+            }}
+          />
+          )}
           {pending.length > 0 && (
             <section className="side-card">
               <h2>Get ready</h2>

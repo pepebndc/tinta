@@ -15,8 +15,9 @@ struct Engine {
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.2.2"])
+        Output.shared.event("ready", ["version": "0.3.0"])
         Controller.calls.start()
+        Controller.calendar.start()
         Task.detached { await controller.prewarm() }
         let reader = Thread {
             while let line = readLine(strippingNewline: true) {
@@ -61,6 +62,7 @@ struct Engine {
 
 actor Controller {
     static let calls = CallWatcher()
+    static let calendar = CalendarReader()
     private let speech = Speech()
     private var session: RecordingSession?
     /// True while `start` waits for permissions and models.
@@ -98,6 +100,10 @@ actor Controller {
                 throw EngineError("Tinta cannot read the app window. Allow Accessibility access, and keep the call open.")
             }
             return ["text": text]
+        case "calendar":
+            return Self.calendar.read(days: params["days"] as? Int ?? 7)
+        case "request_calendar":
+            return ["granted": try await Self.calendar.request()]
         case "start":
             return try await start(params)
         case "pause":

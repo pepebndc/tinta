@@ -498,6 +498,43 @@ impl Db {
         self.meeting(&id)
     }
 
+    /// The meeting of a calendar event. It creates the meeting when the event has none yet.
+    /// A meeting in the trash gives up the event, so the event gets a new meeting.
+    pub fn meeting_for_event(&self, event_id: &str, title: &str) -> Result<Meeting> {
+        let external = crate::calendar::external_id(event_id);
+        let existing: Option<(String, Option<i64>)> = self
+            .conn
+            .query_row("SELECT id, deleted_at FROM meetings WHERE external_id = ?1", [&external], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?;
+        match existing {
+            Some((id, None)) => return self.meeting(&id),
+            Some((id, Some(_))) => {
+                self.conn.execute("UPDATE meetings SET external_id = NULL WHERE id = ?1", [&id])?;
+            }
+            None => {}
+        }
+        let meeting = self.create_meeting(title, None)?;
+        self.conn.execute("UPDATE meetings SET external_id = ?1 WHERE id = ?2", params![external, meeting.id])?;
+        Ok(meeting)
+    }
+
+    /// The meetings that the user created from calendar events, by event ID. Meetings in the trash are not in the map.
+    pub fn event_meetings(&self) -> Result<HashMap<String, String>> {
+        let prefix = format!("{}:", crate::calendar::EXTERNAL_PREFIX);
+        let mut stmt = self.conn.prepare(
+            "SELECT external_id, id FROM meetings WHERE deleted_at IS NULL AND substr(external_id, 1, length(?1)) = ?1",
+        )?;
+        let rows = stmt.query_map([&prefix], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut meetings = HashMap::new();
+        for row in rows {
+            let (external, id) = row?;
+            meetings.insert(external[prefix.len()..].to_string(), id);
+        }
+        Ok(meetings)
+    }
+
     pub fn meeting(&self, id: &str) -> Result<Meeting> {
         let mut meeting = self
             .conn
@@ -1408,6 +1445,21 @@ mod tests {
         assert_eq!(db.remove_folder("customers").unwrap().len(), 2);
         assert!(db.folders().unwrap().is_empty());
         assert_eq!(db.meetings(false).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_calendar_event_keeps_one_meeting_until_the_trash() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let first = db.meeting_for_event("ev1@100", "Standup").unwrap();
+        assert_eq!(first.title, "Standup");
+        assert_eq!(db.meeting_for_event("ev1@100", "Renamed").unwrap().id, first.id);
+        assert_eq!(db.event_meetings().unwrap().get("ev1@100"), Some(&first.id));
+        db.trash_meeting(&first.id, Origin::User).unwrap();
+        assert!(db.event_meetings().unwrap().is_empty());
+        let second = db.meeting_for_event("ev1@100", "Standup").unwrap();
+        assert_ne!(second.id, first.id);
+        db.restore(&first.id).unwrap();
+        assert_eq!(db.event_meetings().unwrap().get("ev1@100"), Some(&second.id));
     }
 
     #[test]

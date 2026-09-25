@@ -1,5 +1,6 @@
-//! Core library for Tinta: storage, keys, name matching, export, and MCP tools.
+//! Core library for Tinta: storage, keys, name matching, calendar events, export, and MCP tools.
 
+pub mod calendar;
 pub mod db;
 pub mod export;
 pub mod granola;

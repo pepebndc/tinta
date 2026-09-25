@@ -45,6 +45,23 @@ pub fn definitions() -> Value {
     ])
 }
 
+/// The tools for people to read: the name, the description without the notice for AI clients, and whether the tool only reads.
+pub fn catalog() -> Value {
+    let tools = definitions().as_array().cloned().unwrap_or_default();
+    json!(tools
+        .iter()
+        .map(|t| {
+            let name = t["name"].as_str().unwrap_or_default();
+            let description = t["description"].as_str().unwrap_or_default();
+            json!({
+                "name": name,
+                "description": description.strip_suffix(NOTICE).unwrap_or(description).trim_end(),
+                "read_only": READ_ONLY.contains(&name),
+            })
+        })
+        .collect::<Vec<_>>())
+}
+
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args.get(key).and_then(Value::as_str).ok_or_else(|| anyhow!("missing argument: {key}"))
 }
@@ -266,6 +283,16 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_catalog_lists_every_tool_without_the_notice() {
+        let catalog = catalog();
+        let tools = catalog.as_array().unwrap();
+        assert_eq!(tools.len(), definitions().as_array().unwrap().len());
+        assert!(tools.iter().all(|t| !t["description"].as_str().unwrap().contains("untrusted")));
+        let read_only = tools.iter().filter(|t| t["read_only"] == true).count();
+        assert_eq!(read_only, READ_ONLY.len());
+    }
     use crate::keys::Keys;
 
     #[test]

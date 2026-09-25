@@ -105,6 +105,41 @@ export type AppCall = {
   mic_muted: boolean | null;
 };
 
+/** A calendar on this Mac. `hidden` is true when the user hides its events in Tinta. */
+export type CalendarInfo = { id: string; title: string; color: string; account: string; hidden: boolean };
+
+export type Attendee = { name: string; email: string; is_self: boolean; status: string };
+
+/** A video call link in a calendar event. `code` is the Meet meeting code. */
+export type CallLink = { url: string; platform: "meet" | "zoom" | "teams" | "webex"; code: string | null };
+
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  start: number;
+  end: number;
+  calendar_id: string;
+  location: string | null;
+  attendees: Attendee[];
+  link: CallLink | null;
+  /** The Tinta meeting of the event, when the user created one. */
+  meeting_id: string | null;
+};
+
+/** The next meetings from the calendars on this Mac. */
+export type CalendarState = {
+  access: "granted" | "denied" | "undetermined" | "";
+  calendars: CalendarInfo[];
+  events: CalendarEvent[];
+};
+
+export const PLATFORM_NAMES: Record<CallLink["platform"], string> = {
+  meet: "Google Meet",
+  zoom: "Zoom",
+  teams: "Microsoft Teams",
+  webex: "Webex",
+};
+
 export type Bootstrap = {
   self_name: string;
   mcp_enabled: boolean;
@@ -116,6 +151,8 @@ export type Bootstrap = {
   /** The number of days that new meetings keep their audio. */
   audio_retention_days: number;
   call_reading: boolean;
+  /** Show a reminder when a meeting with a call link starts. */
+  meeting_reminders: boolean;
   accessibility: boolean;
   summaries: { available: boolean; reason?: string };
   filevault: boolean;
@@ -128,6 +165,7 @@ export type Bootstrap = {
   active: Active | null;
   extension: ExtensionState;
   calls: AppCall[];
+  calendar: CalendarState;
 };
 
 /** The first line of the summary and the other people of a meeting, for the cards on Home. */
@@ -148,6 +186,8 @@ export type Revision = {
 export type GranolaPreview = { path: string; total: number; mine: number; shared: number; already_imported: number };
 export type GranolaSummary = { imported: number; skipped: number; failed: { title: string; error: string }[] };
 export type StorageUsage = { library: number; audio: number; total: number; models: number };
+/** An MCP tool. `read_only` is false for the tools that change meetings. */
+export type McpTool = { name: string; description: string; read_only: boolean };
 export type Access = { id: number; ts: number; session: string; tool: string; meeting_ids: string[]; result: string };
 
 /** The audio retention periods, in days, that the app offers. */
@@ -159,7 +199,13 @@ export const api = {
   installModels: () => invoke<unknown>("install_models"),
   requestMicrophone: () => invoke<{ granted: boolean }>("request_microphone"),
   requestAccessibility: () => invoke<{ granted: boolean }>("request_accessibility"),
-  openPrivacySettings: (pane: "accessibility" | "microphone") => invoke<void>("open_privacy_settings", { pane }),
+  openPrivacySettings: (pane: "accessibility" | "microphone" | "calendars" | "internet_accounts") =>
+    invoke<void>("open_privacy_settings", { pane }),
+  refreshCalendar: () => invoke<CalendarState>("refresh_calendar"),
+  requestCalendar: () => invoke<CalendarState>("request_calendar"),
+  setCalendarHidden: (calendarId: string, hidden: boolean) => invoke<void>("set_calendar_hidden", { calendarId, hidden }),
+  /** Opens the meeting of a calendar event and returns its ID. With `join`, Tinta also joins the call and records it. */
+  openEvent: (id: string, join: boolean) => invoke<string>("open_event", { id, join }),
   saveCallReport: (app: string, path: string) => invoke<void>("save_call_report", { app, path }),
   listSources: () => invoke<{ sources: Source[]; default_input: string; route: "speakers" | "headphones" }>("list_sources"),
   /** All meetings that are not in the trash, archived meetings too. */
@@ -204,7 +250,7 @@ export const api = {
     invoke<GranolaSummary>("import_granola", { path, includeSummaries }),
   trash: () => invoke<Meeting[]>("trash"),
   restore: (id: string) => invoke<void>("restore", { id }),
-  mcpActivity: () => invoke<{ revisions: Revision[]; access: Access[] }>("mcp_activity"),
+  mcpActivity: () => invoke<{ revisions: Revision[]; access: Access[]; tools: McpTool[] }>("mcp_activity"),
   undo: (revisionId: number) => invoke<void>("undo", { revisionId }),
 };
 
@@ -214,6 +260,18 @@ export const api = {
  */
 export function allowMicrophone(status: Bootstrap["microphone"]): Promise<unknown> {
   return status === "denied" ? api.openPrivacySettings("microphone") : api.requestMicrophone();
+}
+
+/**
+ * Asks macOS for calendar access. macOS shows its prompt only one time, so after a denial
+ * this opens the Calendars pane of System Settings.
+ */
+export async function allowCalendar(access: CalendarState["access"]): Promise<CalendarState | null> {
+  if (access === "denied") {
+    await api.openPrivacySettings("calendars");
+    return null;
+  }
+  return api.requestCalendar();
 }
 
 // One model installation at a time, shared by the setup flow and Settings.

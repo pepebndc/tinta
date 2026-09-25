@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Access, allowMicrophone, api, AppCall, Bootstrap, bytes, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
+import { Access, McpTool, allowMicrophone, api, AppCall, Bootstrap, bytes, CalendarState, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { setTheme, ThemeChoice } from "./theme";
@@ -9,13 +9,22 @@ import { ConfirmButton } from "./Menu";
 const GROUPS = [
   ["settings-general", "General"],
   ["settings-recording", "Recording and calls"],
+  ["settings-calendar", "Calendar"],
   ["settings-storage", "Storage"],
   ["settings-import", "Import"],
 ] as const;
 
-type Props = { boot: Bootstrap; calls: AppCall[]; onGranola: () => void; onChanged: () => void; onError: (e: string) => void };
+type Props = {
+  boot: Bootstrap;
+  calls: AppCall[];
+  calendar: CalendarState;
+  onConnectCalendar: () => void;
+  onGranola: () => void;
+  onChanged: () => void;
+  onError: (e: string) => void;
+};
 
-export function Settings({ boot, calls, onGranola, onChanged, onError }: Props) {
+export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, onChanged, onError }: Props) {
   const [name, setName] = useState(boot.self_name);
   const { progress, install } = useModelInstall(onChanged, onError);
 
@@ -220,6 +229,62 @@ export function Settings({ boot, calls, onGranola, onChanged, onError }: Props) 
         </p>
       </section>
 
+      <h2 className="group-title" id="settings-calendar">Calendar</h2>
+      <section className="panel">
+        <h3>Next meetings</h3>
+        <p className="small muted">
+          Tinta reads the calendars on this Mac and shows your meetings of the next 7 days on Home. It needs no sign-in. To add a
+          Google calendar, add your Google account in System Settings, Internet Accounts, and turn on Calendars.
+        </p>
+        {calendar.access === "granted" ? (
+          <p>Tinta can read your calendars.</p>
+        ) : (
+          <div className="row">
+            <span>{calendar.access === "denied" ? "macOS does not allow calendar access for Tinta." : "Tinta does not have calendar access yet."}</span>
+            <button onClick={onConnectCalendar}>{calendar.access === "denied" ? "Open Calendar settings" : "Connect calendar"}</button>
+          </div>
+        )}
+        <div className="row">
+          <button onClick={() => api.openPrivacySettings("internet_accounts").catch((e) => onError(String(e)))}>Open Internet Accounts</button>
+        </div>
+      </section>
+
+      {calendar.access === "granted" && (
+        <section className="panel">
+          <h3>Reminders</h3>
+          <label>
+            <input type="checkbox" checked={boot.meeting_reminders} onChange={(e) => set("meeting_reminders", String(e.target.checked))} />{" "}
+            Remind me 1 minute before a meeting with a call link starts
+          </label>
+          <p className="small muted">
+            Click the reminder to join the call. Tinta opens Google Meet in Chrome, and Zoom and Microsoft Teams in their apps. It
+            starts the recording and opens your notes. Tinta must be open to show reminders.
+          </p>
+        </section>
+      )}
+
+      {calendar.access === "granted" && calendar.calendars.length > 0 && (
+        <section className="panel">
+          <h3>Calendars</h3>
+          <p className="small muted">Tinta shows the meetings of the selected calendars.</p>
+          <ul className="calendar-list">
+            {calendar.calendars.map((c) => (
+              <li key={c.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!c.hidden}
+                    onChange={(e) => api.setCalendarHidden(c.id, !e.target.checked).catch((err) => onError(String(err)))}
+                  />{" "}
+                  <span className="event-color" style={{ background: c.color || "var(--accent)" }} /> {c.title}
+                  {c.account && <span className="small muted"> · {c.account}</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <h2 className="group-title" id="settings-storage">Storage</h2>
       <section className="panel">
         <h3>Library</h3>
@@ -338,7 +403,7 @@ type McpProps = { boot: Bootstrap | null; onChanged: () => void; onError: (e: st
 
 /** MCP access, the client configuration, the changes by MCP clients, and the access log. */
 export function Mcp({ boot, onChanged, onError }: McpProps) {
-  const [data, setData] = useState<{ revisions: Revision[]; access: Access[] }>({ revisions: [], access: [] });
+  const [data, setData] = useState<{ revisions: Revision[]; access: Access[]; tools: McpTool[] }>({ revisions: [], access: [], tools: [] });
   const load = () => api.mcpActivity().then(setData).catch((e) => onError(String(e)));
   useEffect(() => {
     void load();
@@ -346,8 +411,10 @@ export function Mcp({ boot, onChanged, onError }: McpProps) {
     return () => void sub.then((u) => u());
   }, []);
   return (
-    <div className="settings">
+    <div className="settings mcp-page">
       <h1>MCP</h1>
+      <div className="mcp-layout">
+      <div className="mcp-main">
       {boot && (
         <section className="panel">
           <h2>Access</h2>
@@ -405,6 +472,60 @@ export function Mcp({ boot, onChanged, onError }: McpProps) {
           </div>
         ))}
       </section>
+      </div>
+      <McpTools tools={data.tools} />
+      </div>
     </div>
+  );
+}
+
+/** Example requests for an AI client that uses the Tinta tools. */
+const MCP_EXAMPLES = [
+  "Summarize my meetings of this week, with the decisions and the action items.",
+  "Find what Priya said about the audit timeline.",
+  "Tag the meetings about the audit with “audit”, and move them to the Audits folder.",
+  "Name Speaker 2 in yesterday's planning meeting as Leo Park.",
+];
+
+/** The MCP tools that an AI client can use, in two groups: the tools that read and the tools that change meetings. */
+function McpTools({ tools }: { tools: McpTool[] }) {
+  const groups = [
+    { title: "Read", detail: "The client reads meetings. It changes nothing.", tools: tools.filter((t) => t.read_only) },
+    { title: "Change", detail: "Tinta records each change. You can undo it on this page.", tools: tools.filter((t) => !t.read_only) },
+  ];
+  return (
+    <aside className="mcp-side">
+      <section className="side-card">
+        <h2>What clients can do</h2>
+        <p className="small muted">
+          A client that you connect gets these {tools.length} tools. Ask in your own words, and the client selects the tools.
+        </p>
+        {groups.map((g) => (
+          <div key={g.title} className="tool-group">
+            <div className="eyebrow">{g.title}</div>
+            <p className="small muted">{g.detail}</p>
+            <ul className="tool-list">
+              {g.tools.map((t) => (
+                <li key={t.name}>
+                  <code>{t.name}</code>
+                  <span className="small muted">{t.description}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+      <section className="side-card">
+        <h2>Try asking</h2>
+        <ul className="tool-examples">
+          {MCP_EXAMPLES.map((e) => (
+            <li key={e} className="small">
+              {e}
+            </li>
+          ))}
+        </ul>
+        <p className="small muted">Clients cannot start or stop a recording, export files, or read the audio.</p>
+      </section>
+    </aside>
   );
 }

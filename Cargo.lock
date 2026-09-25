@@ -2199,7 +2199,10 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
 dependencies = [
+ "bitflags 2.13.2",
+ "block2",
  "objc2",
+ "objc2-core-location",
  "objc2-foundation",
 ]
 
@@ -3661,11 +3664,15 @@ dependencies = [
 
 [[package]]
 name = "tinta"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "block2",
  "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-user-notifications",
  "serde",
  "serde_json",
  "tauri",
@@ -3677,7 +3684,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3696,7 +3703,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-mcp"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3706,7 +3713,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-native-host"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3715,7 +3722,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-selftest"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde_json",

@@ -40,12 +40,14 @@ async fn bootstrap() -> CommandResult<Value> {
                 "auto_summary": setting("auto_summary", "true") == "true",
                 "audio_retention_days": db.audio_retention_days().map_err(err)?,
                 "call_reading": setting("call_reading", "false") == "true",
+                "meeting_reminders": setting("meeting_reminders", "true") == "true",
             })
         };
         // The app takes the locks one at a time.
         result["active"] = json!(*s.active.lock().unwrap());
         result["extension"] = json!(*s.extension.lock().unwrap());
         result["calls"] = json!(*s.calls.lock().unwrap());
+        result["calendar"] = json!(s.calendar_view());
         for (key, value) in [
             ("accessibility", json!(permissions["accessibility"].as_bool().unwrap_or(false))),
             ("summaries", summaries),
@@ -66,7 +68,10 @@ async fn bootstrap() -> CommandResult<Value> {
 
 #[tauri::command]
 async fn set_setting(key: String, value: String) -> CommandResult<()> {
-    let allowed = ["self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary", "call_reading"];
+    let allowed = [
+        "self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary", "call_reading",
+        "meeting_reminders",
+    ];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
     }
@@ -82,19 +87,40 @@ async fn request_accessibility() -> CommandResult<Value> {
     blocking(|| state().engine.call("request_accessibility", json!({}), Duration::from_secs(10)).map_err(err)).await
 }
 
-/// Opens a Privacy and Security pane of System Settings: "accessibility" or "microphone".
+/// Opens a pane of System Settings: "accessibility", "microphone", "calendars", or "internet_accounts".
 #[tauri::command]
 async fn open_privacy_settings(pane: String) -> CommandResult<()> {
-    let anchor = match pane.as_str() {
-        "accessibility" => "Privacy_Accessibility",
-        "microphone" => "Privacy_Microphone",
+    let url = match pane.as_str() {
+        "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        "microphone" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        "calendars" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+        "internet_accounts" => "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension",
         other => return Err(format!("unknown settings pane {other}")),
     };
-    std::process::Command::new("/usr/bin/open")
-        .arg(format!("x-apple.systempreferences:com.apple.preference.security?{anchor}"))
-        .status()
-        .map_err(err)?;
+    std::process::Command::new("/usr/bin/open").arg(url).status().map_err(err)?;
     Ok(())
+}
+
+/// Reads the calendars again and returns the next meetings.
+#[tauri::command]
+async fn refresh_calendar() -> CommandResult<Value> {
+    blocking(|| Ok(json!(state().refresh_calendar().map_err(err)?))).await
+}
+
+#[tauri::command]
+async fn request_calendar() -> CommandResult<Value> {
+    blocking(|| Ok(json!(state().request_calendar().map_err(err)?))).await
+}
+
+#[tauri::command]
+async fn set_calendar_hidden(calendar_id: String, hidden: bool) -> CommandResult<()> {
+    state().set_calendar_hidden(&calendar_id, hidden).map_err(err)
+}
+
+/// Opens the meeting of a calendar event and returns its ID. With `join`, it also joins the call and records it.
+#[tauri::command]
+async fn open_event(id: String, join: bool) -> CommandResult<String> {
+    blocking(move || state().open_event(&id, join).map_err(err)).await
 }
 
 /// Saves a text dump of the window of a call app to a file that the user selects.
@@ -558,6 +584,7 @@ async fn mcp_activity() -> CommandResult<Value> {
     Ok(json!({
         "revisions": db.revisions(Some(Origin::Mcp), 200).map_err(err)?,
         "access": db.access_log(200).map_err(err)?,
+        "tools": tinta_core::tools::catalog(),
     }))
 }
 
@@ -574,6 +601,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         request_microphone,
         request_accessibility,
         open_privacy_settings,
+        refresh_calendar,
+        request_calendar,
+        set_calendar_hidden,
+        open_event,
         save_call_report,
         list_sources,
         list_meetings,

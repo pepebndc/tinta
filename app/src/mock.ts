@@ -66,6 +66,31 @@ function detail(): MeetingDetail {
   };
 }
 
+const minute = 60_000;
+const calendar: Bootstrap["calendar"] = {
+  access: hash() === "setup" ? "undetermined" : "granted",
+  calendars: [
+    { id: "work", title: "sam@example.com", color: "#7986cb", account: "Google", hidden: false },
+    { id: "home", title: "Home", color: "#33b679", account: "iCloud", hidden: false },
+  ],
+  events: [
+    {
+      id: "e1@1", title: "Weekly planning", start: now + 4 * minute, end: now + 34 * minute, calendar_id: "work", location: null,
+      attendees: [
+        { name: "Sam Rivera", email: "sam@example.com", is_self: true, status: "accepted" },
+        { name: "Priya Shah", email: "priya@example.com", is_self: false, status: "accepted" },
+        { name: "Leo Park", email: "leo@example.com", is_self: false, status: "tentative" },
+      ],
+      link: { url: "https://meet.google.com/abc-defg-hij", platform: "meet", code: "abc-defg-hij" }, meeting_id: null,
+    },
+    {
+      id: "e2@1", title: "Client check-in", start: now + 180 * minute, end: now + 210 * minute, calendar_id: "work", location: null,
+      attendees: [], link: { url: "https://acme.zoom.us/j/123456789", platform: "zoom", code: null }, meeting_id: "m2",
+    },
+    { id: "e3@1", title: "Dentist", start: now + 1500 * minute, end: now + 1560 * minute, calendar_id: "home", location: "Main St 4", attendees: [], link: null, meeting_id: null },
+  ],
+};
+
 const boot: Bootstrap = {
   self_name: "Sam Rivera", onboarded: !hash().startsWith("onboarding"), auto_stop: true, auto_summary: true, audio_retention_days: 7, summaries: { available: true }, mcp_enabled: true, theme: (localStorage.getItem("tinta-theme") as Bootstrap["theme"]) || "system", last_source: "com.google.Chrome", filevault: true,
   models_path: "~/Library/Application Support/FluidAudio/Models", microphone: "granted",
@@ -79,7 +104,7 @@ const boot: Bootstrap = {
     meeting_code: hash() === "zoom" ? null : "abc-defg-hij", title: hash() === "zoom" ? null : "Design review", self_name: "Sam Rivera",
     participants: hash() === "zoom" ? [] : detail().participants, speaking: [], mic_muted: hash() === "recording" ? true : false,
   },
-  call_reading: hash() === "zoom", accessibility: hash() === "zoom",
+  call_reading: hash() === "zoom", accessibility: hash() === "zoom", meeting_reminders: true, calendar,
   calls: hash() === "zoom"
     ? [{
         app: "us.zoom.xos", name: "Zoom", since: now - 30_000, speaking: ["Priya Shah"], mic_muted: false,
@@ -112,7 +137,20 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     trash: [],
     storage_usage: { library: 4_200_000, audio: 312_000_000, total: 316_200_000, models: 486_000_000 },
     prepare_extension: "/Users/sam/Library/Application Support/Tinta/Chrome extension",
-    mcp_activity: { revisions: [], access: [] },
+    mcp_activity: {
+      revisions: [],
+      access: [],
+      tools: [
+        { name: "list_meetings", description: "List meetings, newest first. Filter by folder, tag, or date range (epoch milliseconds).", read_only: true },
+        { name: "search_meetings", description: "Full-text search over titles, tags, notes, summaries, speaker names, and transcripts.", read_only: true },
+        { name: "get_transcript", description: "Get transcript turns in pages.", read_only: true },
+        { name: "update_summary", description: "Replace the summary of a meeting, or add one. The user can undo the change.", read_only: false },
+        { name: "add_tags", description: "Add tags to a meeting.", read_only: false },
+        { name: "delete_meeting", description: "Move a meeting to the trash. The app deletes it permanently after 7 days.", read_only: false },
+      ],
+    },
+    refresh_calendar: calendar,
+    request_calendar: calendar,
   };
   return results[command] as T;
 }

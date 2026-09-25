@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 (2026-09-25)
+
+### Added
+- **Next meetings** on Home shows your meetings of the next 7 days from the calendars on this Mac. Tinta needs no Google sign-in: add your Google account in System Settings, Internet Accounts, and Tinta reads its calendar.
+- When a meeting with a Google Meet, Zoom, Microsoft Teams, or Webex link starts soon, Home offers **Join and take notes**. Tinta opens the call, starts the recording, and opens the notes of the meeting.
+- A reminder 1 minute before a meeting with a call link starts. Click it to join the call and take notes. Turn it off in Settings, Calendar.
+- Click a meeting in **Next meetings** to write notes before the meeting starts.
+- Settings, Calendar: select the calendars that Tinta shows.
+- The MCP page lists the tools that a connected AI client can use, in two groups: the tools that read and the tools that change meetings. It also shows example requests.
+
+### Changed
+- When you record a Meet call from your calendar, the recording goes into the meeting of the calendar event, with the title of the event.
+- The "tinta" name in the sidebar, the first-run setup, and the Chrome extension is easier to read. The letters have more space and less tilt.
 ## 0.2.2 (2026-09-25)
 
 ### Changed

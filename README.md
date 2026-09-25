@@ -19,6 +19,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Notes and transcript side by side.** Write your notes while the draft transcript appears. Insert a timestamp with one click.
 - **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.
 - **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. In the Zoom and Microsoft Teams apps, Tinta reads who speaks from the call window (beta). You can confirm, correct, merge, or split speakers.
+- **Next meetings.** Tinta reads the calendars on your Mac, with no sign-in, and shows your next meetings. A reminder before each call lets you join it and take notes with one click.
 - **Call detection.** Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, offers to record them, and stops when you leave.
 - **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
 - **Your library.** Search, folders, tags, and export to Markdown, JSON, SRT, and VTT.
@@ -92,6 +93,8 @@ When you open Tinta for the first time, a short setup guides you through these s
 **Record a Zoom or Teams call.** Join the call in the Zoom or Microsoft Teams desktop app. Home shows "Zoom call detected" or "Microsoft Teams call detected". Tell everyone that you record, then click **Record this call**.
 
 **Names from Zoom and Teams (beta).** Open Settings, and under Calls, turn on "Get speaker names from Zoom and Microsoft Teams". macOS asks for Accessibility access for Tinta. Allow it in System Settings, then Privacy & Security, then Accessibility. During the call, Tinta reads the participant names and the active speaker from the call window. In a call with one other person, the other voice gets that person's name. Without the beta, you name the speakers after the call.
+
+**Next meetings.** Add your Google account in System Settings, then Internet Accounts, and turn on Calendars. On Home, click **Connect calendar**, and allow access when macOS asks. Tinta shows your meetings of the next 7 days. It reads the calendars on this Mac and needs no sign-in. One minute before a meeting with a Google Meet, Zoom, Microsoft Teams, or Webex link, Tinta shows a reminder. Click it, or click **Join and take notes** on Home. Tinta opens Meet in Chrome, and Zoom and Teams in their apps. Then it starts the recording and opens the notes. Tell everyone that you record. Tinta must be open to show reminders. Select the calendars in Settings, Calendar.
 
 **Record other apps.** Click **New meeting**, select the app under "Meeting audio", and click **Start recording**. On other apps, you name the speakers after the call. To transcribe an audio file, click **New meeting**, then **Or import an audio file**.
 
