@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 (2026-09-28)
+
+### Changed
+- Tinta has a new macOS identity, `com.usetinta.tinta`, for the usetinta.com domain. Your meetings, settings, and library key move to it automatically on the first start.
+- The Meet extension uses the new identity too. Tinta updates the extension in its "Chrome extension" folder, and Chrome loads the new extension the next time that it starts. Until then, the extension continues to work.
+- After the update, macOS asks again one time for the microphone, the meeting audio, the calendars, and notifications. If macOS asks whether Tinta can use its key in the Keychain, click **Always Allow**.
+
 ## 0.3.1 (2026-09-25)
 
 ### Added

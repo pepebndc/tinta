@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-pub const NATIVE_HOST_NAME: &str = "app.tinta";
+pub const NATIVE_HOST_NAME: &str = "com.usetinta.tinta";
+/// The native host name of versions before 0.4.0. An extension of such a version connects with
+/// this name until Chrome starts again and loads the new extension files.
+const OLD_NATIVE_HOST_NAME: &str = "app.tinta";
 pub const EXTENSION_ID: &str = "ajncjfpbmkmiheokjfhfdlhnmfbaofij";
 
 pub fn filevault_on() -> bool {
@@ -51,19 +54,71 @@ pub fn helper_path(name: &str) -> PathBuf {
 /// Writes the Native Messaging host manifest for Chrome. Chrome starts the host only
 /// for the published extension ID.
 pub fn install_native_host() -> Result<PathBuf> {
-    let dir = dirs_home()
-        .join("Library/Application Support/Google/Chrome/NativeMessagingHosts");
+    let dir = native_hosts_dir();
     std::fs::create_dir_all(&dir)?;
+    let path = write_host_manifest(&dir, NATIVE_HOST_NAME)?;
+    // Without the extension folder, no installed extension uses the old name.
+    if dir.join(format!("{OLD_NATIVE_HOST_NAME}.json")).exists() {
+        if extension_dir().exists() {
+            write_host_manifest(&dir, OLD_NATIVE_HOST_NAME)?;
+        } else {
+            remove_old_native_host();
+        }
+    }
+    Ok(path)
+}
+
+/// Removes the manifest of the old native host name. The extension calls it when it
+/// connects with the current name.
+pub fn remove_old_native_host() {
+    let _ = std::fs::remove_file(native_hosts_dir().join(format!("{OLD_NATIVE_HOST_NAME}.json")));
+}
+
+fn native_hosts_dir() -> PathBuf {
+    dirs_home().join("Library/Application Support/Google/Chrome/NativeMessagingHosts")
+}
+
+fn write_host_manifest(dir: &Path, name: &str) -> Result<PathBuf> {
     let manifest = json!({
-        "name": NATIVE_HOST_NAME,
+        "name": name,
         "description": "Tinta: Google Meet participant names",
         "path": helper_path("tinta-native-host"),
         "type": "stdio",
         "allowed_origins": [format!("chrome-extension://{EXTENSION_ID}/")],
     });
-    let path = dir.join(format!("{NATIVE_HOST_NAME}.json"));
+    let path = dir.join(format!("{name}.json"));
     std::fs::write(&path, serde_json::to_vec_pretty(&manifest)?).context("cannot write the native host manifest")?;
     Ok(path)
+}
+
+/// The folder that Chrome loads the unpacked extension from.
+pub fn extension_dir() -> PathBuf {
+    tinta_core::paths::base_dir().join("Chrome extension")
+}
+
+/// Replaces the extension folder with the bundled extension.
+pub fn copy_extension(source: &Path) -> Result<PathBuf> {
+    let target = extension_dir();
+    if target.exists() {
+        std::fs::remove_dir_all(&target)?;
+    }
+    crate::copy_dir(source, &target)?;
+    Ok(target)
+}
+
+/// Updates the extension folder when the bundled extension has a different version.
+/// Chrome loads the new files the next time that it starts.
+pub fn update_extension(source: &Path) {
+    let version = |dir: &Path| {
+        std::fs::read(dir.join("manifest.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| manifest["version"].as_str().map(str::to_string))
+    };
+    let target = extension_dir();
+    if target.exists() && version(source).is_some() && version(source) != version(&target) {
+        let _ = copy_extension(source);
+    }
 }
 
 fn dirs_home() -> PathBuf {

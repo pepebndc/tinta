@@ -1,6 +1,6 @@
 "use strict";
 
-const HOST_NAME = "app.tinta";
+const HOST_NAME = "com.usetinta.tinta";
 const MEET_ORIGIN = "https://meet.google.com";
 const MESSAGE_TYPES = new Set(["meet_state", "active_speakers", "mic_state", "meeting_ended"]);
 const RETRY_MIN_MS = 1000;
@@ -56,6 +56,7 @@ function connect() {
   port = p;
   status.host = "connected";
   const connectedAt = Date.now();
+  p.postMessage({ type: "hello", version: chrome.runtime.getManifest().version, t: connectedAt });
 
   p.onMessage.addListener((msg) => {
     retryMs = RETRY_MIN_MS;

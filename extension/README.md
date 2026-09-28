@@ -2,7 +2,7 @@
 
 This Chrome extension sends Google Meet metadata to the Tinta app on the same computer.
 The app uses the metadata to suggest names for speaker labels.
-The extension sends the metadata through Chrome Native Messaging to the host `app.tinta`.
+The extension sends the metadata through Chrome Native Messaging to the host `com.usetinta.tinta`.
 
 ## What the extension reads
 
@@ -136,6 +136,12 @@ The `speaking` array can be empty.
 {"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625203000,"left_at":1758625200000}
 ```
 
+`hello`: the service worker sends this message each time that it connects to the native host. `version` is the version of the extension.
+
+```json
+{"type":"hello","version":"0.4.0","t":1758625200000}
+```
+
 `ping`: the service worker sends this message only when the native host is connected. It sends it every second while the popup is open, and every 5 seconds while Tinta records or pauses a recording. The answer updates the popup and the action badge.
 
 ```json
@@ -150,6 +156,9 @@ When the app answers with an error, the status has `app` true and an `error` tex
 ```
 
 ## Native host connection
+
+The app writes the native host manifest `com.usetinta.tinta.json` each time that it starts.
+When the bundled extension has a new version, the app also updates the files in the "Chrome extension" folder. Chrome loads the new files the next time that it starts.
 
 The service worker connects to the native host when it starts.
 If the connection fails, the service worker sets a retry time. The delay increases after each fast failure, to a maximum of 30 seconds.

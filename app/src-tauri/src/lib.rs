@@ -1,6 +1,7 @@
 mod calendar;
 mod commands;
 mod engine;
+mod migrate;
 mod notify;
 mod socket;
 mod system;
@@ -637,6 +638,8 @@ impl AppState {
                 }
                 "mic_state" => ext.mic_muted = message["muted"].as_bool(),
                 "ping" => {}
+                // Only the current extension sends "hello", so no extension uses the old host name.
+                "hello" => system::remove_old_native_host(),
                 "meeting_ended" => {
                     ended = code.clone().or_else(|| ext.meeting_code.clone());
                     ext.mic_muted = None;
@@ -936,14 +939,19 @@ pub fn init(app: Option<AppHandle>) -> Result<Arc<AppState>> {
 }
 
 pub fn run() {
+    let context = tauri::generate_context!();
+    migrate::run(&context.config().identifier);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             init(Some(app.handle().clone())).map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
+            if let Ok(resources) = tauri::Manager::path(app).resource_dir() {
+                system::update_extension(&resources.join("extension"));
+            }
             Ok(())
         })
         .invoke_handler(commands::handler())
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building the app")
         .run(|_, event| {
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {

@@ -1,6 +1,6 @@
 //! Commands for the app window.
 
-use crate::{copy_dir, state, system, MCP_ENABLED_DEFAULT};
+use crate::{state, system, MCP_ENABLED_DEFAULT};
 use tinta_core::db::Origin;
 use tinta_core::export::{self, Document};
 use tinta_core::paths;
@@ -528,11 +528,7 @@ async fn prepare_extension(app: tauri::AppHandle) -> CommandResult<String> {
     use tauri::Manager;
     let source = app.path().resource_dir().map_err(err)?.join("extension");
     blocking(move || {
-        let target = paths::base_dir().join("Chrome extension");
-        if target.exists() {
-            std::fs::remove_dir_all(&target).map_err(err)?;
-        }
-        copy_dir(&source, &target).map_err(err)?;
+        let target = system::copy_extension(&source).map_err(err)?;
         std::process::Command::new("/usr/bin/open").arg("-R").arg(&target).spawn().map_err(err)?;
         Ok(target.to_string_lossy().to_string())
     })
