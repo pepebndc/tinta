@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumín as the Tinta logo</title>
+<style>
+:root {
+  --ink: #292456; --paper: #faf9f6; --accent: #aaa4e8; --accent-strong: #8174dc;
+  --soft: #eeecf7; --muted: #787586; --line: #e5e2e9; --panel: #ffffff; --back: #f0eef3;
+  --text: #343141; --ok: #3f7a55; --shadow: 0 24px 75px #29245612;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 14px; color: var(--text); background: var(--paper);
+  -webkit-font-smoothing: antialiased; color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #191824; --ink: #e7e3fc; --soft: #38324e; --muted: #aba6bc; --line: #393544;
+  --panel: #24212f; --back: #201d2b; --text: #ded9e8; --ok: #8fc7a0; --accent-strong: #b3aaf2; --shadow: 0 24px 75px #0003;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); transition: background .3s; }
+h1, h2, h3 { color: var(--ink); margin: 0; }
+h1 { font-size: 40px; font-weight: 600; letter-spacing: -1.2px; }
+h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.6px; margin-bottom: 6px; }
+h3 { font-size: 15px; font-weight: 600; }
+p { line-height: 1.6; margin: 0; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 30px; padding: 5px 12px; cursor: pointer; font-size: 12.5px; }
+button:hover { background: var(--soft); }
+button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+textarea, select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+textarea { width: 100%; min-height: 56px; resize: vertical; }
+.eyebrow { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+section { padding: 60px 0 20px; }
+.lede { max-width: 760px; color: var(--muted); font-size: 15px; margin-top: 8px; }
+.script { font-family: "Brush Script MT", "Brush Script", "Segoe Script", cursive; font-weight: 500; line-height: .8; color: var(--ink); display: inline-block; transform: rotate(-2deg); }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.bar { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 14px; height: 56px; }
+.bar nav { display: flex; gap: 2px; margin-left: 8px; }
+.bar nav a { white-space: nowrap; color: var(--muted); text-decoration: none; padding: 6px 9px; border-radius: 6px; font-size: 13px; }
+.bar nav a:hover { background: var(--soft); color: var(--ink); }
+.bar .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* Icons */
+.icon { display: block; overflow: visible; }
+.icon .face-awake, .icon .face-closed { transition: opacity .25s, transform .25s; transform-box: fill-box; transform-origin: center; }
+.icon .face-awake { opacity: 0; transform: scaleY(.2); }
+.awake .icon .face-awake, .icon.always .face-awake { opacity: 1; transform: none; }
+.awake .icon .face-closed { opacity: 0; }
+.hoverwake:hover { }
+.hoverwake:hover .icon .face-awake { opacity: 1; transform: none; }
+.hoverwake:hover .icon .face-closed { opacity: 0; }
+
+.hero { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; padding: 52px 0 10px; }
+.duo { display: flex; gap: 28px; align-items: center; justify-content: center; }
+.duo figure { margin: 0; text-align: center; }
+.duo figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; }
+.arrow { font-size: 26px; color: var(--muted); }
+
+/* Options */
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; margin-top: 26px; }
+.opt { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow); }
+.opt[data-vote="yes"] { border-color: var(--ok); }
+.opt[data-vote="no"] { opacity: .55; }
+.opt .shelf { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; background: var(--back); border-radius: 14px; padding: 16px; align-items: center; }
+.opt .modes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; justify-items: center; }
+.opt .modes span { font-size: 10px; color: var(--muted); display: block; text-align: center; margin-top: 3px; }
+.opt header { display: flex; gap: 10px; align-items: baseline; }
+.opt header .id { color: var(--accent-strong); font-weight: 700; font-size: 13px; }
+.opt .tag { color: var(--muted); font-size: 13px; margin-top: -6px; }
+.opt p { font-size: 13.5px; }
+.pc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; }
+.pc h4 { margin: 0; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+.pc ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.5; }
+.small-row { display: flex; gap: 14px; align-items: flex-end; }
+.small-row span { font-size: 10px; color: var(--muted); display: block; text-align: center; margin-top: 3px; }
+.vote { display: flex; gap: 6px; align-items: center; }
+.vote .grow { flex: 1; }
+.vote button.on[data-v="yes"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+.vote button.on[data-v="no"] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+
+/* Context */
+.pick { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+.ctx { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 18px; }
+.desk { border-radius: 16px; height: 300px; position: relative; overflow: hidden; background: linear-gradient(160deg, #b9b3ea, #6e66b8 55%, #2d2863); }
+.desk .menubar { position: absolute; top: 0; left: 0; right: 0; height: 26px; background: #ffffff55; backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 0 12px; font-size: 12px; color: #1d1d1f; }
+.desk .dock { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px 10px; border-radius: 22px; background: #ffffff40; backdrop-filter: blur(16px); border: 1px solid #ffffff55; }
+.desk .dock > div { position: relative; transition: transform .15s; transform-origin: bottom; }
+.desk .dock > div:hover { transform: scale(1.35); }
+.desk .dock .run::after { content: ""; position: absolute; bottom: -7px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #1d1d1f; }
+.generic { width: 56px; height: 56px; border-radius: 13px; }
+.desk .note { position: absolute; top: 44px; right: 14px; width: 300px; background: #fffffff0; border-radius: 14px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; color: #1d1d1f; box-shadow: 0 10px 30px #0003; font-size: 12px; }
+.desk .note b { display: block; font-size: 12.5px; }
+.tab { background: var(--back); border-radius: 12px 12px 0 0; padding: 10px 12px 0; }
+.tab .t { display: inline-flex; gap: 8px; align-items: center; background: var(--panel); padding: 8px 14px; border-radius: 10px 10px 0 0; font-size: 12.5px; }
+.tab .url { background: var(--panel); border-top: 1px solid var(--line); padding: 10px 14px; font-size: 12px; color: var(--muted); }
+.sizes { display: flex; gap: 22px; align-items: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.sizes span { display: block; text-align: center; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.mb { height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 12px; font-size: 12.5px; margin-top: 10px; }
+.mb.light { background: #ececec; color: #1d1d1f; }
+.mb.dark { background: #2b2b2e; color: #f5f5f7; }
+.mb .icon { color: inherit; }
+
+.splash { height: 320px; display: grid; place-items: center; text-align: center; background: var(--back); border-radius: 16px; position: relative; }
+.splash .hi { margin-top: 16px; font-size: 16px; color: var(--ink); min-height: 24px; transition: opacity .3s; }
+.lockups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+.lock { border-radius: 14px; padding: 26px 20px; display: flex; align-items: center; justify-content: center; gap: 12px; }
+.lock .script { font-size: 52px; }
+.lock.ink { background: #292456; } .lock.ink .script { color: #faf9f6; }
+.lock.paper { background: #faf9f6; border: 1px solid var(--line); } .lock.paper .script { color: #292456; }
+.lock.stack { flex-direction: column; gap: 14px; }
+
+.rec { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 22px; }
+.rec p { font-size: 13.5px; }
+.export textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; min-height: 160px; margin-top: 12px; }
+footer { padding: 40px 0 80px; color: var(--muted); font-size: 12px; }
+@media (max-width: 1000px) { .hero, .ctx, .rec, .lockups { grid-template-columns: 1fr; } .bar nav { display: none; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="wrap">
+    <strong style="color:var(--ink)">Plumín as the logo</strong>
+    <nav>
+      <a href="#options">Options</a>
+      <a href="#context">On the Mac</a>
+      <a href="#lockups">Lockups</a>
+      <a href="#review">Review</a>
+      <a href="research.html">Research</a>
+    </nav>
+    <div class="end"><button id="theme">Dark</button></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Tinta · logo exploration</div>
+      <h1 style="margin-top:10px">One shape for the logo and the pet</h1>
+      <p class="lede">Tinta is ink. The nib is the tool that puts the ink on paper. If the app icon is the nib, the logo and Pluma are the same object. The logo is Pluma at rest, and in the app Pluma opens its eyes. Point at an icon on this page to wake it.</p>
+    </div>
+    <div class="duo">
+      <figure><div id="heroNow"></div><figcaption>The current icon</figcaption></figure>
+      <span class="arrow">→</span>
+      <figure class="hoverwake"><div id="heroNew"></div><figcaption>Plumín at rest. Point at it.</figcaption></figure>
+    </div>
+  </div>
+
+  <section id="options">
+    <div class="eyebrow">1 · Options</div>
+    <h2>Seven icons</h2>
+    <p class="lede">Each option shows the icon in the four macOS appearances (default, paper, dark, and tinted) and at small sizes. The current icon is option 0, for comparison. Vote on each option.</p>
+    <div class="opts" id="opts"></div>
+  </section>
+
+  <section id="context">
+    <div class="eyebrow">2 · On the Mac</div>
+    <h2>The icon where people see it</h2>
+    <div class="pick"><span class="muted">Option</span><select id="pick"></select></div>
+    <div class="ctx">
+      <div>
+        <div class="desk" id="desk">
+          <div class="menubar" id="deskBar"></div>
+          <div class="note" id="deskNote"></div>
+          <div class="dock" id="dock"></div>
+        </div>
+        <div class="box" style="margin-top:20px">
+          <h3>Finder and Launchpad sizes</h3>
+          <div class="sizes" id="sizes"></div>
+          <h3 style="margin-top:18px">Menu bar</h3>
+          <div class="mb light" id="mbL"></div>
+          <div class="mb dark" id="mbD"></div>
+        </div>
+      </div>
+      <div>
+        <div class="splash hoverwake" id="splash">
+          <div><div id="splashIcon"></div><div class="hi" id="hi"></div></div>
+        </div>
+        <p class="muted" style="font-size:13px;margin-top:10px">The onboarding: the logo wakes up and becomes Pluma. Point at it to hold it awake.</p>
+        <div style="margin-top:20px">
+          <div class="tab"><span class="t" id="tabT"></span><div class="url">tinta.app</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="lockups">
+    <div class="eyebrow">3 · Lockups</div>
+    <h2>With the wordmark</h2>
+    <p class="lede">The script wordmark stays. The nib replaces the ink shape next to it.</p>
+    <div class="lockups" id="lockupsEl"></div>
+  </section>
+
+  <section id="review">
+    <div class="eyebrow">4 · Recommendation and review</div>
+    <h2>A first opinion</h2>
+    <div class="rec">
+      <div class="box"><h3>Yes, with option 2</h3><p>The faceless nib is calm, like an app icon must be. It keeps the Tinta colors and the lavender feed. Pluma is the same nib with eyes, so the pet feels like the logo that comes alive.</p></div>
+      <div class="box"><h3>Runner-up: option 6</h3><p>The closed eyes add character without a full face. The risk: an icon with a face looks like a game or a children's app next to Mail and Calendar.</p></div>
+      <div class="box"><h3>Check before the change</h3><p>Nib icons are common for writing apps. Compare the shape in the App Store and in the Dock of real users. The drop of the current icon can stay as the ink drop in option 4.</p></div>
+    </div>
+    <div class="box export" style="margin-top:20px">
+      <p class="muted" style="font-size:13px" id="summary"></p>
+      <textarea id="notes" placeholder="Notes on the logo" style="margin-top:12px"></textarea>
+      <div class="controls" style="margin-top:12px">
+        <button id="copy" class="on">Copy the review as Markdown</button>
+        <button id="reset">Clear the review</button>
+        <span class="muted" id="copied" style="font-size:12px"></span>
+      </div>
+      <textarea id="md" readonly></textarea>
+    </div>
+  </section>
+  <footer>Plumín logo explorations for Tinta. A static page with no network requests.</footer>
+</div>
+
+<script>
+const K = 0.5523;
+const ell = (rx, ry) => [[0,-ry],[K*rx,-ry],[rx,-K*ry],[rx,0],[rx,K*ry],[K*rx,ry],[0,ry],[-K*rx,ry],[-rx,K*ry],[-rx,0],[-rx,-K*ry],[-K*rx,-ry],[0,-ry]];
+const D = (w, t, d) => [[0,t],[w/3,t],[2*w/3,t],[w,t],[w,t+d*.6],[w*.56,t+d],[0,t+d],[-w*.56,t+d],[-w,t+d*.6],[-w,t],[-2*w/3,t],[-w/3,t],[0,t]];
+const HOLES = {
+  round: ell(3.2, 3.2),
+  keyhole: [[0,-5.5],[1.9,-5.5],[3.4,-3.8],[3.2,-1.2],[1.4,.8],[3,5.5],[0,5.5],[-3,5.5],[-1.4,.8],[-3.2,-1.2],[-3.4,-3.8],[-1.9,-5.5],[0,-5.5]],
+  smile: D(5, -1.5, 5.5),
+};
+const hole = (pts, sc = 1, [ox, oy] = [60, 66]) => {
+  const p = pts.map(([x, y]) => `${(x * sc + ox).toFixed(2)} ${(y * sc + oy).toFixed(2)}`);
+  return `M${p[0]} C${p.slice(1, 4).join(" ")} C${p.slice(4, 7).join(" ")} C${p.slice(7, 10).join(" ")} C${p.slice(10, 13).join(" ")} Z`;
+};
+const NIB = "M60 112 L 36 66 C 30 54, 32 36, 40 24 L 80 24 C 88 36, 90 54, 84 66 Z";
+
+const MODES = {
+  default: { name: "Default", bg: ["#3a3478", "#292456"], nib: "#faf9f6", feed: "#aaa4e8", acc: "#aaa4e8", eye: "#292456" },
+  paper:   { name: "Paper", bg: ["#ffffff", "#f0eef3"], nib: "#292456", feed: "#8174dc", acc: "#aaa4e8", eye: "#faf9f6" },
+  dark:    { name: "Dark", bg: ["#2a2740", "#15141f"], nib: "#e7e3fc", feed: "#8174dc", acc: "#8174dc", eye: "#15141f" },
+  tinted:  { name: "Tinted", bg: ["#4a4a4e", "#2c2c2e"], nib: "#f2f2f2", feed: "#a8a8ac", acc: "#8e8e93", eye: "#2c2c2e" },
+};
+
+let uid = 0;
+/* The nib glyph in a 120 space. opt: face (none | awake | closed | wake), hole, tilt, stroke, drop, simple */
+function glyph(o, c) {
+  const id = `g${uid++}`;
+  const simple = o.simple;
+  const sc = simple ? 1.8 : 1, slitW = simple ? 5 : 2.6;
+  const eyes = `<g class="face-awake">
+      <circle cx="51" cy="46" r="5" fill="${c.eye}"/><circle cx="69" cy="46" r="5" fill="${c.eye}"/>
+      <circle cx="52.4" cy="44.6" r="1.6" fill="${c.nib}"/><circle cx="70.4" cy="44.6" r="1.6" fill="${c.nib}"/>
+      <circle cx="43.5" cy="57" r="3.4" fill="${c.acc}" opacity=".9"/><circle cx="76.5" cy="57" r="3.4" fill="${c.acc}" opacity=".9"/></g>`;
+  const closed = `<g class="face-closed"><path d="M46 46 Q 51 50 56 46 M64 46 Q 69 50 74 46" fill="none" stroke="${c.eye}" stroke-width="2.6" stroke-linecap="round"/></g>`;
+  let face = "";
+  if (!simple) {
+    if (o.face === "awake") face = eyes.replace('class="face-awake"', 'class="face-awake" style="opacity:1;transform:none"');
+    if (o.face === "wake") face = eyes;
+    if (o.face === "closed") face = closed + eyes;
+  }
+  const holePts = HOLES[o.hole || "round"];
+  const body = `<mask id="${id}" maskUnits="userSpaceOnUse" x="-20" y="-20" width="160" height="160">
+      <rect x="-20" y="-20" width="160" height="160" fill="#fff"/>
+      <path d="${hole(holePts, sc, [60, 66 - (sc - 1) * 3])}" fill="#000"/>
+      <path d="M60 ${72 + (sc - 1) * 3} L60 111" stroke="#000" stroke-width="${slitW}" stroke-linecap="round"/></mask>
+    <rect x="40" y="11" width="40" height="14" rx="4" fill="${c.feed}"/>
+    <path d="${NIB}" fill="${c.nib}" mask="url(#${id})"/>${face}`;
+  let out = o.tilt ? `<g transform="rotate(${o.tilt} 60 60)">${body}</g>` : body;
+  if (o.stroke) out += `<path d="M26.6 99.8 C 40 106, 58 94, 74 99 S 100 105, 112 96" fill="none" stroke="${c.acc}" stroke-width="${simple ? 7 : 5}" stroke-linecap="round"/>`;
+  if (o.drop) out += `<path d="M60 116 C 62.5 120, 66 123, 66 127 C 66 131.5, 54 131.5, 54 127 C 54 123, 57.5 120, 60 116 Z" fill="${c.acc}"/>`;
+  return out;
+}
+function frameFor(o) {
+  if (o.tilt) return "translate(16 16.5) scale(.56)";
+  if (o.drop) return "translate(19.5 18.5) scale(.51)";
+  return "translate(17 16) scale(.55)";
+}
+function iconSvg(opt, mode = "default", size = 120, extra = {}) {
+  const c = MODES[mode];
+  const o = { ...opt, ...extra, simple: extra.simple ?? size < 40 };
+  const gid = `bg${uid++}`;
+  const inner = opt.current ? currentMark(c) : `<g transform="${frameFor(o)}">${glyph(o, c)}</g>`;
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 100 100">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.bg[0]}"/><stop offset="1" stop-color="${c.bg[1]}"/></linearGradient></defs>
+    <rect x="9.8" y="9.8" width="80.4" height="80.4" rx="19.5" fill="url(#${gid})" ${mode === "paper" ? 'stroke="#0000001a" stroke-width=".4"' : ""}/>
+    ${inner}</svg>`;
+}
+function currentMark(c) {
+  return `<g transform="translate(20.7 20.7) scale(.586)" fill="${c.nib}"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></g>`;
+}
+/* The one-color menu bar glyph, without the squircle */
+function templateSvg(opt, size = 18) {
+  const c = { nib: "currentColor", feed: "currentColor", acc: "currentColor", eye: "currentColor" };
+  if (opt.current) return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 100 100" fill="currentColor"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg>`;
+  const o = { ...opt, simple: true, face: "none" };
+  const vb = opt.tilt || opt.stroke ? "10 4 108 108" : opt.drop ? "20 6 80 128" : "22 6 76 110";
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="${vb}">${glyph(o, c)}</svg>`;
+}
+
+const OPTS = [
+  { id: "0", name: "Current: ink mark", current: true, tag: "The ink shape and the drop, for comparison.",
+    text: "The icon today. It says 'ink', but it has no link to Pluma.",
+    pros: ["Known to the people who use Tinta.", "Unique shape. Clear at every size."],
+    cons: ["Abstract. It can read as a stain.", "Pluma needs its own, second symbol."] },
+  { id: "1", name: "Plumín, awake", face: "awake", tag: "The pet itself is the icon.",
+    text: "The full face, always open. The icon and Pluma are identical.",
+    pros: ["Warm and very memorable.", "No difference between the logo and the pet."],
+    cons: ["A face in the Dock looks like a game.", "The eyes disappear below 32 px."] },
+  { id: "2", name: "Plumín, at rest", face: "wake", tag: "The nib without a face. The eyes open only in the app.",
+    text: "A calm nib: the feed, the slit, and the round hole. Pluma is this nib with its eyes open.",
+    pros: ["Calm, serious, and simple.", "The hole and the slit give it a quiet face."],
+    cons: ["Nib icons are common for writing apps.", "Without the eyes, less character."] },
+  { id: "3", name: "Writing", face: "wake", tilt: 38, stroke: true, tag: "The nib at the angle of writing, with a line of ink.",
+    text: "The nib writes a lavender line. It shows the action: Tinta writes your meeting down.",
+    pros: ["Shows what the app does.", "The line connects with the script wordmark."],
+    cons: ["More detail at small sizes.", "The diagonal is less stable in a grid."] },
+  { id: "4", name: "Nib and drop", face: "wake", drop: true, tag: "A drop of ink falls from the tip.",
+    text: "The drop of the current icon falls from the nib. The two icons share one detail.",
+    pros: ["Keeps a link with the current icon.", "Tells 'tinta' and 'pluma' together."],
+    cons: ["A falling drop can read as a leak.", "The nib is smaller in the frame."] },
+  { id: "5", name: "Keyhole", face: "wake", hole: "keyhole", tag: "The breather hole is a keyhole.",
+    text: "Real nibs can have a keyhole hole. Here it says: your meetings stay locked on your Mac.",
+    pros: ["Says 'private' without a lock icon.", "A detail that people notice and remember."],
+    cons: ["Pluma's rest face becomes the keyhole.", "Hard to see below 24 px."] },
+  { id: "6", name: "Asleep", face: "closed", tag: "Two closed eyes. Pluma sleeps in the Dock.",
+    text: "The logo is Pluma asleep. When you open Tinta, it wakes up.",
+    pros: ["Character, but calm.", "A clear story: asleep in the Dock, awake in the app."],
+    cons: ["Still a face in the Dock.", "Closed eyes can read as 'sad' or 'off'."] },
+];
+const opt = (id) => OPTS.find((o) => o.id === id);
+
+let store = {};
+try { store = JSON.parse(localStorage.getItem("plumin-logo-review") || "{}"); } catch {}
+store.votes ||= {}; store.notes ||= {}; store.pick ||= "2"; store.general ||= "";
+const save = () => { try { localStorage.setItem("plumin-logo-review", JSON.stringify(store)); } catch {} renderReview(); };
+
+/* Hero */
+document.getElementById("heroNow").innerHTML = iconSvg(opt("0"), "default", 170);
+document.getElementById("heroNew").innerHTML = iconSvg(opt("2"), "default", 170);
+
+/* Options */
+const optsEl = document.getElementById("opts");
+OPTS.forEach((o) => {
+  const el = document.createElement("article");
+  el.className = "opt"; el.dataset.vote = store.votes[o.id] || "";
+  el.innerHTML = `
+    <div class="shelf hoverwake">
+      <div style="display:grid;place-items:center">${iconSvg(o, "default", 190)}</div>
+      <div class="modes">${Object.keys(MODES).map((m) => `<div>${iconSvg(o, m, 64)}<span>${MODES[m].name}</span></div>`).join("")}</div>
+    </div>
+    <header><span class="id">${o.id}</span><h3>${o.name}</h3></header>
+    <div class="tag">${o.tag}</div>
+    <p>${o.text}</p>
+    <div class="small-row">${[16, 32, 64].map((s) => `<div>${iconSvg(o, "default", s)}<span>${s}</span></div>`).join("")}
+      <div style="margin-left:auto;color:var(--ink)">${templateSvg(o, 22)}<span>Menu bar</span></div></div>
+    <div class="pc"><div><h4>Strong</h4><ul>${o.pros.map((x) => `<li>${x}</li>`).join("")}</ul></div><div><h4>Weak</h4><ul>${o.cons.map((x) => `<li>${x}</li>`).join("")}</ul></div></div>
+    <div class="vote"><button data-v="yes">Yes</button><button data-v="maybe">Maybe</button><button data-v="no">No</button><span class="grow"></span><button data-show>On the Mac</button></div>
+    <textarea placeholder="Notes on option ${o.id}">${store.notes[o.id] || ""}</textarea>`;
+  optsEl.append(el);
+  el.querySelectorAll("[data-v]").forEach((b) => {
+    b.classList.toggle("on", store.votes[o.id] === b.dataset.v);
+    b.onclick = () => {
+      store.votes[o.id] = store.votes[o.id] === b.dataset.v ? "" : b.dataset.v;
+      el.dataset.vote = store.votes[o.id];
+      el.querySelectorAll("[data-v]").forEach((x) => x.classList.toggle("on", store.votes[o.id] === x.dataset.v));
+      save();
+    };
+  });
+  el.querySelector("[data-show]").onclick = () => { setPick(o.id); document.getElementById("context").scrollIntoView({ behavior: "smooth" }); };
+  el.querySelector("textarea").oninput = (e) => { store.notes[o.id] = e.target.value; save(); };
+});
+
+/* Context */
+const GENERIC = ["linear-gradient(#6fb6ff,#2f7cf6)", "linear-gradient(#fff,#e9e9ee)", "linear-gradient(#ffd66b,#f4a31a)", "linear-gradient(#7de08a,#2eb24a)", "linear-gradient(#ff8a80,#e5483b)"];
+const pick = document.getElementById("pick");
+pick.innerHTML = OPTS.map((o) => `<option value="${o.id}">${o.id} · ${o.name}</option>`).join("");
+pick.onchange = () => setPick(pick.value);
+let hiTimer = null;
+function setPick(id) {
+  store.pick = id; pick.value = id; save();
+  const o = opt(id);
+  const dark = document.documentElement.dataset.theme === "dark";
+  const mode = dark ? "dark" : "default";
+  document.getElementById("dock").innerHTML =
+    GENERIC.slice(0, 3).map((g) => `<div><div class="generic" style="background:${g}"></div></div>`).join("") +
+    `<div class="run hoverwake" title="Tinta">${iconSvg(o, mode, 68).replace('width="68" height="68"', 'width="68" height="68" style="margin:-6px"')}</div>` +
+    GENERIC.slice(3).map((g) => `<div><div class="generic" style="background:${g}"></div></div>`).join("");
+  document.getElementById("deskBar").innerHTML = `<span style="color:#1d1d1f">${templateSvg(o, 16)}</span><span>Wi‑Fi</span><span>Thu 25 Sep 09:59</span>`;
+  document.getElementById("deskNote").innerHTML = `${iconSvg(o, mode, 38)}<div><b>Weekly sync in 1 minute</b>Join and take notes</div>`;
+  document.getElementById("sizes").innerHTML = [16, 32, 64, 128, 256].map((s) => `<div class="hoverwake">${iconSvg(o, mode, s / (s > 128 ? 1.6 : 1))}<span>${s}</span></div>`).join("");
+  ["mbL", "mbD"].forEach((bid) => (document.getElementById(bid).innerHTML = `${templateSvg(o, 16)}<span>Wi‑Fi</span><span>Thu 25 Sep 09:59</span>`));
+  document.getElementById("tabT").innerHTML = `${iconSvg(o, "default", 16)} Tinta: meeting notes on your Mac`;
+  document.getElementById("splashIcon").innerHTML = iconSvg(o, mode, 180);
+  document.getElementById("lockupsEl").innerHTML = `
+    <div class="lock ink">${iconSvg(o, "default", 64)}<span class="script">tinta</span></div>
+    <div class="lock paper">${iconSvg(o, "default", 64)}<span class="script">tinta</span></div>
+    <div class="lock paper stack">${iconSvg(o, "default", 96)}<span class="script">tinta</span></div>
+    <div class="lock ink stack">${templateSvgColored(o, 80)}<span class="script">tinta</span></div>`;
+  runSplash();
+}
+function templateSvgColored(o, size) { return `<span style="color:#faf9f6">${templateSvg(o, size)}</span>`; }
+
+/* Onboarding: rest, then awake with a hello */
+function runSplash() {
+  clearTimeout(hiTimer);
+  const s = document.getElementById("splash"), hi = document.getElementById("hi");
+  const o = opt(store.pick);
+  const step = (n) => {
+    if (o.current || o.face === "awake") { hi.textContent = n % 2 ? "Hi, I'm Pluma." : "tinta"; hiTimer = setTimeout(() => step(n + 1), 2200); return; }
+    const awake = n % 2 === 1;
+    s.classList.toggle("awake", awake);
+    hi.textContent = awake ? "Hi, I'm Pluma." : "";
+    hiTimer = setTimeout(() => step(n + 1), awake ? 2400 : 1800);
+  };
+  step(0);
+}
+
+/* Theme */
+const themeBtn = document.getElementById("theme");
+themeBtn.onclick = () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  themeBtn.textContent = dark ? "Light" : "Dark";
+  setPick(store.pick);
+};
+
+/* Review */
+const notesEl = document.getElementById("notes");
+notesEl.value = store.general;
+notesEl.oninput = () => { store.general = notesEl.value; save(); };
+function renderReview() {
+  const v = store.votes;
+  const count = (x) => OPTS.filter((o) => v[o.id] === x).length;
+  document.getElementById("summary").textContent = `${count("yes")} yes, ${count("maybe")} maybe, ${count("no")} no. Option on the Mac: ${opt(store.pick).name}.`;
+  document.getElementById("md").value = ["# Plumín logo review", "",
+    ...OPTS.flatMap((o) => [`## ${o.id}. ${o.name}: ${v[o.id] ? v[o.id][0].toUpperCase() + v[o.id].slice(1) : "No vote"}`, ...(store.notes[o.id] ? ["", store.notes[o.id]] : []), ""]),
+    ...(store.general ? ["## Notes", "", store.general, ""] : [])].join("\n");
+}
+document.getElementById("copy").onclick = () => navigator.clipboard.writeText(document.getElementById("md").value).then(() => {
+  document.getElementById("copied").textContent = "Copied.";
+  setTimeout(() => (document.getElementById("copied").textContent = ""), 1500);
+});
+document.getElementById("reset").onclick = () => {
+  store.votes = {}; store.notes = {}; store.general = ""; notesEl.value = ""; save();
+  document.querySelectorAll(".opt").forEach((c) => { c.dataset.vote = ""; c.querySelectorAll("[data-v]").forEach((b) => b.classList.remove("on")); c.querySelector("textarea").value = ""; });
+};
+
+setPick(store.pick);
+renderReview();
+</script>
+</body>
+</html>

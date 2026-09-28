@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluma: explorations for a Tinta pet</title>
+<style>
+:root {
+  --ink: #292456; --paper: #faf9f6; --accent: #aaa4e8; --accent-strong: #8174dc;
+  --soft: #eeecf7; --muted: #787586; --line: #e5e2e9; --panel: #ffffff; --back: #f0eef3;
+  --text: #343141; --record: #c2413b; --record-soft: #f7e3e1; --ok: #3f7a55;
+  --shadow: 0 24px 75px #29245612;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 14px; color: var(--text); background: var(--paper);
+  -webkit-font-smoothing: antialiased; color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #191824; --ink: #e7e3fc; --soft: #38324e; --muted: #aba6bc; --line: #393544;
+  --panel: #24212f; --back: #201d2b; --text: #ded9e8; --record: #e5716a; --record-soft: #4a2826;
+  --ok: #8fc7a0; --accent-strong: #b3aaf2; --shadow: 0 24px 75px #0003;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); transition: background .3s; }
+h1, h2, h3 { color: var(--ink); margin: 0; }
+h1 { font-size: 44px; font-weight: 600; letter-spacing: -1.4px; }
+h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.6px; margin-bottom: 6px; }
+h3 { font-size: 16px; font-weight: 600; }
+p { line-height: 1.6; margin: 0; }
+button {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 30px; padding: 6px 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { background: var(--soft); }
+button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+textarea, select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+textarea { width: 100%; resize: vertical; min-height: 58px; }
+.eyebrow { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+section { padding: 56px 0 24px; }
+.lede { max-width: 720px; color: var(--muted); font-size: 15px; margin-top: 8px; }
+.script { font-family: "Brush Script MT", "Brush Script", "Segoe Script", cursive; font-weight: 500; line-height: .8; color: var(--ink); display: inline-block; transform: rotate(-2deg); }
+
+/* Top bar */
+.bar {
+  position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--line);
+}
+.bar .wrap { display: flex; align-items: center; gap: 18px; height: 60px; }
+.bar nav { display: flex; gap: 2px; }
+.bar nav a { white-space: nowrap; color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.bar nav a:hover { background: var(--soft); color: var(--ink); }
+.states { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.states button { padding: 4px 10px; font-size: 12px; }
+.states button[data-s="listening"].on { background: var(--record); border-color: var(--record); color: #fff; }
+
+/* Hero */
+.hero { padding: 64px 0 20px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; align-items: center; }
+.hero .name-line { display: flex; align-items: baseline; gap: 18px; margin: 10px 0 18px; }
+.hero .script { font-size: 110px; }
+.hero dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 16px; margin: 22px 0 0; font-size: 13.5px; }
+.hero dt { color: var(--muted); }
+.hero dd { margin: 0; }
+.parade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.parade .stage { height: 130px; border-radius: 16px; }
+
+/* Stage and pet */
+.stage {
+  position: relative; background: var(--back); border-radius: 14px; overflow: hidden;
+  display: grid; place-items: center; cursor: pointer; user-select: none;
+  --p-ink: var(--ink); --p-paper: var(--paper); --p-accent: var(--accent); --p-accent2: var(--accent-strong);
+  --px: 0px; --py: 0px;
+}
+.stage.plain { background: transparent; cursor: default; }
+.pet { width: 72%; height: 88%; max-width: 190px; overflow: visible; }
+.k { fill: var(--p-ink); } .w { fill: var(--p-paper); } .a { fill: var(--p-accent); } .a2 { fill: var(--p-accent2); }
+.sk { fill: none; stroke: var(--p-ink); stroke-linecap: round; stroke-linejoin: round; }
+.sw { fill: none; stroke: var(--p-paper); stroke-linecap: round; stroke-linejoin: round; }
+.sa { fill: none; stroke: var(--p-accent2); stroke-linecap: round; }
+.shadow { fill: var(--p-ink); opacity: .08; }
+.mono { --p-paper: var(--bar-bg, var(--paper)); --p-accent: var(--p-ink); --p-accent2: var(--p-ink); }
+.mono .a { opacity: 0; } .mono .shadow { opacity: 0; }
+
+.p-body, .p-eyes, .p-pupils, .tent, .crest, .p-head { transform-box: fill-box; }
+.p-body { transform-origin: 50% 100%; }
+.p-eyes { transform-origin: 50% 50%; }
+.p-pupils { transform: translate(var(--px), var(--py)); transition: transform .25s ease-out; }
+.crest { transform-origin: 50% 100%; }
+.tent { transform-origin: 50% 0%; }
+
+@keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+@keyframes blink { 0%,93%,100% { transform: scaleY(1) } 96% { transform: scaleY(.1) } }
+@keyframes tilt { 0%,100% { transform: rotate(-5deg) } 50% { transform: rotate(-8deg) translateY(-1px) } }
+@keyframes scribble { 0%,100% { transform: rotate(-3deg) translateX(-2px) } 50% { transform: rotate(3deg) translateX(2px) } }
+@keyframes sway { 0%,100% { transform: rotate(-2.5deg) } 50% { transform: rotate(2.5deg) } }
+@keyframes breathe { 0%,100% { transform: scale(1,1) } 50% { transform: scale(1.03,.96) } }
+@keyframes hop { 0% { transform: translateY(0) } 25% { transform: translateY(-14px) scale(.97,1.04) } 50% { transform: translateY(0) scale(1.06,.93) } 65%,100% { transform: translateY(0) scale(1) } }
+@keyframes perk { 0%,100% { transform: translateY(0) } 15% { transform: translateY(-9px) } 30% { transform: translateY(0) } 42% { transform: translateY(-4px) } 55% { transform: translateY(0) } }
+@keyframes wiggle { 0%,100% { transform: rotate(-6deg) } 50% { transform: rotate(6deg) } }
+@keyframes crest { 0%,100% { transform: rotate(-4deg) } 50% { transform: rotate(5deg) } }
+
+.stage .p-body { animation: bob 3.2s ease-in-out infinite; }
+.stage .p-eyes { animation: blink 5s infinite; }
+.stage .crest { animation: crest 3.2s ease-in-out infinite; }
+.stage .tent { animation: wiggle 2.6s ease-in-out infinite; }
+.stage .tent:nth-child(2n) { animation-delay: -1.3s; }
+.stage .tent:nth-child(3n) { animation-delay: -.6s; }
+
+.stage[data-state="listening"] .p-body { animation: tilt 2.4s ease-in-out infinite; }
+.stage[data-state="writing"] .p-body { animation: scribble .32s ease-in-out infinite; }
+.stage[data-state="writing"] .tent { animation-duration: .5s; }
+.stage[data-state="thinking"] .p-body { animation: sway 2.6s ease-in-out infinite; }
+.stage[data-state="thinking"] .p-pupils { transform: translate(1.5px, -2.5px); }
+.stage[data-state="sleeping"] .p-body { animation: breathe 4.2s ease-in-out infinite; }
+.stage[data-state="sleeping"] .p-eyes { animation: none; transform: scaleY(.12); }
+.stage[data-state="sleeping"] .crest, .stage[data-state="sleeping"] .tent { animation-duration: 7s; }
+.stage[data-state="done"] .p-body { animation: hop 1.1s ease-out infinite; }
+.stage[data-state="alert"] .p-body { animation: perk 1.8s ease-out infinite; }
+.stage[data-state="alert"] .p-eyes { animation: none; transform: scale(1.2); }
+.stage[data-state="error"] .p-body { animation: none; transform: rotate(7deg) translateY(4px); opacity: .7; }
+.stage[data-state="error"] .p-eyes { animation: none; transform: scaleY(.5); }
+.stage.poke .p-body { animation: hop .7s ease-out 1 !important; }
+.draw { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.stage[data-state="writing"] .draw { animation: draw 2.2s ease-in-out infinite; }
+.stage[data-state="sleeping"].dir-well .p-body { animation: none; transform: translate(6px, 20px); }
+.stage[data-state="error"].dir-well .p-body { transform: translate(3px, 10px) rotate(-4deg); }
+.stage[data-state="alert"].dir-nib .w:last-child, .stage[data-state="listening"].dir-nib .w:last-child { transform: scale(1.3); transform-box: fill-box; transform-origin: center; }
+@keyframes draw { 0% { stroke-dashoffset: 1 } 70%,100% { stroke-dashoffset: 0 } }
+
+/* Effects around the pet */
+.fx { position: absolute; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.fx-rec { top: 12px; left: 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--record); font-weight: 600; }
+.fx-rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--record); animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--record) 50%, transparent) } 70% { box-shadow: 0 0 0 7px transparent } }
+.fx-waves { right: 14%; top: 34%; width: 26px; height: 40px; }
+.fx-waves b { position: absolute; border: 2px solid var(--accent-strong); border-left: none; border-bottom-color: transparent; border-top-color: transparent; border-radius: 50%; animation: wave 1.6s infinite; }
+.fx-waves b:nth-child(1) { width: 12px; height: 16px; left: 0; top: 12px; }
+.fx-waves b:nth-child(2) { width: 22px; height: 30px; left: -4px; top: 5px; animation-delay: .25s; }
+@keyframes wave { 0%,100% { opacity: .2 } 50% { opacity: 1 } }
+.fx-think { top: 14px; right: 16px; display: flex; gap: 4px; }
+.fx-think i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-strong); animation: dot 1.2s infinite; }
+.fx-think i:nth-child(2) { animation-delay: .2s } .fx-think i:nth-child(3) { animation-delay: .4s }
+@keyframes dot { 0%,100% { transform: translateY(0); opacity: .35 } 40% { transform: translateY(-5px); opacity: 1 } }
+.fx-zzz { top: 10px; right: 18px; font-weight: 700; color: var(--accent-strong); }
+.fx-zzz b { position: absolute; right: 0; animation: zzz 3s infinite; opacity: 0; }
+.fx-zzz b:nth-child(2) { animation-delay: 1s; font-size: 13px } .fx-zzz b:nth-child(3) { animation-delay: 2s; font-size: 16px }
+@keyframes zzz { 0% { transform: translate(-18px, 40px); opacity: 0 } 30% { opacity: 1 } 100% { transform: translate(0, 0); opacity: 0 } }
+.fx-done { top: 12px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; }
+.fx-done svg { width: 12px; height: 12px; stroke: #fff; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.fx-spark { inset: 0; }
+.fx-spark i { position: absolute; width: 6px; height: 6px; background: var(--accent); transform: rotate(45deg); border-radius: 1px; animation: spark 1.1s infinite; }
+.fx-spark i:nth-child(1) { left: 22%; top: 30% } .fx-spark i:nth-child(2) { left: 74%; top: 24%; animation-delay: .3s } .fx-spark i:nth-child(3) { left: 30%; top: 70%; animation-delay: .6s }
+@keyframes spark { 0%,100% { transform: rotate(45deg) scale(0) } 50% { transform: rotate(45deg) scale(1.2) } }
+.fx-bang { top: 8px; right: 18px; font-size: 26px; font-weight: 800; color: var(--accent-strong); animation: bang 1.8s infinite; transform-origin: bottom; }
+@keyframes bang { 0%,100% { transform: scale(1) } 15% { transform: scale(1.35) rotate(8deg) } 30% { transform: scale(1) } }
+.fx-err { top: 12px; right: 14px; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--record); font-weight: 600; }
+.fx-err svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.fx-ink { bottom: 8%; left: 18%; width: 64%; height: 18px; }
+.fx-ink path { fill: none; stroke: var(--accent-strong); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1; animation: draw 1.6s linear infinite; }
+.stage[data-state="listening"] .fx-rec, .stage[data-state="listening"] .fx-waves,
+.stage[data-state="writing"] .fx-ink, .stage[data-state="thinking"] .fx-think,
+.stage[data-state="sleeping"] .fx-zzz, .stage[data-state="done"] .fx-done, .stage[data-state="done"] .fx-spark,
+.stage[data-state="alert"] .fx-bang, .stage[data-state="error"] .fx-err { opacity: 1; }
+.stage.tiny .fx { display: none; }
+
+/* Direction cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 20px; margin-top: 28px; }
+.fam { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; padding: 14px 4px 0; border-top: 1px solid var(--line); }
+.fam:first-child { border-top: none; padding-top: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow); transition: border-color .2s, transform .2s; }
+.card[data-vote="yes"] { border-color: var(--ok); }
+.card[data-vote="no"] { opacity: .55; }
+.card .stage { height: 230px; }
+.card .caption { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--muted); padding: 0 14px; }
+.card header { display: flex; align-items: baseline; gap: 10px; padding: 0 4px; }
+.card header .letter { font-weight: 700; color: var(--accent-strong); font-size: 13px; }
+.card .tag { color: var(--muted); font-size: 13px; padding: 0 4px; margin-top: -8px; }
+.card .body { padding: 0 4px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
+.card ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.55; }
+.pc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pc h4 { margin: 0; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+.scores { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12px; align-items: center; }
+.dots { display: flex; gap: 3px; }
+.dots i { width: 16px; height: 5px; border-radius: 3px; background: var(--line); }
+.dots i.f { background: var(--accent-strong); }
+.vote { display: flex; gap: 6px; align-items: center; padding: 0 4px; }
+.vote button { font-size: 12px; padding: 4px 12px; }
+.vote button.on[data-v="yes"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+.vote button.on[data-v="no"] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+.vote .grow { flex: 1; }
+
+/* Tone */
+.tone-picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 26px; }
+.tone { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.tone.on { border-color: var(--accent-strong); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+.tone h3 { display: flex; justify-content: space-between; }
+.tone p { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.tone .sample { margin-top: 12px; font-size: 15px; color: var(--ink); font-style: italic; }
+table.lines { width: 100%; border-collapse: collapse; margin-top: 26px; font-size: 13.5px; }
+table.lines th, table.lines td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.lines th { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+table.lines td:first-child { color: var(--muted); width: 18%; }
+table.lines td.on { background: var(--soft); color: var(--ink); }
+.rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 28px; }
+.rule { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+.rule b { color: var(--ink); display: block; margin-bottom: 3px; }
+.rule span { color: var(--muted); font-size: 13px; line-height: 1.5; display: block; }
+
+/* In context */
+.ctx-controls { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+.window { margin-top: 20px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow); display: grid; grid-template-columns: 230px 1fr; height: 560px; position: relative; }
+.window .side { background: var(--back); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 38px 12px 12px; gap: 3px; position: relative; }
+.window .lights { position: absolute; top: 13px; left: 14px; display: flex; gap: 7px; }
+.window .lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.lockup { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; }
+.ink-icon { width: 26px; height: 26px; display: grid; place-items: center; background: var(--ink); border-radius: 24%; }
+.ink-icon svg { width: 70%; height: 70%; fill: var(--paper); }
+.lockup .script { font-size: 34px; }
+.nav-item { padding: 7px 10px; border-radius: 7px; color: var(--text); font-size: 13px; }
+.nav-item.cur { background: var(--soft); color: var(--ink); font-weight: 550; }
+.side .petbox { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.side .petbox .stage { width: 46px; height: 46px; flex-shrink: 0; border-radius: 10px; }
+.side .petbox .stage .pet { width: 100%; height: 100%; }
+.side .petbox p { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.window .main { position: relative; display: flex; flex-direction: column; }
+.window .top { height: 52px; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 18px; gap: 10px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; background: var(--record-soft); color: var(--record); border-radius: 30px; padding: 3px 12px 3px 3px; font-size: 12px; font-weight: 600; }
+.pill .stage { width: 28px; height: 28px; border-radius: 50%; background: var(--panel); }
+.pill .stage .pet { width: 100%; height: 100%; }
+.empty { flex: 1; display: grid; place-items: center; text-align: center; }
+.empty .stage { width: 190px; height: 170px; margin: 0 auto 8px; }
+.empty h3 { font-size: 18px; }
+.empty p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.toast { position: absolute; right: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; padding: 8px 14px 8px 8px; width: 330px; }
+.toast .stage { width: 50px; height: 50px; border-radius: 10px; flex-shrink: 0; }
+.toast .stage .pet { width: 100%; height: 100%; }
+.toast b { color: var(--ink); font-size: 13px; display: block; }
+.toast span { font-size: 12px; color: var(--muted); }
+.ctx-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.menubar { height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 12px; font-size: 12.5px; margin-top: 10px; }
+.menubar.light { background: #ececec; color: #1d1d1f; --bar-bg: #ececec; }
+.menubar.dark { background: #2b2b2e; color: #f5f5f7; --bar-bg: #2b2b2e; }
+.menubar .stage { width: 22px; height: 18px; background: transparent; --p-ink: currentColor; }
+.menubar .stage .pet { width: 100%; height: 100%; }
+.sizes { display: grid; grid-template-columns: 90px repeat(5, 1fr); gap: 8px; align-items: center; margin-top: 12px; font-size: 12px; }
+.sizes .stage { background: transparent; margin: 0 auto; }
+.sizes .stage .pet { width: 100%; height: 100%; max-width: none; }
+.sizes .lbl { color: var(--muted); }
+
+/* Name */
+.names { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; margin-top: 24px; }
+.nm { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; min-height: 170px; display: flex; flex-direction: column; gap: 8px; }
+.nm .word { font-size: 40px; color: var(--ink); line-height: 1.1; min-height: 60px; display: flex; align-items: center; gap: 8px; }
+.nm p { font-size: 13px; color: var(--muted); }
+.f-script { font-family: "Brush Script MT", cursive; font-size: 58px; transform: rotate(-2deg); }
+.f-serif { font-family: "Iowan Old Style", "Palatino", Georgia, serif; font-style: italic; }
+.f-round { font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif; font-weight: 700; letter-spacing: -1px; }
+.f-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 30px; }
+
+/* Recommendation and export */
+.rec { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 22px; }
+.rec .box h3 { margin-bottom: 8px; }
+.rec .box p { font-size: 14px; }
+.export { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+.export textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; min-height: 180px; margin-top: 12px; }
+footer { padding: 40px 0 80px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 900px) {
+  .hero, .tone-picks, .ctx-row, .rec { grid-template-columns: 1fr; }
+  .window { grid-template-columns: 1fr; height: auto; }
+  .window .side { display: none; }
+  .bar nav { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .stage * { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="wrap">
+    <strong style="color:var(--ink)">Pluma</strong>
+    <nav>
+      <a href="#directions">Directions</a>
+      <a href="#tone">Tone</a>
+      <a href="#context">In the app</a>
+      <a href="#name">Name</a>
+      <a href="#review">Review</a>
+    </nav>
+    <div class="states" id="states"></div>
+    <button id="cycle" title="Go through the states automatically">Auto</button>
+    <button id="theme" title="Light or dark">Dark</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Tinta · pet exploration · 25 September 2026</div>
+      <div class="name-line"><span class="script">pluma</span><span class="muted">/ˈplu.ma/</span></div>
+      <p class="lede" style="margin:0">In Spanish, <b>pluma</b> is a feather and also a pen. <b>Tinta</b> is ink. A pen and its ink are a natural pair, so the pet is the thing that writes with Tinta. This page shows nine directions in two families, the quill and the stroke, with three tones of voice, and the pet in the app. All pets react to the same states. Select a state at the top, or click a pet.</p>
+      <dl>
+        <dt>Role</dt><dd>A quiet companion that shows what Tinta does: listen, write, summarize, rest.</dd>
+        <dt>Not</dt><dd>A chat bot, an assistant, or an AI persona. Tinta has no chat, and Pluma does not change that.</dd>
+        <dt>Lives in</dt><dd>The sidebar, the recording pill, empty states, notifications, the menu bar, and the website.</dd>
+      </dl>
+    </div>
+    <div class="parade" id="parade"></div>
+  </div>
+
+  <section id="directions">
+    <div class="eyebrow">1 · Visual directions</div>
+    <h2>Quill and stroke</h2>
+    <p class="lede">The quill is the object. The stroke is the mark that it makes. The hybrids put both in one character. The scores are a first opinion. Vote on each card and add notes. The page keeps your votes in this browser, and the Review section exports them.</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section id="tone">
+    <div class="eyebrow">2 · Tone of voice</div>
+    <h2>How much does Pluma talk?</h2>
+    <p class="lede">Tinta is a privacy tool. It must feel calm and trustworthy. The tone sets how often Pluma speaks and how much personality it shows. Select a tone. The cards and the app mock use it.</p>
+    <div class="tone-picks" id="tones"></div>
+    <table class="lines" id="lines"></table>
+    <div class="rules">
+      <div class="rule"><b>Never during the call</b><span>Pluma does not move much or speak while you record. The meeting has your attention, not the pet.</span></div>
+      <div class="rule"><b>Never pretends to think</b><span>Pluma says what the app does ("summarizing"), and never "I think" or "I understand". The on-device model does the work.</span></div>
+      <div class="rule"><b>Keeps secrets</b><span>Pluma is local, as Tinta is. Privacy moments (encryption, audio deletion) are where its character is most useful.</span></div>
+      <div class="rule"><b>Reminds about consent</b><span>Tinta does not tell other people that you record. Pluma is a soft way to remind you to tell them.</span></div>
+      <div class="rule"><b>Always optional</b><span>A setting turns Pluma off. Then the app shows the same states with the normal labels.</span></div>
+    </div>
+  </section>
+
+  <section id="context">
+    <div class="eyebrow">3 · In the app</div>
+    <h2>Pluma at work</h2>
+    <p class="lede">The same direction on four surfaces: the sidebar (it follows the state at the top), the recording pill, the empty library, and the notification for a ready summary.</p>
+    <div class="ctx-controls">
+      <span class="muted">Direction</span>
+      <select id="ctxDir"></select>
+    </div>
+    <div class="window" id="window">
+      <div class="side">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="lockup">
+          <span class="ink-icon"><svg viewBox="0 0 100 100"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></span>
+          <span class="script">tinta</span>
+        </div>
+        <div class="nav-item cur">Home</div>
+        <div class="nav-item">Meetings</div>
+        <div class="nav-item">Search</div>
+        <div class="nav-item">Trash</div>
+        <div class="nav-item">Settings</div>
+        <div class="petbox"><div class="stage" data-slot="side"></div><p id="sideLine"></p></div>
+      </div>
+      <div class="main">
+        <div class="top">
+          <span class="pill"><div class="stage tiny" data-slot="pill" data-fixed="listening"></div>Recording · 12:04</span>
+          <span class="muted" style="font-size:12px">Weekly sync · Google Meet</span>
+        </div>
+        <div class="empty">
+          <div>
+            <div class="stage plain" data-slot="empty" data-fixed="sleeping"></div>
+            <h3>No meetings yet</h3>
+            <p id="emptyLine"></p>
+          </div>
+        </div>
+        <div class="toast"><div class="stage tiny" data-slot="toast" data-fixed="done"></div><div><b>Summary ready</b><span id="toastLine"></span></div></div>
+      </div>
+    </div>
+    <div class="ctx-row">
+      <div class="box">
+        <h3>Menu bar</h3>
+        <p class="muted" style="font-size:13px;margin-top:4px">macOS menu bar icons are one color. These use the silhouette of each direction at 18 points.</p>
+        <div class="menubar light" id="mbLight"></div>
+        <div class="menubar dark" id="mbDark"></div>
+      </div>
+      <div class="box">
+        <h3>Sizes</h3>
+        <p class="muted" style="font-size:13px;margin-top:4px">From a list badge to the onboarding. Small sizes show which shapes stay clear.</p>
+        <div class="sizes" id="sizes"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="name">
+    <div class="eyebrow">4 · The name</div>
+    <h2>Pluma, and its neighbors</h2>
+    <p class="lede">"Pluma" is short, easy to say in English and Spanish, and it pairs with "tinta". The type samples use the same script as the Tinta wordmark, and three other voices.</p>
+    <div class="names" id="names"></div>
+  </section>
+
+  <section id="review">
+    <div class="eyebrow">5 · Recommendation and review</div>
+    <h2>A first opinion</h2>
+    <div class="rec">
+      <div class="box">
+        <h3>Direction: H1, Pluma y trazo</h3>
+        <p>The quill gives Pluma a face and warmth. The stroke shows what Tinta does, and it matches the script wordmark. Use the quill alone in small places: the sidebar, the pill, and the menu bar. Show the line on large surfaces: the onboarding, the empty library, and the website.</p>
+      </div>
+      <div class="box">
+        <h3>Also strong: Q3 and T3</h3>
+        <p><b>Plumín</b> is the clearest shape at 16 points. It can be the small form of H1. <b>Pincelada</b> is the closest match with the wordmark. Its ink ball can become the head of the H1 line on the website.</p>
+      </div>
+      <div class="box">
+        <h3>Tone: Quiet, with Warm moments</h3>
+        <p>Pluma shows the state with its posture, and the app keeps its normal labels. Warm lines appear only at the first launch, the empty library, the consent reminder, and the audio deletion.</p>
+      </div>
+    </div>
+    <div class="box" style="margin-top:20px">
+      <h3>Your review</h3>
+      <p class="muted" style="font-size:13px;margin-top:4px" id="summary"></p>
+      <div class="export">
+        <button id="copy" class="on">Copy the review as Markdown</button>
+        <button id="reset">Clear the votes</button>
+        <span class="muted" id="copied" style="font-size:12px"></span>
+      </div>
+      <textarea id="md" readonly></textarea>
+    </div>
+  </section>
+
+  <footer>Pluma explorations for Tinta. A static page with no network requests.</footer>
+</div>
+
+<script>
+const STATES = [
+  { id: "idle", label: "Idle" },
+  { id: "alert", label: "Call detected" },
+  { id: "listening", label: "Recording" },
+  { id: "writing", label: "Transcribing" },
+  { id: "thinking", label: "Summarizing" },
+  { id: "done", label: "Ready" },
+  { id: "sleeping", label: "Sleeping" },
+  { id: "error", label: "No microphone" },
+];
+
+const TONES = [
+  { id: "quiet", name: "Quiet", note: "Pluma does not speak. It shows the state with its posture. The app keeps its own labels.", sample: "Recording" },
+  { id: "warm", name: "Warm", note: "Short, kind lines in the first person, at a few moments. Plain words, no jokes.", sample: "Listening. Write when you like." },
+  { id: "wry", name: "Wry", note: "Dry humor about ink, pens, and meetings. Memorable, and a risk to get old.", sample: "All ears. Well, all feathers." },
+];
+
+const LINES = {
+  idle:      ["Ready", "Ready when you are.", "Pen sharp. Waiting."],
+  alert:     ["Google Meet call. Record?", "A call started. Should I take notes?", "Another meeting. I'll get the ink."],
+  listening: ["Recording · 12:04", "Listening. Write when you like.", "All ears. Well, all feathers."],
+  writing:   ["Transcribing", "Writing the transcript. 3 speakers so far.", "Scribbling. You all talk fast."],
+  thinking:  ["Summarizing", "Reading your notes and the transcript.", "Finding the three things that mattered."],
+  done:      ["Summary ready", "The summary is ready. Check it against the transcript.", "The short version. Trust, but verify."],
+  sleeping:  ["No more meetings today", "Nothing more on the calendar today.", "Calendar is clear. Nap time."],
+  error:     ["No microphone access", "I can't hear the call. Allow the microphone in System Settings.", "I hear nothing. Can you check System Settings?"],
+};
+const EXTRA = [
+  ["First launch", "Welcome to Tinta", "Hi, I'm Pluma. I write down your meetings, and I keep them on this Mac.", "Hi, I'm Pluma. I take notes. I don't gossip."],
+  ["Consent", "Tell the others that you record.", "Before we start: tell the others that I'm here.", "Manners first: tell them I'm listening."],
+  ["Empty library", "No meetings yet", "Your first meeting will appear here.", "A blank page. My favorite kind."],
+  ["Audio deleted", "Audio of 3 meetings deleted", "I deleted last week's audio, as you asked. The notes stay.", "Audio gone. I keep secrets by forgetting them."],
+  ["Trash", "Deleted meetings stay here for 7 days", "These stay here for 7 days, then I let them go.", "Seven days to change your mind."],
+];
+
+const E = (x, y, r = 4.6, pr = 2.3) => `<circle class="w" cx="${x}" cy="${y}" r="${r}"/>`;
+const P = (x, y, pr = 2.3) => `<circle class="k" cx="${x + .6}" cy="${y + .6}" r="${pr}"/>`;
+const eyes = (pts, r, pr) => `<g class="p-eyes">${pts.map(([x, y]) => E(x, y, r)).join("")}<g class="p-pupils">${pts.map(([x, y]) => P(x, y, pr)).join("")}</g></g>`;
+
+const DIRS = [
+  {
+    id: "quill", family: "quill", letter: "Q1", name: "Quill",
+    tag: "A feather pen with a face, at the angle of writing.",
+    svg: () => `<ellipse class="shadow" cx="44" cy="112" rx="22" ry="3"/>
+      <g class="p-body" style="transform-origin:25% 100%">
+        <path class="k" d="M30 104 C 38 74, 52 42, 90 14 C 96 36, 86 62, 62 80 C 52 88, 42 96, 30 104 Z"/>
+        <path class="sw" stroke-width="1.6" opacity=".45" d="M33 101 C 48 78, 64 52, 86 20"/>
+        <path class="sw" stroke-width="3" d="M81 56 L 91 58 M44 57 L 52 61"/>
+        <path class="k" d="M31 103 L 23 114 L 35 107 Z"/>
+        <circle class="a" cx="60" cy="58" r="3" opacity=".8"/><circle class="a" cx="84" cy="44" r="3" opacity=".8"/>
+        ${eyes([[65, 49], [77, 41]], 4.4, 2.2)}
+        <path class="sw" stroke-width="2" d="M68 55 q 4 2 7 -2"/>
+      </g>`,
+    concept: "The literal pluma. It tilts to write, and it rests on its nib.",
+    feel: "Crafted, calligraphic, a little formal.",
+    pros: ["The name is literal. No explanation needed.", "Writing animation is natural."],
+    cons: ["Thin diagonal shape. Hard to fit in a square.", "Feels old-fashioned."],
+    scores: { "Brand fit": 4, Warmth: 3, "Small sizes": 2, Uniqueness: 3 },
+  },
+  {
+    id: "standing", family: "quill", letter: "Q2", name: "Quill, standing",
+    tag: "The same quill, upright, with the nib as its foot.",
+    svg: () => `<ellipse class="shadow" cx="60" cy="112" rx="18" ry="3"/>
+      <g class="p-body">
+        <path class="k" d="M60 100 C 44 84, 40 52, 52 28 C 56 20, 62 14, 68 10 C 74 30, 80 58, 70 84 C 66 92, 63 97, 60 100 Z"/>
+        <path class="sw" stroke-width="1.6" opacity=".45" d="M60 99 C 62 70, 64 40, 67 14"/>
+        <path class="sw" stroke-width="3" d="M42 64 L 50 68 M70 38 L 79 36"/>
+        <path class="k" d="M56 98 L 60 112 L 64 98 Z"/>
+        <circle class="a" cx="48" cy="62" r="3" opacity=".8"/><circle class="a" cx="72" cy="59" r="3" opacity=".8"/>
+        ${eyes([[53, 53], [66, 51]], 4.4, 2.2)}
+        <path class="sw" stroke-width="2" d="M56.5 60 q 3 2.5 6 0"/>
+      </g>`,
+    concept: "An upright quill fits a square: an icon, an avatar, a badge. It hops on its nib and bows to write.",
+    feel: "Friendly, a little proud, still clearly a pen.",
+    pros: ["Fits a square and a circle.", "More poses: bow, hop, lean, sleep."],
+    cons: ["The vertical feather can read as a leaf.", "Less of the 'writing' angle."],
+    scores: { "Brand fit": 4, Warmth: 4, "Small sizes": 3, Uniqueness: 3 },
+  },
+  {
+    id: "nib", family: "quill", letter: "Q3", name: "Plumín",
+    tag: "The nib of a fountain pen. The breather hole is its mouth.",
+    svg: () => `<ellipse class="shadow" cx="60" cy="112" rx="16" ry="3"/>
+      <g class="p-body">
+        <rect class="a2" x="40" y="12" width="40" height="13" rx="4"/>
+        <path class="k" d="M60 110 L 38 64 C 33 52, 35 36, 42 24 L 78 24 C 85 36, 87 52, 82 64 Z"/>
+        <path class="sw" stroke-width="2.2" d="M60 108 L 60 76"/>
+        <circle class="a" cx="45" cy="54" r="3.2" opacity=".85"/><circle class="a" cx="75" cy="54" r="3.2" opacity=".85"/>
+        ${eyes([[52, 46], [68, 46]], 4.8, 2.4)}
+        <circle class="w" cx="60" cy="68" r="4.2"/>
+      </g>`,
+    concept: "The part of the pen that touches the paper. The slit and the hole are real nib details, and they also make a face.",
+    feel: "Precise, tidy, a tool with a smile.",
+    pros: ["A bold, simple shape. The best at 16 points.", "The mouth can open to 'speak' or 'listen'."],
+    cons: ["Less 'feather' than the name says.", "A nib icon is common for writing apps."],
+    scores: { "Brand fit": 4, Warmth: 3, "Small sizes": 5, Uniqueness: 3 },
+  },
+  {
+    id: "well", family: "quill", letter: "Q4", name: "Pluma y tintero",
+    tag: "A quill that lives in an inkwell. Tinta and pluma together.",
+    svg: () => `<ellipse class="shadow" cx="76" cy="110" rx="32" ry="3.5"/>
+      <g class="p-body quill-only">
+        <path class="k" d="M80 84 C 74 60, 62 34, 36 10 C 22 30, 34 62, 74 86 Z"/>
+        <path class="sw" stroke-width="1.6" opacity=".45" d="M77 84 C 66 60, 52 36, 37 13"/>
+        <circle class="a" cx="40" cy="50" r="3" opacity=".8"/><circle class="a" cx="60" cy="47" r="3" opacity=".8"/>
+        ${eyes([[45, 43], [56, 41]], 4.2, 2.1)}
+        <path class="sw" stroke-width="2" d="M47.5 50 q 3 2.5 6 -.5"/>
+      </g>
+      <path class="k" d="M64 76 h32 q4 0 4 4 v2 q6 4 6 12 v6 q0 8 -8 8 h-36 q-8 0 -8 -8 v-6 q0 -8 6 -12 v-2 q0 -4 4 -4 z"/>
+      <rect class="a" x="58" y="92" width="44" height="6" rx="2" opacity=".9"/>`,
+    concept: "Pluma sleeps in the inkwell, and comes out when a call starts. The pot is Tinta, the quill is Pluma.",
+    feel: "Cozy, a small scene, a story in one image.",
+    pros: ["Tells the name pair: tinta and pluma.", "A clear 'home' for sleep and idle states."],
+    cons: ["Two objects. Too much for 16 points.", "The inkwell is not in the current icon."],
+    scores: { "Brand fit": 5, Warmth: 5, "Small sizes": 1, Uniqueness: 4 },
+  },
+  {
+    id: "trazo", family: "stroke", letter: "T1", name: "Trazo",
+    tag: "One pen stroke, with one eye.",
+    svg: () => `<g class="p-body">
+        <path class="sk draw" pathLength="1" stroke-width="5.5" d="M14 100 C 34 100, 40 84, 46 64 C 52 40, 64 24, 80 26 C 98 28, 102 56, 84 64 C 70 70, 56 62, 58 50"/>
+        <circle class="k" cx="14" cy="100" r="3.2"/>
+        <circle class="a" cx="92" cy="54" r="3.4" opacity=".85"/>
+        <g class="p-eyes"><circle class="k" cx="80" cy="43" r="4.6"/><g class="p-pupils"><circle class="w" cx="81.4" cy="41.6" r="1.4"/></g></g>
+      </g>`,
+    concept: "Pluma is the line that the pen draws. It draws itself when Tinta writes.",
+    feel: "Minimal, editorial, the most adult.",
+    pros: ["Elegant, and close to the script wordmark.", "The drawing animation explains 'writing'."],
+    cons: ["Less emotion. Few poses.", "A thin line gets lost at 16 points."],
+    scores: { "Brand fit": 4, Warmth: 2, "Small sizes": 2, Uniqueness: 4 },
+  },
+  {
+    id: "letter", family: "stroke", letter: "T2", name: "Letra p",
+    tag: "A cursive p, for pluma. The bowl is the face.",
+    svg: () => `<g class="p-body">
+        <path class="sk draw" pathLength="1" stroke-width="5.5" d="M24 60 C 34 52, 44 42, 52 34 L 42 108 M47 64 C 52 44, 64 34, 77 37 C 94 41, 92 70, 73 72 C 62 73, 54 68, 49 61"/>
+        <circle class="a" cx="60" cy="62" r="3.2" opacity=".85"/><circle class="a" cx="84" cy="60" r="3.2" opacity=".85"/>
+        <g class="p-eyes"><circle class="k" cx="66" cy="52" r="3.8"/><circle class="k" cx="79" cy="52" r="3.8"/>
+          <g class="p-pupils"><circle class="w" cx="67.2" cy="50.8" r="1.2"/><circle class="w" cx="80.2" cy="50.8" r="1.2"/></g></g>
+      </g>`,
+    concept: "The first letter of the name, written in one move. It can be the P of an avatar and a letter in the wordmark.",
+    feel: "Typographic, clever, calm.",
+    pros: ["It connects to the name and the wordmark.", "Two eyes give more emotion than T1."],
+    cons: ["A p with eyes can look like a logo, not a pet.", "Only works in the Latin alphabet."],
+    scores: { "Brand fit": 5, Warmth: 3, "Small sizes": 3, Uniqueness: 4 },
+  },
+  {
+    id: "brush", family: "stroke", letter: "T3", name: "Pincelada",
+    tag: "A thick and thin brush stroke, with an ink ball as its head.",
+    svg: () => `<ellipse class="shadow" cx="54" cy="108" rx="34" ry="3"/>
+      <g class="p-body">
+        <path class="k" d="M16 96 C 30 100, 50 94, 62 72 C 74 50, 80 38, 90 32 C 84 42, 80 56, 72 76 C 60 100, 36 108, 16 99 Z"/>
+        <circle class="k" cx="96" cy="28" r="11"/>
+        <circle class="a" cx="92" cy="37" r="2.6" opacity=".85"/>
+        <g class="p-eyes"><circle class="w" cx="98" cy="26" r="3.8"/><g class="p-pupils"><circle class="k" cx="98.6" cy="26.6" r="1.9"/></g></g>
+      </g>`,
+    concept: "The same thick and thin line as the brush script of 'tinta'. The ball at the end of the stroke is where the ink gathers.",
+    feel: "Expressive, handmade, bold.",
+    pros: ["A direct match with the Tinta wordmark.", "A heavy shape. Clear at small sizes."],
+    cons: ["It can read as a tadpole or a note.", "A filled shape cannot draw itself."],
+    scores: { "Brand fit": 5, Warmth: 3, "Small sizes": 4, Uniqueness: 4 },
+  },
+  {
+    id: "trail", family: "hybrid", letter: "H1", name: "Pluma y trazo",
+    tag: "A small quill, and the line that it leaves.",
+    svg: () => `<ellipse class="shadow" cx="60" cy="108" rx="40" ry="3"/>
+      <path class="sk draw" pathLength="1" stroke-width="4" d="M10 98 C 28 104, 42 92, 50 80 C 58 68, 68 70, 72 74"/>
+      <g class="p-body" style="transform-origin:0% 100%">
+        <path class="k" d="M74 72 C 80 52, 90 34, 108 16 C 113 36, 104 54, 80 70 Z"/>
+        <path class="sw" stroke-width="1.4" opacity=".45" d="M76 70 C 84 54, 94 38, 106 20"/>
+        <path class="k" d="M76 70 L 70 78 L 79 74 Z"/>
+        <circle class="a" cx="88" cy="48" r="2.6" opacity=".8"/><circle class="a" cx="104" cy="38" r="2.6" opacity=".8"/>
+        ${eyes([[92, 41], [101, 35]], 3.6, 1.8)}
+      </g>`,
+    concept: "The quill has the face. The stroke shows the work. At small sizes the quill is alone. On large surfaces the line grows while Tinta writes.",
+    feel: "Alive, clear about its job, elegant.",
+    pros: ["Keeps the warmth of Q1 and the motion of T1.", "Two sizes: the quill alone, or quill and line."],
+    cons: ["Wide shape. It needs the room of a banner.", "Two parts to keep consistent."],
+    scores: { "Brand fit": 5, Warmth: 4, "Small sizes": 3, Uniqueness: 4 },
+  },
+  {
+    id: "oneline", family: "hybrid", letter: "H2", name: "Una línea",
+    tag: "A quill drawn with one continuous line.",
+    svg: () => `<g class="p-body">
+        <path class="sk draw" pathLength="1" stroke-width="4.5" d="M18 106 C 36 106, 50 104, 60 100 C 44 84, 40 52, 52 28 C 56 20, 62 14, 68 10 C 74 30, 80 58, 70 84 C 66 92, 63 97, 60 100 C 62 70, 64 40, 67 22"/>
+        <circle class="a" cx="47" cy="67" r="2.6" opacity=".85"/><circle class="a" cx="61" cy="65" r="2.6" opacity=".85"/>
+        <g class="p-eyes"><circle class="k" cx="50" cy="59" r="3.2"/><circle class="k" cx="58.5" cy="57.5" r="3.2"/>
+          <g class="p-pupils"><circle class="w" cx="51" cy="58" r="1"/><circle class="w" cx="59.5" cy="56.5" r="1"/></g></g>
+      </g>`,
+    concept: "The quill and the stroke are one line. When Tinta writes, the line draws the quill, and the quill looks at you.",
+    feel: "Light, crafted, like a sketch in the margin.",
+    pros: ["One idea: the pen draws itself.", "Same line weight as the app icons."],
+    cons: ["An outline has less presence than a filled shape.", "The face must stay on one side of the shaft."],
+    scores: { "Brand fit": 4, Warmth: 3, "Small sizes": 2, Uniqueness: 5 },
+  },
+];
+const FAMILIES = {
+  quill: ["The quill", "Pluma as an object: the pen that writes."],
+  stroke: ["The stroke", "Pluma as the mark that the pen makes."],
+  hybrid: ["Quill and stroke", "The object and its mark in one character."],
+};
+
+const NAMES = [
+  { word: "pluma", cls: "f-script", note: "The same script as the Tinta wordmark. The pair reads as one brand: tinta and pluma." },
+  { word: "Pluma", cls: "f-serif", note: "A book serif, italic. Editorial and calm. Good for the website and onboarding." },
+  { word: "pluma", cls: "f-round", note: "Rounded and bold. Friendlier. It fits Q2 and Q3 better than the strokes." },
+  { word: "plumín", cls: "f-serif", note: "The nib of a fountain pen. The name of Q3. Smaller and cuter, but harder to say in English." },
+  { word: "Trazo", cls: "f-serif", note: "A stroke. A name for the line in H1, if Pluma is the quill. Pluma writes, and the trazo stays." },
+  { word: "pluma.local", cls: "f-mono", note: "A joke for the MCP and developer surfaces. Not a real name." },
+];
+
+let store = {};
+try { store = JSON.parse(localStorage.getItem("pluma-review-2") || "{}"); } catch {}
+store.votes ||= {}; store.notes ||= {}; store.tone ||= "quiet"; store.ctx ||= "trail";
+const save = () => { try { localStorage.setItem("pluma-review-2", JSON.stringify(store)); } catch {} renderReview(); };
+let state = "idle";
+
+const FX = `<div class="fx fx-rec"><i></i>REC</div>
+  <div class="fx fx-waves"><b></b><b></b></div>
+  <div class="fx fx-think"><i></i><i></i><i></i></div>
+  <div class="fx fx-zzz"><b>z</b><b>z</b><b>z</b></div>
+  <div class="fx fx-done"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></div>
+  <div class="fx fx-spark"><i></i><i></i><i></i></div>
+  <div class="fx fx-bang">!</div>
+  <div class="fx fx-err"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/><path d="M4 4l16 16"/></svg></div>
+  <svg class="fx fx-ink" viewBox="0 0 200 20" preserveAspectRatio="none"><path pathLength="1" d="M6 12 C 30 2, 44 20, 66 10 S 104 2, 124 12 S 170 18, 194 8"/></svg>`;
+
+const dir = (id) => DIRS.find((d) => d.id === id);
+function fillStage(el, d, withFx = true) {
+  el.classList.add(`dir-${d.id}`);
+  el.dataset.dir = d.id;
+  el.innerHTML = (withFx ? FX : "") + `<svg class="pet" viewBox="0 0 120 120">${d.svg()}</svg>` + (el.dataset.caption ? `<div class="caption"></div>` : "");
+  el.dataset.state = el.dataset.fixed || state;
+}
+const toneIdx = () => TONES.findIndex((t) => t.id === store.tone);
+const line = (s) => LINES[s][toneIdx()];
+
+function setState(s) {
+  state = s;
+  document.querySelectorAll("#states button").forEach((b) => b.classList.toggle("on", b.dataset.s === s));
+  document.querySelectorAll(".stage:not([data-fixed])").forEach((el) => (el.dataset.state = s));
+  refreshText();
+}
+function refreshText() {
+  document.querySelectorAll(".caption").forEach((c) => (c.textContent = line(state)));
+  document.getElementById("sideLine").textContent = line(state);
+  const t = toneIdx();
+  document.getElementById("emptyLine").textContent = EXTRA[2][1 + t] === "No meetings yet" ? "Record a call, or import from Granola." : EXTRA[2][1 + t];
+  document.getElementById("toastLine").textContent = t === 0 ? "Weekly sync · 4 decisions, 6 action items" : LINES.done[t];
+}
+
+/* State buttons and controls */
+const statesEl = document.getElementById("states");
+STATES.forEach((s) => {
+  const b = document.createElement("button");
+  b.textContent = s.label; b.dataset.s = s.id;
+  b.onclick = () => { stopCycle(); setState(s.id); };
+  statesEl.append(b);
+});
+let timer = null;
+const cycleBtn = document.getElementById("cycle");
+function stopCycle() { clearInterval(timer); timer = null; cycleBtn.classList.remove("on"); }
+cycleBtn.onclick = () => {
+  if (timer) return stopCycle();
+  cycleBtn.classList.add("on");
+  const next = () => setState(STATES[(STATES.findIndex((s) => s.id === state) + 1) % STATES.length].id);
+  next(); timer = setInterval(next, 3200);
+};
+const themeBtn = document.getElementById("theme");
+themeBtn.onclick = () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  themeBtn.textContent = dark ? "Light" : "Dark";
+};
+
+/* Hero parade */
+const parade = document.getElementById("parade");
+DIRS.forEach((d) => { const s = document.createElement("div"); s.className = "stage"; parade.append(s); fillStage(s, d); });
+
+/* Cards */
+const grid = document.getElementById("grid");
+DIRS.forEach((d, i) => {
+  if (i === 0 || DIRS[i - 1].family !== d.family) {
+    const f = document.createElement("div");
+    f.className = "fam";
+    f.innerHTML = `<h3>${FAMILIES[d.family][0]}</h3><span class="muted">${FAMILIES[d.family][1]}</span>`;
+    grid.append(f);
+  }
+  const card = document.createElement("article");
+  card.className = "card"; card.dataset.id = d.id; card.dataset.vote = store.votes[d.id] || "";
+  const scores = Object.entries(d.scores).map(([k, v]) => `<span class="muted">${k}</span><span class="dots">${[1,2,3,4,5].map((i) => `<i class="${i <= v ? "f" : ""}"></i>`).join("")}</span>`).join("");
+  card.innerHTML = `
+    <div class="stage" data-caption="1"></div>
+    <header><span class="letter">${d.letter}</span><h3>${d.name}</h3></header>
+    <div class="tag">${d.tag}</div>
+    <div class="body">
+      <p>${d.concept}</p>
+      <p><span class="muted">Feel:</span> ${d.feel}</p>
+      <div class="pc"><div><h4>Strong</h4><ul>${d.pros.map((p) => `<li>${p}</li>`).join("")}</ul></div><div><h4>Weak</h4><ul>${d.cons.map((p) => `<li>${p}</li>`).join("")}</ul></div></div>
+      <div class="scores">${scores}</div>
+    </div>
+    <div class="vote">
+      <button data-v="yes">Yes</button><button data-v="maybe">Maybe</button><button data-v="no">No</button>
+      <span class="grow"></span>
+      <button data-show="1" title="Show this direction in the app mock">In the app</button>
+    </div>
+    <textarea placeholder="Notes on ${d.name}" data-notes="${d.id}">${store.notes[d.id] || ""}</textarea>`;
+  grid.append(card);
+  fillStage(card.querySelector(".stage"), d);
+  card.querySelectorAll("[data-v]").forEach((b) => {
+    b.classList.toggle("on", store.votes[d.id] === b.dataset.v);
+    b.onclick = () => {
+      store.votes[d.id] = store.votes[d.id] === b.dataset.v ? "" : b.dataset.v;
+      card.dataset.vote = store.votes[d.id];
+      card.querySelectorAll("[data-v]").forEach((x) => x.classList.toggle("on", store.votes[d.id] === x.dataset.v));
+      save();
+    };
+  });
+  card.querySelector("[data-show]").onclick = () => { setCtx(d.id); document.getElementById("context").scrollIntoView({ behavior: "smooth" }); };
+  card.querySelector("textarea").oninput = (e) => { store.notes[d.id] = e.target.value; save(); };
+});
+
+/* Tone */
+const tonesEl = document.getElementById("tones");
+function renderTones() {
+  tonesEl.innerHTML = TONES.map((t) => `<div class="tone ${t.id === store.tone ? "on" : ""}" data-t="${t.id}"><h3>${t.name}<span class="muted" style="font-weight:400;font-size:12px">${t.id === store.tone ? "Selected" : ""}</span></h3><p>${t.note}</p><div class="sample">"${t.sample}"</div></div>`).join("");
+  tonesEl.querySelectorAll(".tone").forEach((el) => (el.onclick = () => { store.tone = el.dataset.t; save(); renderTones(); refreshText(); }));
+  const ti = toneIdx();
+  const rows = [...STATES.map((s) => [s.label, ...LINES[s.id]]), ...EXTRA];
+  document.getElementById("lines").innerHTML = `<tr><th>Moment</th>${TONES.map((t) => `<th>${t.name}</th>`).join("")}</tr>` +
+    rows.map((r) => `<tr><td>${r[0]}</td>${r.slice(1).map((c, i) => `<td class="${i === ti ? "on" : ""}">${c}</td>`).join("")}</tr>`).join("");
+}
+renderTones();
+
+/* In context */
+const ctxSel = document.getElementById("ctxDir");
+ctxSel.innerHTML = DIRS.map((d) => `<option value="${d.id}">${d.letter} · ${d.name}</option>`).join("");
+ctxSel.onchange = () => setCtx(ctxSel.value);
+function setCtx(id) {
+  store.ctx = id; ctxSel.value = id; save();
+  document.querySelectorAll("#window [data-slot]").forEach((el) => fillStage(el, dir(id), !el.classList.contains("tiny") && el.dataset.slot !== "side"));
+  refreshText();
+}
+setCtx(store.ctx);
+
+["mbLight", "mbDark"].forEach((id) => {
+  const bar = document.getElementById(id);
+  bar.innerHTML = `<span>Wi‑Fi</span>` + DIRS.map(() => `<div class="stage mono tiny plain" data-fixed="idle"></div>`).join("") + `<span>Thu 25 Sep 10:02</span>`;
+  bar.querySelectorAll(".stage").forEach((el, i) => fillStage(el, DIRS[i], false));
+});
+const sizesEl = document.getElementById("sizes");
+const PX = [16, 24, 32, 48, 72];
+sizesEl.innerHTML = `<span></span>${PX.map((p) => `<span class="lbl" style="text-align:center">${p}</span>`).join("")}` +
+  DIRS.map((d) => `<span class="lbl">${d.letter} · ${d.name}</span>${PX.map((p) => `<div class="stage plain tiny" data-fixed="idle" data-d="${d.id}" style="width:${p}px;height:${p}px"></div>`).join("")}`).join("");
+sizesEl.querySelectorAll(".stage").forEach((el) => fillStage(el, dir(el.dataset.d), false));
+
+/* Names */
+document.getElementById("names").innerHTML = NAMES.map((n) => `<div class="nm"><div class="word"><span class="${n.cls}">${n.word}</span></div><p>${n.note}</p></div>`).join("");
+
+/* Poke: click a pet to make it hop */
+document.addEventListener("click", (e) => {
+  const st = e.target.closest(".stage");
+  if (!st || st.classList.contains("plain")) return;
+  st.classList.remove("poke"); void st.offsetWidth; st.classList.add("poke");
+  setTimeout(() => st.classList.remove("poke"), 700);
+});
+
+/* The eyes follow the pointer */
+let raf = 0;
+document.addEventListener("pointermove", (e) => {
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    document.querySelectorAll(".stage:not(.tiny)").forEach((st) => {
+      const r = st.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+      const len = Math.hypot(dx, dy) || 1, k = Math.min(1, len / 300) * 1.6;
+      st.style.setProperty("--px", `${(dx / len) * k}px`);
+      st.style.setProperty("--py", `${(dy / len) * k}px`);
+    });
+  });
+});
+
+/* Review export */
+function renderReview() {
+  const v = store.votes;
+  const count = (x) => DIRS.filter((d) => v[d.id] === x).length;
+  document.getElementById("summary").textContent = `${count("yes")} yes, ${count("maybe")} maybe, ${count("no")} no. Tone: ${TONES[toneIdx()].name}. App mock: ${dir(store.ctx).name}.`;
+  const md = [`# Pluma review`, ``, `- Tone: ${TONES[toneIdx()].name}`, `- Direction in the app mock: ${dir(store.ctx).letter}. ${dir(store.ctx).name}`, ``,
+    ...DIRS.flatMap((d) => [`## ${d.letter}. ${d.name}: ${v[d.id] ? v[d.id][0].toUpperCase() + v[d.id].slice(1) : "No vote"}`, ...(store.notes[d.id] ? [``, store.notes[d.id]] : []), ``])].join("\n");
+  document.getElementById("md").value = md;
+}
+document.getElementById("copy").onclick = () => navigator.clipboard.writeText(document.getElementById("md").value).then(() => {
+  document.getElementById("copied").textContent = "Copied.";
+  setTimeout(() => (document.getElementById("copied").textContent = ""), 1500);
+});
+document.getElementById("reset").onclick = () => {
+  store.votes = {}; store.notes = {}; save();
+  document.querySelectorAll(".card").forEach((c) => { c.dataset.vote = ""; c.querySelectorAll("[data-v]").forEach((b) => b.classList.remove("on")); c.querySelector("textarea").value = ""; });
+};
+
+setState("idle");
+renderReview();
+</script>
+</body>
+</html>

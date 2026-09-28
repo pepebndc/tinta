@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumín logo: similar icons and risks</title>
+<style>
+:root {
+  --ink: #292456; --paper: #faf9f6; --accent: #aaa4e8; --accent-strong: #8174dc; --soft: #eeecf7;
+  --muted: #787586; --line: #e5e2e9; --panel: #fff; --back: #f0eef3; --text: #343141;
+  --high: #c2413b; --high-soft: #f7e3e1; --med: #8a5a00; --med-soft: #fbf1dc; --low: #3f7a55; --low-soft: #e3f1e7;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size: 14px; color: var(--text); background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1, h2, h3 { color: var(--ink); margin: 0; }
+h1 { font-size: 38px; font-weight: 600; letter-spacing: -1.1px; }
+h2 { font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin-bottom: 6px; }
+h3 { font-size: 15px; font-weight: 600; }
+p { line-height: 1.6; margin: 0; }
+a { color: var(--accent-strong); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+section { padding: 48px 0 12px; }
+.eyebrow { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { max-width: 780px; color: var(--muted); font-size: 15px; margin-top: 8px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.muted { color: var(--muted); }
+.bar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--paper) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; gap: 4px; align-items: center; height: 52px; }
+.bar a { text-decoration: none; color: var(--muted); padding: 6px 9px; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+.bar a:hover { background: var(--soft); color: var(--ink); }
+.bar strong { color: var(--ink); margin-right: 10px; }
+.verdict { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 22px; }
+.verdict .box p { font-size: 13.5px; margin-top: 6px; }
+.pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; letter-spacing: .3px; }
+.pill.high { background: var(--high-soft); color: var(--high); }
+.pill.med { background: var(--med-soft); color: var(--med); }
+.pill.low { background: var(--low-soft); color: var(--low); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.5; }
+th { font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--back); }
+tr:last-child td { border-bottom: none; }
+td.name { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.filters { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+.filters button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 30px; padding: 5px 12px; cursor: pointer; }
+.filters button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
+.opt { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: start; }
+.opt p { font-size: 13px; margin-top: 4px; }
+.moves { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
+.move { display: flex; flex-direction: column; gap: 10px; }
+.move .art { display: flex; gap: 10px; align-items: flex-end; justify-content: center; background: var(--back); border-radius: 12px; padding: 16px 8px; }
+.move p { font-size: 13px; }
+ul.check { padding-left: 0; list-style: none; margin: 14px 0 0; display: grid; gap: 8px; }
+ul.check li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: 13.5px; line-height: 1.5; }
+ul.check input { margin-top: 3px; accent-color: var(--accent-strong); }
+.avoid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.avoid span { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 5px 12px; font-size: 12.5px; }
+.note { font-size: 12.5px; color: var(--muted); margin-top: 12px; }
+footer { padding: 40px 0 70px; color: var(--muted); font-size: 12px; }
+@media (max-width: 950px) { .verdict, .moves { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="bar"><div class="wrap">
+  <strong>Logo research</strong>
+  <a href="#verdict">Verdict</a><a href="#options">Our options</a><a href="#icons">Similar icons</a><a href="#names">Names</a><a href="#legal">Trademarks</a><a href="#moves">How to be different</a><a href="#checks">Checks</a><a href="index.html">Back to the options</a>
+</div></div>
+
+<div class="wrap">
+  <section style="padding-top:52px">
+    <div class="eyebrow">Tinta · Plumín logo · research, 25 September 2026</div>
+    <h1 style="margin-top:10px">Is a nib icon safe and different?</h1>
+    <p class="lede">We compared the logo options with 80 icons. Of these, 72 were checked by eye and the rest from text descriptions. The survey covers meeting and dictation apps, writing and design apps, and pen brands. We also checked the Apple guidelines for macOS 26 and 27, and the current icon trends. This is not legal advice. Before you file a trademark, ask a lawyer.</p>
+  </section>
+
+  <section id="verdict">
+    <div class="eyebrow">1 · Verdict</div>
+    <h2>A plain nib is not different enough</h2>
+    <div class="verdict">
+      <div class="box"><span class="pill high">High overlap</span><h3 style="margin-top:8px">The upright nib</h3><p>Ulysses already has an upright nib with a slit and a round hole, in a light color on a dark squircle. VoiceInk, a dictation app, has the same nib motif. Meetily, a meeting app, has a white writing tool on a purple squircle.</p></div>
+      <div class="box"><span class="pill med">Low legal risk</span><h3 style="margin-top:8px">Trademarks and copyright</h3><p>We found no registered mark on a generic nib or a round hole. Simple shapes get little copyright protection. The risks are specific brand features: the heart hole (Platinum), the keyhole nib (Pelikan), and a face on a nib (Pilot Kakuno).</p></div>
+      <div class="box"><span class="pill med">Crowded colors</span><h3 style="margin-top:8px">The indigo squircle</h3><p>A white glyph on an indigo or violet squircle is common in this category: Jamie, Read.ai, Limitless, and Meetily. A flat color helps, because most of these apps use a gradient. The color alone does not make Tinta different.</p></div>
+    </div>
+  </section>
+
+  <section id="options">
+    <div class="eyebrow">2 · Our options</div>
+    <h2>The risk for each logo option</h2>
+    <div class="opts" id="opts"></div>
+  </section>
+
+  <section id="icons">
+    <div class="eyebrow">3 · Similar icons</div>
+    <h2>The icons that matter</h2>
+    <p class="lede">These are the icons with a high or medium overlap, and the main competitors for comparison. "Seen" means that a researcher looked at the icon image. "Text" means that only a description was available.</p>
+    <div class="filters" id="filters"></div>
+    <table id="iconTable"></table>
+  </section>
+
+  <section id="names">
+    <div class="eyebrow">4 · Names</div>
+    <h2>Tinta, Pluma, Plumín</h2>
+    <table>
+      <tr><th>Name</th><th>What exists</th><th>Risk</th></tr>
+      <tr><td class="name">Tinta</td><td>Four iOS apps, all for coloring or color palettes: <a href="https://apps.apple.com/us/app/id6760318116">AI Coloring &amp; Art</a>, <a href="https://apps.apple.com/us/app/id6782843465">Color Palette from Photo</a>, <a href="https://apps.apple.com/us/app/id6787122341">Color Sudoku</a>, <a href="https://apps.apple.com/us/app/id6783254229">Coloring Book &amp; Paint</a>. A creative agency, <a href="https://tintaink.com/">Tinta Ink</a>. No notes app on macOS.</td><td><span class="pill med">Check</span><br><span class="muted">Search the word mark in classes 9 and 42.</span></td></tr>
+      <tr><td class="name">Pluma</td><td><a href="https://apps.apple.com/us/app/id6503261460">pluma, "your in class note app"</a>: a notes app with a pink quill. <a href="https://apps.apple.com/us/app/id6742521821">Pluma</a>: a rainbow feather. <a href="https://en.wikipedia.org/wiki/Pluma_(text_editor)">Pluma</a>: the MATE desktop text editor.</td><td><span class="pill high">High for a product</span><br><span class="muted">Acceptable as the name of the pet inside Tinta. Do not use it as a product or app name.</span></td></tr>
+      <tr><td class="name">Plumín</td><td>No software found.</td><td><span class="pill low">Low</span></td></tr>
+      <tr><td class="name">Nib</td><td><a href="https://github.com/taranek/nib">taranek/nib</a>: a local-first macOS writing assistant. The nib health insurer. Interface Builder "nib" files.</td><td><span class="pill med">Avoid</span></td></tr>
+    </table>
+  </section>
+
+  <section id="legal">
+    <div class="eyebrow">5 · Trademarks and copyright</div>
+    <h2>What is protected</h2>
+    <table>
+      <tr><th>Brand or rule</th><th>What it covers</th><th>For Tinta</th></tr>
+      <tr><td class="name">Montblanc</td><td>The white "snowcap" star, registered since 1913. The "4810" engraving on the nib. <a href="https://historyofbranding.com/montblanc/">Source</a></td><td>Use no star and no numbers on the nib.</td></tr>
+      <tr><td class="name">Platinum, Nakaya</td><td>A heart-shaped breather hole as a brand feature. <a href="https://nibsmith.com/product/platinum-3776-century-shape-of-heart-fountain-pen-limited-edition/">Source</a></td><td>Remove the heart from the logo. In the pet, the heart is only an expression, so the risk is low.</td></tr>
+      <tr><td class="name">Pelikan</td><td>The pelican mark. The historic "keyhole" nib. <a href="https://thepelikansperch.com/2024/04/14/pelikan-keyhole-nib/">Source</a></td><td>Option 5 (keyhole) comes near to a known pen feature. Use no bird.</td></tr>
+      <tr><td class="name">Pilot Kakuno</td><td>A nib with an engraved smiling face. <a href="https://penandtool.com/products/pilot-kakuno-fountain-pen-transparent-yellow">Source</a></td><td>Keep the pet's face on the shoulders. Do not engrave a smile on the tines.</td></tr>
+      <tr><td class="name">Parker, Sheaffer</td><td>The arrow clip. The white dot, registered since 1924. <a href="https://www.penhero.com/PenGallery/Sheaffer/SheafferWhiteDot.htm">Source</a></td><td>Use no arrow, and no white dot on the feed band.</td></tr>
+      <tr><td class="name">EU shape marks</td><td>A shape must "depart significantly from the norm" of the sector. <a href="https://guidelines.euipo.europa.eu/1803468/1785748/trade-mark-guidelines/9-3-9-3-3-shape-marks">EUIPO</a></td><td>Nobody owns a generic nib. For the same reason, Tinta cannot own one.</td></tr>
+      <tr><td class="name">US copyright</td><td>No protection for common geometric shapes or familiar symbols. <a href="https://copyright.gov/rulings-filings/review-board/docs/Globe-Design.pdf">Copyright Office</a></td><td>Draw the icon yourself. Do not trace stock or Font Awesome files. Keep dated drafts.</td></tr>
+    </table>
+  </section>
+
+  <section id="moves">
+    <div class="eyebrow">6 · How to be different</div>
+    <h2>Four ways out</h2>
+    <p class="lede">These sketches show directions, not final icons. Each one moves away from the Ulysses nib, the pen-tool glyph, and the violet AI squircle.</p>
+    <div class="moves" id="movesEl"></div>
+  </section>
+
+  <section id="checks">
+    <div class="eyebrow">7 · Before the change</div>
+    <h2>Checks and motifs to avoid</h2>
+    <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:20px;margin-top:16px">
+      <div class="box">
+        <h3>Checklist</h3>
+        <ul class="check" id="check"></ul>
+      </div>
+      <div class="box">
+        <h3>Overused motifs in 2026</h3>
+        <div class="avoid">
+          <span>Sparkles and four-point stars</span><span>Glowing orbs</span><span>Purple-to-blue mesh gradients</span><span>Waveforms and audio bars</span><span>Microphones</span><span>Blobs and fluid shapes</span><span>Cute faces on a colored squircle</span><span>Chat bubbles</span><span>Self-drawn frosted glass</span><span>Clay 3D</span>
+        </div>
+        <h3 style="margin-top:20px">Apple guidelines (macOS 26 and 27)</h3>
+        <p style="font-size:13px;margin-top:6px">Build the icon in Icon Composer, with a background layer and foreground layers. The system adds the squircle, the highlights, and the glass. Supply the default, dark, clear, and tinted appearances with the same core shapes. Use clear edges, no very thin lines, and no own shadows or glows. <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">HIG: App icons</a></p>
+        <p class="note">The slit of the nib is a thin line. Check it at 16 and 32 pixels, and in the clear and tinted appearances.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Research done with web searches and App Store pages on 25 September 2026. Icons change often. Search again before a release.</footer>
+</div>
+
+<script>
+const ICONS = [
+  ["Ulysses", "Writing", "Yellow butterfly on a dark squircle. The body is an upright nib with a slit and a round breather hole.", "high", "seen", "https://apps.apple.com/us/app/id1225570693", "Options 2, 4, 5, 6"],
+  ["VoiceInk", "Dictation", "Light-blue microphone on black. The stand ends in a nib with a slit and a breather hole.", "high", "seen", "https://tryvoiceink.com", "Options 2, 4"],
+  ["Meetily", "Meetings", "Purple squircle. The \"i\" of the wordmark is a white pencil with two cartoon eyes.", "high", "seen", "https://github.com/Zackriya-Solutions/meetily", "Options 1, 6, and the pet"],
+  ["Font Awesome pen-nib", "Glyph", "Solid nib at 45 degrees, tip down-left, slit, round hole, and a separate cap band.", "high", "seen", "https://fontawesome.com/icons/pen-nib", "Option 3"],
+  ["Adobe pen tool", "Glyph", "Tilted nib with a round hole: the standard symbol for vector drawing.", "high", "text", "https://helpx.adobe.com/illustrator/using/tool-gallery.html", "Option 3"],
+  ["Linearity Curve", "Design", "Dark nib at 45 degrees with a round hole, on an orange squircle.", "high", "seen", "https://apps.apple.com/us/app/id1219074514", "Option 3"],
+  ["Letterly", "Dictation", "Pale capsule microphone with two eyes on a dark navy squircle.", "med", "seen", "https://apps.apple.com/us/app/id6464049772", "Option 1 and the pet"],
+  ["Quill Meetings", "Meetings", "White quill that draws a sound-wave line, on black.", "med", "seen", "https://apps.apple.com/us/app/id6472243238", "Option 3"],
+  ["Inkdrop", "Notes", "Lavender-to-violet pointed drop on white.", "med", "seen", "https://apps.apple.com/us/app/id1211583988", "Option 4"],
+  ["Apple Pages", "Writing", "Pencil at 45 degrees above a line, on orange. Older versions: a pen across a page.", "med", "seen", "https://apps.apple.com/us/app/id361309726", "Option 3"],
+  ["Jamie", "Meetings", "White glassy \"J\" on an indigo-to-violet gradient squircle.", "med", "seen", "https://apps.apple.com/us/app/ai-meeting-note-taker-jamie/id6747801435", "The background color"],
+  ["Read.ai", "Meetings", "White smiling face on a blue-violet gradient squircle.", "med", "seen", "https://read.ai", "Option 1 and the pet"],
+  ["Supernormal", "Meetings", "White lightning bolt with a face on a blue squircle, soft 3D.", "med", "seen", "https://www.supernormal.com", "Option 1"],
+  ["Limitless", "Meetings", "White four-point star on a violet gradient.", "med", "seen", "https://apps.apple.com/us/app/limitless-ai-voice-recorder/id6737710033", "The background color"],
+  ["pluma (notes)", "Notes", "Pink quill that draws a loop, on cream.", "med", "seen", "https://apps.apple.com/us/app/id6503261460", "The pet's name"],
+  ["Krisp", "Meetings", "Dark navy \"iK\" on white. The navy is close to the Tinta indigo.", "low", "seen", "https://apps.apple.com/us/app/krisp-ai-meeting-note-taker/id6740535865", ""],
+  ["Granola", "Meetings", "Black hand-drawn spiral on a lime-green squircle.", "low", "seen", "https://apps.apple.com/us/app/granola-ai-meeting-notes/id6739429409", ""],
+  ["Otter.ai", "Meetings", "Blue \"O\" and waveform bars on white.", "low", "seen", "https://apps.apple.com/us/app/otter-transcribe-voice-notes/id1276437113", ""],
+  ["Fireflies.ai", "Meetings", "Pink tiles in an \"F\" shape on white.", "low", "seen", "https://apps.apple.com/us/app/fireflies-ai-notetaker/id6463164203", ""],
+  ["Fathom", "Meetings", "Cyan diagonal stripes in an \"F\" shape on black.", "low", "seen", "https://fathom.ai", ""],
+  ["Char", "Meetings", "Two black glossy braces \"{ }\" on off-white.", "low", "seen", "https://char.com", ""],
+  ["Superwhisper", "Dictation", "Silver twisted triangle on black, 3D.", "low", "seen", "https://apps.apple.com/us/app/superwhisper-ai-dictation/id6471464415", ""],
+  ["Wispr Flow", "Dictation", "Five white waveform bars on near-black.", "low", "seen", "https://apps.apple.com/us/app/wispr-flow-ai-voice-keyboard/id6497229487", ""],
+  ["MacWhisper", "Dictation", "Silver studio microphone on a glossy blue squircle.", "low", "seen", "https://www.macwhisper.com/", ""],
+  ["Inkscape", "Design", "Black mountain with ink drips.", "low", "seen", "https://commons.wikimedia.org/wiki/File:Inkscape_Logo.svg", "Option 0 (the current ink mark)"],
+  ["Noteshelf 3", "Notes", "Upright pencil tip on color bands.", "low", "seen", "https://apps.apple.com/us/app/id6458735203", ""],
+  ["Goodnotes, Notability", "Notes", "A black pen on lines; an orange pencil on blue.", "low", "seen", "https://apps.apple.com/us/app/id1444383602", ""],
+];
+const OPTS = [
+  ["0", "Current: ink mark", "low", "No close match. Inkscape has ink drips, but a different shape. It is the most unique of the options, but it has no link to Pluma."],
+  ["1", "Plumín, awake", "high", "A face on a violet squircle: Meetily, Read.ai, and Supernormal. The nib shape is the same as in Ulysses and VoiceInk."],
+  ["2", "Plumín, at rest", "high", "A light upright nib with a slit and a round hole on a dark squircle is the core of the Ulysses icon. VoiceInk uses the same nib."],
+  ["3", "Writing", "high", "The 45-degree nib with a round hole is the Font Awesome and Adobe pen-tool glyph, and Linearity Curve. A pen with a line is the Pages composition."],
+  ["4", "Nib and drop", "med", "The nib problem of option 2, and a lavender drop near Inkdrop."],
+  ["5", "Keyhole", "med", "The keyhole moves away from Ulysses, but it is a known Pelikan nib feature. It is hard to see below 24 pixels."],
+  ["6", "Asleep", "high", "The nib problem of option 2, and a face in the Dock, as Meetily and Letterly have."],
+];
+
+const mini = (o) => `<svg width="64" height="64" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="22" fill="#292456"/>${o === "0"
+  ? `<g transform="translate(18 18) scale(.64)" fill="#faf9f6"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></g>`
+  : `<g transform="${o === "3" ? "translate(14 14) scale(.6) rotate(38 60 60)" : "translate(15 12) scale(.6)"}"><rect x="40" y="11" width="40" height="14" rx="4" fill="#aaa4e8"/><path d="M60 112 L 36 66 C 30 54, 32 36, 40 24 L 80 24 C 88 36, 90 54, 84 66 Z" fill="#faf9f6"/><circle cx="60" cy="66" r="${o === "5" ? 4 : 3.2}" fill="#292456"/><path d="M60 70 L60 110" stroke="#292456" stroke-width="2.6"/>${o === "1" || o === "6" ? `<circle cx="51" cy="46" r="4.5" fill="#292456"/><circle cx="69" cy="46" r="4.5" fill="#292456"/>` : ""}</g>`}</svg>`;
+const label = { high: "High overlap", med: "Medium", low: "Low" };
+document.getElementById("opts").innerHTML = OPTS.map(([id, n, r, t]) => `<div class="box opt">${mini(id)}<div><span class="pill ${r}">${label[r]}</span><h3 style="margin-top:6px">${id} · ${n}</h3><p class="muted">${t}</p></div></div>`).join("");
+
+let filter = "all";
+const cats = ["all", "high", "med", "Meetings", "Dictation", "Writing", "Design", "Notes", "Glyph"];
+const catLabel = { all: "All", high: "High overlap", med: "Medium overlap" };
+function renderTable() {
+  const rows = ICONS.filter((r) => filter === "all" || r[3] === filter || r[1] === filter);
+  document.getElementById("iconTable").innerHTML = `<tr><th>App</th><th>Kind</th><th>Icon</th><th>Overlap</th><th>Near our</th><th>Check</th></tr>` +
+    rows.map(([n, k, d, r, v, u, near]) => `<tr><td class="name"><a href="${u}">${n}</a></td><td class="muted">${k}</td><td>${d}</td><td><span class="pill ${r}">${label[r]}</span></td><td class="muted">${near}</td><td class="muted">${v === "seen" ? "Seen" : "Text"}</td></tr>`).join("");
+  document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("on", b.dataset.f === filter));
+}
+document.getElementById("filters").innerHTML = cats.map((c) => `<button data-f="${c}">${catLabel[c] || c}</button>`).join("");
+document.querySelectorAll("#filters button").forEach((b) => (b.onclick = () => { filter = b.dataset.f; renderTable(); }));
+renderTable();
+
+/* Sketches of the four ways out */
+const sq = (inner, bg = "#292456", size = 96, id = Math.random().toString(36).slice(2)) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 100 100"><defs><clipPath id="c${id}"><rect x="4" y="4" width="92" height="92" rx="22"/></clipPath></defs><rect x="4" y="4" width="92" height="92" rx="22" fill="${bg}" ${bg === "#faf9f6" ? 'stroke="#0002" stroke-width=".6"' : ""}/><g clip-path="url(#c${id})">${inner}</g></svg>`;
+const NIB = "M60 112 L 36 66 C 30 54, 32 36, 40 24 L 80 24 C 88 36, 90 54, 84 66 Z";
+const macro = (bg, nib, hole) => sq(`<g transform="translate(-31 -34) scale(1.35)"><path d="${NIB}" fill="${nib}"/><circle cx="60" cy="66" r="4.6" fill="${hole}"/><path d="M60 71 L60 112" stroke="${hole}" stroke-width="3" stroke-linecap="round"/></g>`, bg);
+const INKNIB = "M50 13 C 66 9, 86 20, 88 42 C 90 60, 73 76, 61 108 C 55 93, 33 73, 31 50 C 29 30, 36 17, 50 13 Z";
+const inkNib = (bg, fill, hole) => sq(`<g transform="translate(12 10) scale(.66)"><path d="${INKNIB}" fill="${fill}"/><path d="M79 90 C 80 96, 86 98, 84 104 C 81 110, 73 109, 72 104 C 71 99, 77 96, 79 90 Z" fill="#aaa4e8"/><circle cx="59" cy="58" r="4.2" fill="${hole}"/><path d="M59 63 C 60 78, 61 92, 61 104" stroke="${hole}" stroke-width="3" fill="none" stroke-linecap="round"/></g>`, bg);
+const slitMark = (bg, fg) => sq(`<circle cx="50" cy="40" r="11" fill="${fg}"/><path d="M50 52 L50 80" stroke="${fg}" stroke-width="8" stroke-linecap="round"/>`, bg);
+const current = (bg, fg) => sq(`<g transform="translate(17 17) scale(.66)" fill="${fg}"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></g>`, bg);
+const MOVES = [
+  ["A · The macro nib", `${macro("#292456", "#faf9f6", "#292456")}${macro("#faf9f6", "#292456", "#faf9f6")}`,
+   "Crop the nib so close that only the shoulders, the hole, and the slit show. The tip goes past the bottom edge, and the feed band is gone. No app in the survey shows a nib this close. It also reads as a calm face, which links it to Pluma."],
+  ["B · The ink nib", `${inkNib("#292456", "#faf9f6", "#292456")}${inkNib("#faf9f6", "#292456", "#faf9f6")}`,
+   "Draw the nib with the soft, uneven outline of the current ink mark, and keep the small drop. The shape looks handmade, not geometric, so it does not look like the Font Awesome, Ulysses, or VoiceInk nibs. It keeps a clear line from the current icon."],
+  ["C · Only the hole and the slit", `${slitMark("#292456", "#faf9f6")}${slitMark("#faf9f6", "#292456")}`,
+   "An abstract mark: Pluma's mouth and the line of ink. It is strong at 16 pixels, but it can read as an \"i\", an information icon, or a keyhole. This one needs the most testing."],
+  ["D · Keep the ink mark", `${current("#292456", "#faf9f6")}${current("#faf9f6", "#292456")}`,
+   "Keep the current icon, which has the lowest overlap. Plumín is the pet only, inside the app and on the website. A nib that lives inside an app is much less of a risk than a nib in the Dock."],
+];
+document.getElementById("movesEl").innerHTML = MOVES.map(([t, art, p]) => `<div class="box move"><div class="art">${art}</div><h3>${t}</h3><p class="muted">${p}</p></div>`).join("");
+
+/* Checklist, kept in this browser */
+const CHECKS = [
+  "Search the WIPO Global Brand Database and EUIPO eSearch with Vienna code 20.1.3 (pens and nibs), in classes 9 and 42. <a href=\"https://branddb.wipo.int\">WIPO</a>, <a href=\"https://euipo.europa.eu/eSearch\">EUIPO</a>",
+  "Search USPTO design codes in category 20.01 for pens and nibs, in classes 9, 16, and 42. <a href=\"https://tmdesigncodes.uspto.gov/category/20\">USPTO codes</a>",
+  "Search \"TINTA\" as a word mark in classes 9 and 42.",
+  "Search the Mac App Store and the iOS App Store for \"nib\", \"ink\", \"tinta\", \"pen\", and \"notes\", and compare the icons at 16 and 32 pixels.",
+  "Put the icon next to Ulysses, VoiceInk, Meetily, and Jamie in a real Dock.",
+  "Confirm that the icon has no star, no numbers, no heart or keyhole hole, no arrow, no white dot, no bird, and no smile on the tines.",
+  "Draw every file yourself. Do not trace stock or Font Awesome shapes. Keep the dated drafts.",
+  "Ask a trademark lawyer before you file a mark, or if a search finds a nib mark in class 9 or 42.",
+];
+let done = {};
+try { done = JSON.parse(localStorage.getItem("logo-checks") || "{}"); } catch {}
+document.getElementById("check").innerHTML = CHECKS.map((c, i) => `<li><input type="checkbox" data-i="${i}" ${done[i] ? "checked" : ""}><span>${c}</span></li>`).join("");
+document.querySelectorAll("#check input").forEach((b) => (b.onchange = () => { done[b.dataset.i] = b.checked; try { localStorage.setItem("logo-checks", JSON.stringify(done)); } catch {} }));
+</script>
+</body>
+</html>

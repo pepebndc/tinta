@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumín: a deeper look</title>
+<style>
+:root {
+  --ink: #292456; --paper: #faf9f6; --accent: #aaa4e8; --accent-strong: #8174dc;
+  --soft: #eeecf7; --muted: #787586; --line: #e5e2e9; --panel: #ffffff; --back: #f0eef3;
+  --text: #343141; --record: #c2413b; --record-soft: #f7e3e1; --ok: #3f7a55;
+  --shadow: 0 24px 75px #29245612;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 14px; color: var(--text); background: var(--paper);
+  -webkit-font-smoothing: antialiased; color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #191824; --ink: #e7e3fc; --soft: #38324e; --muted: #aba6bc; --line: #393544;
+  --panel: #24212f; --back: #201d2b; --text: #ded9e8; --record: #e5716a; --record-soft: #4a2826;
+  --ok: #8fc7a0; --accent-strong: #b3aaf2; --shadow: 0 24px 75px #0003;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); transition: background .3s; }
+h1, h2, h3 { color: var(--ink); margin: 0; }
+h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.6px; margin-bottom: 6px; }
+h3 { font-size: 15px; font-weight: 600; }
+p { line-height: 1.6; margin: 0; }
+button {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 30px; padding: 5px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+}
+button:hover { background: var(--soft); }
+button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+textarea { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-height: 70px; resize: vertical; }
+input[type=range] { accent-color: var(--accent-strong); }
+.eyebrow { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+section { padding: 60px 0 20px; }
+.lede { max-width: 740px; color: var(--muted); font-size: 15px; margin-top: 8px; }
+.script { font-family: "Brush Script MT", "Brush Script", "Segoe Script", cursive; font-weight: 500; line-height: .8; color: var(--ink); display: inline-block; transform: rotate(-2deg); }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+
+.bar { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 14px; height: 56px; }
+.bar nav { display: flex; gap: 2px; margin-left: 8px; }
+.bar nav a { white-space: nowrap; color: var(--muted); text-decoration: none; padding: 6px 9px; border-radius: 6px; font-size: 13px; }
+.bar nav a:hover { background: var(--soft); color: var(--ink); }
+.bar .end { margin-left: auto; display: flex; gap: 6px; }
+
+/* The nib */
+.stage { position: relative; background: var(--back); border-radius: 14px; overflow: hidden; display: grid; place-items: center; user-select: none;
+  --p-ink: var(--ink); --p-paper: var(--paper); --p-accent: var(--accent); --p-accent2: var(--accent-strong); --px: 0px; --py: 0px; }
+.stage.plain { background: transparent; }
+.stage.click { cursor: pointer; }
+.pet { position: absolute; left: 6%; top: 5%; width: 88%; height: 90%; overflow: visible; }
+.k { fill: var(--p-ink); } .w { fill: var(--p-paper); } .a { fill: var(--p-accent); } .a2 { fill: var(--p-accent2); }
+.sw { fill: none; stroke: var(--p-paper); stroke-linecap: round; stroke-linejoin: round; }
+.shadow { fill: var(--p-ink); opacity: .08; }
+.ink { fill: none; stroke: var(--p-accent2); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: .12 .18; opacity: 0; }
+.stage[data-ink] .ink { opacity: 1; animation: flow .7s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -.3 } }
+.mono { --p-paper: var(--bar-bg, var(--paper)); --p-accent: var(--p-ink); --p-accent2: var(--p-ink); }
+.mono .cheeks, .mono .shadow { display: none; }
+.simple .eyes, .simple .cheeks { display: none; }
+
+.p-body, .eyes, .pupils { transform-box: fill-box; }
+.p-body { transform-origin: 50% 100%; }
+.eyes { transform-origin: 50% 50%; transition: transform .07s; }
+.eyes.blink { transform: scaleY(.1); }
+.pupils { transform: translate(var(--px), var(--py)); transition: transform .25s ease-out; }
+
+@keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+@keyframes tilt { 0%,100% { transform: rotate(-5deg) } 50% { transform: rotate(-8deg) translateY(-1px) } }
+@keyframes scribble { 0%,100% { transform: rotate(-3deg) translateX(-1.5px) } 50% { transform: rotate(3deg) translateX(1.5px) } }
+@keyframes sway { 0%,100% { transform: rotate(-3deg) } 50% { transform: rotate(3deg) } }
+@keyframes breathe { 0%,100% { transform: scale(1,1) } 50% { transform: scale(1.03,.97) } }
+@keyframes hop { 0% { transform: translateY(0) } 25% { transform: translateY(-12px) scale(.97,1.04) } 50% { transform: translateY(0) scale(1.06,.94) } 65%,100% { transform: translateY(0) scale(1) } }
+@keyframes perk { 0%,100% { transform: translateY(0) } 15% { transform: translateY(-9px) } 30% { transform: translateY(0) } 42% { transform: translateY(-4px) } 55% { transform: translateY(0) } }
+@keyframes shiver { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-1px) } 75% { transform: translateX(1px) } }
+.stage[data-motion="bob"] .p-body { animation: bob 3.2s ease-in-out infinite; }
+.stage[data-motion="tilt"] .p-body { animation: tilt 2.4s ease-in-out infinite; }
+.stage[data-motion="scribble"] .p-body { animation: scribble .32s ease-in-out infinite; }
+.stage[data-motion="sway"] .p-body { animation: sway 2.8s ease-in-out infinite; }
+.stage[data-motion="breathe"] .p-body { animation: breathe 4.2s ease-in-out infinite; }
+.stage[data-motion="hop"] .p-body { animation: hop 1.2s ease-out infinite; }
+.stage[data-motion="perk"] .p-body { animation: perk 1.8s ease-out infinite; }
+.stage[data-motion="droop"] .p-body { transform: rotate(6deg) translateY(4px); }
+.stage[data-motion="lean"] .p-body { transform: rotate(-7deg); }
+.stage[data-motion="shiver"] .p-body { animation: shiver .18s linear infinite; }
+.stage.poke .p-body { animation: hop .7s ease-out 1 !important; }
+
+.fx { position: absolute; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.fx-rec { top: 10px; left: 10px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--record); font-weight: 600; }
+.fx-rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--record); animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--record) 50%, transparent) } 70% { box-shadow: 0 0 0 7px transparent } }
+.fx-think { top: 12px; right: 14px; display: flex; gap: 4px; }
+.fx-think i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-strong); animation: dot 1.2s infinite; }
+.fx-think i:nth-child(2) { animation-delay: .2s } .fx-think i:nth-child(3) { animation-delay: .4s }
+@keyframes dot { 0%,100% { transform: translateY(0); opacity: .35 } 40% { transform: translateY(-5px); opacity: 1 } }
+.fx-zzz { top: 10px; right: 18px; font-weight: 700; color: var(--accent-strong); }
+.fx-zzz b { position: absolute; right: 0; animation: zzz 3s infinite; opacity: 0; }
+.fx-zzz b:nth-child(2) { animation-delay: 1s; font-size: 13px } .fx-zzz b:nth-child(3) { animation-delay: 2s; font-size: 16px }
+@keyframes zzz { 0% { transform: translate(-18px, 40px); opacity: 0 } 30% { opacity: 1 } 100% { transform: translate(0, 0); opacity: 0 } }
+.fx-spark { inset: 0; }
+.fx-spark i { position: absolute; width: 6px; height: 6px; background: var(--accent); transform: rotate(45deg); border-radius: 1px; animation: spark 1.1s infinite; }
+.fx-spark i:nth-child(1) { left: 20%; top: 28% } .fx-spark i:nth-child(2) { left: 76%; top: 22%; animation-delay: .3s } .fx-spark i:nth-child(3) { left: 26%; top: 70%; animation-delay: .6s }
+@keyframes spark { 0%,100% { transform: rotate(45deg) scale(0) } 50% { transform: rotate(45deg) scale(1.2) } }
+.fx-bang { top: 6px; right: 16px; font-size: 24px; font-weight: 800; color: var(--accent-strong); animation: bang 1.8s infinite; transform-origin: bottom; }
+@keyframes bang { 0%,100% { transform: scale(1) } 15% { transform: scale(1.35) rotate(8deg) } 30% { transform: scale(1) } }
+.fx-q { top: 8px; right: 16px; font-size: 22px; font-weight: 800; color: var(--muted); }
+.fx-lock { top: 10px; right: 12px; width: 20px; height: 20px; }
+.fx-lock svg, .fx-mute svg { width: 100%; height: 100%; fill: none; stroke: var(--accent-strong); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.fx-mute { top: 10px; right: 12px; width: 18px; height: 18px; }
+.fx-mute svg { stroke: var(--record); }
+.stage[data-fx~="rec"] .fx-rec, .stage[data-fx~="think"] .fx-think, .stage[data-fx~="zzz"] .fx-zzz,
+.stage[data-fx~="spark"] .fx-spark, .stage[data-fx~="bang"] .fx-bang, .stage[data-fx~="q"] .fx-q,
+.stage[data-fx~="lock"] .fx-lock, .stage[data-fx~="mute"] .fx-mute { opacity: 1; }
+.stage.nofx .fx { display: none; }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: 1fr 1.05fr; gap: 44px; padding: 52px 0 10px; align-items: center; }
+.hero .stage { height: 440px; border-radius: 24px; }
+.hero .name-line { display: flex; align-items: baseline; gap: 16px; margin: 10px 0 16px; }
+.hero .script { font-size: 104px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+.readout { margin-top: 16px; display: grid; grid-template-columns: 90px 1fr; gap: 6px 14px; font-size: 13px; }
+.readout dt { color: var(--muted); }
+.readout dd { margin: 0; color: var(--ink); }
+
+/* Anatomy */
+.anat { display: grid; grid-template-columns: 1.1fr 1fr; gap: 30px; margin-top: 24px; align-items: center; }
+.anat svg { width: 100%; height: auto; }
+.anat text { font-size: 11px; fill: var(--ink); font-weight: 600; }
+.anat .lead { stroke: var(--muted); stroke-width: .8; fill: none; stroke-dasharray: 2 2; }
+.anat dl { display: grid; grid-template-columns: 120px 1fr; gap: 12px 16px; font-size: 13.5px; margin: 0; }
+.anat dt { color: var(--ink); font-weight: 600; }
+.anat dd { margin: 0; color: var(--muted); line-height: 1.5; }
+
+/* Holes */
+.holes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 24px; }
+.hole .stage { height: 190px; }
+.hole { display: flex; flex-direction: column; gap: 10px; }
+.hole p { font-size: 13px; }
+.hole .meaning { color: var(--muted); }
+.keep { align-self: flex-start; }
+.keep.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+
+/* Expression sheet */
+.sheet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 24px; }
+.ex { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ex.kept { border-color: var(--ok); }
+.ex .stage { height: 150px; }
+.ex .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px 0; }
+.ex .moment { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.ex .combo { font-size: 11px; color: var(--muted); padding: 0 4px 2px; font-family: ui-monospace, Menlo, monospace; }
+.ex .keep { padding: 2px 9px; font-size: 11.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; }
+.legend .box { flex: 1; min-width: 260px; }
+.legend .items { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.legend .item { text-align: center; font-size: 11px; color: var(--muted); }
+.legend .item .stage { width: 62px; height: 62px; margin-bottom: 4px; cursor: default; }
+
+/* Signals */
+.signals { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; }
+.signal .stage { height: 250px; margin: 12px 0; }
+.signal p { font-size: 13.5px; }
+.meter { display: flex; gap: 3px; align-items: flex-end; height: 26px; }
+.meter i { width: 6px; background: var(--line); border-radius: 2px; transition: background .08s; }
+.meter i.on { background: var(--accent-strong); }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.said { min-height: 50px; font-size: 17px; color: var(--ink); margin-top: 10px; }
+.said span { opacity: .25; }
+
+/* Story */
+.story { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 24px; align-items: start; }
+.story .stage { height: 380px; }
+.story .stage .pet { height: 72%; }
+.story .cap { position: absolute; bottom: 16px; left: 16px; right: 16px; text-align: center; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); }
+.steps { display: flex; flex-direction: column; gap: 4px; }
+.step { display: grid; grid-template-columns: 70px 1fr; gap: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
+.step:hover { background: var(--soft); }
+.step.cur { background: var(--soft); box-shadow: inset 3px 0 0 var(--accent-strong); }
+.step .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; padding-top: 1px; }
+.step b { color: var(--ink); display: block; font-size: 13.5px; }
+.step span { color: var(--muted); font-size: 12.5px; }
+
+/* Sizes */
+.sizes { display: grid; grid-template-columns: 150px repeat(6, 1fr); gap: 10px; align-items: center; margin-top: 16px; font-size: 12px; }
+.sizes .stage { margin: 0 auto; }
+.sizes .stage .pet, .menubar .stage .pet { left: 0; top: 0; width: 100%; height: 100%; }
+.sizes .lbl { color: var(--muted); }
+.menubar { height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 12px; font-size: 12.5px; margin-top: 10px; }
+.menubar.light { background: #ececec; color: #1d1d1f; --bar-bg: #ececec; }
+.menubar.dark { background: #2b2b2e; color: #f5f5f7; --bar-bg: #2b2b2e; }
+.menubar .stage { width: 20px; height: 20px; background: transparent; --p-ink: currentColor; }
+.two { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; margin-top: 20px; }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; margin-top: 24px; }
+.rule { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+.rule b { color: var(--ink); display: block; margin-bottom: 3px; }
+.rule span { color: var(--muted); font-size: 13px; line-height: 1.5; display: block; }
+.export textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; min-height: 170px; margin-top: 12px; }
+footer { padding: 40px 0 80px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 1000px) {
+  .hero, .anat, .signals, .story, .two { grid-template-columns: 1fr; }
+  .holes, .sheet { grid-template-columns: repeat(2, 1fr); }
+  .bar nav { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .stage * { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="wrap">
+    <strong style="color:var(--ink)">Plumín</strong>
+    <nav>
+      <a href="#anatomy">Anatomy</a>
+      <a href="#holes">Mouth shapes</a>
+      <a href="#sheet">Expressions</a>
+      <a href="#signals">The mouth as a signal</a>
+      <a href="#story">A day</a>
+      <a href="#sizes">Sizes</a>
+      <a href="#review">Review</a>
+    </nav>
+    <div class="end">
+      <button id="theme">Dark</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Tinta · Pluma · direction Q3 · a deeper look</div>
+      <div class="name-line"><span class="script">plumín</span><span class="muted">/pluˈmin/</span></div>
+      <p class="lede" style="margin:0">A <b>plumín</b> is the nib of a fountain pen: the metal part that touches the paper. Every nib has a slit that carries the ink, and a small hole at the top of the slit, the <b>breather hole</b>. On this pet, the breather hole is the mouth. It is a real hole in the metal, so it can change shape without teeth, lips, or a tongue.</p>
+      <div class="chips" id="heroChips"></div>
+      <dl class="readout">
+        <dt>Eyes</dt><dd id="roEyes"></dd>
+        <dt>Mouth</dt><dd id="roMouth"></dd>
+        <dt>In Tinta</dt><dd id="roMoment"></dd>
+      </dl>
+    </div>
+    <div class="stage click" id="hero"></div>
+  </div>
+
+  <section id="anatomy">
+    <div class="eyebrow">1 · Anatomy</div>
+    <h2>Every part is a real part of a nib</h2>
+    <p class="lede">The face uses the parts that a nib already has. Nothing is added only to make it cute.</p>
+    <div class="anat">
+      <svg viewBox="0 0 480 250" id="anatSvg"></svg>
+      <dl>
+        <dt>Feed</dt><dd>The lavender band at the top. On a pen, it holds the ink behind the nib. It carries the accent color.</dd>
+        <dt>Shoulders</dt><dd>The widest part. The eyes and the cheeks live here.</dd>
+        <dt>Eyes</dt><dd>The only part that is not on a real nib. Two paper dots, with pupils that follow the pointer.</dd>
+        <dt>Breather hole</dt><dd>The mouth. On a pen, it lets air in so the ink flows, and it stops cracks in the metal. On Pluma, it is the main tool of expression.</dd>
+        <dt>Slit</dt><dd>Carries the ink from the hole to the tip. While Tinta writes, ink flows down the slit.</dd>
+        <dt>Tip</dt><dd>Touches the paper. It is the ground line, so Pluma stands on the point where it writes.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section id="holes">
+    <div class="eyebrow">2 · Mouth shapes</div>
+    <h2>Four real breather holes, four meanings</h2>
+    <p class="lede">Fountain pen nibs use round, heart, keyhole, and teardrop breather holes. Each shape can carry one meaning in Tinta. The round hole is the usual face. The other three are rare, so they stay special.</p>
+    <div class="holes" id="holesEl"></div>
+  </section>
+
+  <section id="sheet">
+    <div class="eyebrow">3 · Expressions</div>
+    <h2>Sixteen faces from eyes and a hole</h2>
+    <p class="lede">Each face combines one eye shape, one mouth shape, and one body motion. The mouth changes shape smoothly between faces. Click a face to see it large at the top. Mark the faces to keep.</p>
+    <div class="sheet" id="sheetEl"></div>
+    <div class="legend">
+      <div class="box"><h3>Eyes</h3><div class="items" id="legEyes"></div></div>
+      <div class="box"><h3>Mouths</h3><div class="items" id="legMouths"></div></div>
+    </div>
+  </section>
+
+  <section id="signals">
+    <div class="eyebrow">4 · The mouth as a signal</div>
+    <h2>The mouth can carry data, not only mood</h2>
+    <p class="lede">A hole that opens and closes is also a small meter. Two uses make the mouth useful, not only decorative.</p>
+    <div class="signals">
+      <div class="box signal">
+        <h3>A level meter while you record</h3>
+        <div class="stage" id="levelStage"></div>
+        <div class="controls">
+          <button id="simBtn" class="on">Call audio</button>
+          <button id="muteBtn">Microphone muted</button>
+          <input type="range" id="levelIn" min="0" max="100" value="0" title="Voice level">
+          <div class="meter" id="meter"></div>
+        </div>
+        <p class="muted" style="margin-top:12px">The mouth opens with the voice level of the call. It uses the same data as the level meters in Tinta, so the face tells the truth. When the Meet extension reports that your microphone is muted, the mouth becomes a flat line and a small muted icon appears. A closed mouth for a long time says that nobody speaks.</p>
+      </div>
+      <div class="box signal">
+        <h3>Talking, for the Warm moments</h3>
+        <div class="stage" id="talkStage"></div>
+        <div class="controls" id="talkBtns"></div>
+        <div class="said" id="said"></div>
+        <p class="muted" style="margin-top:6px">When Pluma says a line, the mouth follows the letters: open on vowels, half open on consonants, closed on spaces. Pluma talks only at a few moments, and never during a call.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="story">
+    <div class="eyebrow">5 · A day with Plumín</div>
+    <h2>One meeting, from the reminder to the night</h2>
+    <p class="lede">The faces in order, as they appear around one call. Click a step, or play the day.</p>
+    <div class="story">
+      <div class="stage" id="storyStage"><div class="cap" id="storyCap"></div></div>
+      <div>
+        <div class="controls" style="margin-bottom:10px"><button id="playBtn" class="on">Play the day</button></div>
+        <div class="steps" id="steps"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="sizes">
+    <div class="eyebrow">6 · Sizes</div>
+    <h2>At small sizes, the hole does the work</h2>
+    <p class="lede">Below 24 pixels, the eyes are too small. The simple form shows only the nib, the slit, and the hole, and it draws the hole and the slit larger. The hole shape still tells the state: round for rest, open for a call, heart for a win, keyhole for privacy.</p>
+    <div class="box" style="margin-top:20px"><div class="sizes" id="sizesEl"></div></div>
+    <div class="two">
+      <div class="box">
+        <h3>Menu bar, simple form</h3>
+        <div class="menubar light" id="mbLight"></div>
+        <div class="menubar dark" id="mbDark"></div>
+      </div>
+      <div class="box">
+        <h3>The hole is a real hole</h3>
+        <p class="muted" style="font-size:13px;margin-top:4px">The mouth and the slit are cut out of the shape, not painted on. They show the background in the light and the dark appearance, and in a one-color menu bar icon.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">7 · Rules for the mouth</div>
+    <h2>How the mouth behaves</h2>
+    <div class="rules">
+      <div class="rule"><b>A hole, not lips</b><span>No teeth, no tongue, no outline. The mouth is always a hole in the metal.</span></div>
+      <div class="rule"><b>Round is home</b><span>The round hole is the rest face. Every other shape returns to it.</span></div>
+      <div class="rule"><b>Special shapes stay rare</b><span>Heart, keyhole, and teardrop appear only at their moments. If they appear often, they lose their meaning.</span></div>
+      <div class="rule"><b>The meter tells the truth</b><span>During a recording, the mouth follows the real voice level. It never moves to look alive when nobody speaks.</span></div>
+      <div class="rule"><b>Slow for mood, fast for sound</b><span>A change of mood takes about 250 ms. Only the level meter and talking move faster.</span></div>
+      <div class="rule"><b>Ink means work</b><span>Ink flows down the slit only while Tinta writes the transcript or the summary.</span></div>
+    </div>
+  </section>
+
+  <section id="review">
+    <div class="eyebrow">8 · Review</div>
+    <h2>Your picks</h2>
+    <div class="box export" style="margin-top:18px">
+      <p class="muted" style="font-size:13px" id="summary"></p>
+      <textarea id="notes" placeholder="Notes on Plumín" style="margin-top:12px"></textarea>
+      <div class="controls" style="margin-top:12px">
+        <button id="copy" class="on">Copy the review as Markdown</button>
+        <button id="reset">Clear the review</button>
+        <span class="muted" id="copied" style="font-size:12px"></span>
+      </div>
+      <textarea id="md" readonly></textarea>
+    </div>
+  </section>
+
+  <footer>Plumín explorations for Tinta. A static page with no network requests.</footer>
+</div>
+
+<script>
+/* Mouth shapes. Each shape is 13 points: a start point and 4 cubic segments. The same structure lets any shape morph into any other. */
+const K = 0.5523;
+const ell = (rx, ry) => [[0,-ry],[K*rx,-ry],[rx,-K*ry],[rx,0],[rx,K*ry],[K*rx,ry],[0,ry],[-K*rx,ry],[-rx,K*ry],[-rx,0],[-rx,-K*ry],[-K*rx,-ry],[0,-ry]];
+const D = (w, t, d) => [[0,t],[w/3,t],[2*w/3,t],[w,t],[w,t+d*.6],[w*.56,t+d],[0,t+d],[-w*.56,t+d],[-w,t+d*.6],[-w,t],[-2*w/3,t],[-w/3,t],[0,t]];
+const flipY = (pts) => pts.map(([x, y]) => [x, -y]);
+const xf = (pts, { rot = 0, dx = 0, dy = 0, s = 1 } = {}) => {
+  const c = Math.cos(rot * Math.PI / 180), n = Math.sin(rot * Math.PI / 180);
+  return pts.map(([x, y]) => [(x * c - y * n) * s + dx, (x * n + y * c) * s + dy]);
+};
+const MOUTHS = {
+  round:    { name: "Round", pts: ell(2.8, 2.8) },
+  open:     { name: "Open", pts: ell(4.4, 5.4) },
+  ooh:      { name: "Ooh", pts: ell(2.4, 3.1) },
+  smile:    { name: "Smile", pts: D(5, -1.5, 5.5) },
+  grin:     { name: "Grin", pts: D(7, -2.5, 8) },
+  flat:     { name: "Flat", pts: ell(4.6, .9) },
+  frown:    { name: "Frown", pts: flipY(D(5, -2.5, 5)) },
+  heart:    { name: "Heart", pts: xf([[0,-2],[1,-5.5],[6,-5.5],[6,-1.5],[6,1.5],[2,3.5],[0,5.5],[-2,3.5],[-6,1.5],[-6,-1.5],[-6,-5.5],[-1,-5.5],[0,-2]], { s: .95 }) },
+  keyhole:  { name: "Keyhole", pts: [[0,-5.5],[1.9,-5.5],[3.4,-3.8],[3.2,-1.2],[1.4,.8],[3,5.5],[0,5.5],[-3,5.5],[-1.4,.8],[-3.2,-1.2],[-3.4,-3.8],[-1.9,-5.5],[0,-5.5]] },
+  teardrop: { name: "Teardrop", pts: [[0,-5.5],[1,-3],[3.8,-1.5],[3.8,1.5],[3.8,3.8],[2,5.2],[0,5.2],[-2,5.2],[-3.8,3.8],[-3.8,1.5],[-3.8,-1.5],[-1,-3],[0,-5.5]] },
+  wobble:   { name: "Unsure", pts: xf(ell(4.4, 1), { rot: 12 }) },
+  smirk:    { name: "Smirk", pts: xf(D(4.6, -1, 3.6), { rot: -14, dx: 1.6 }) },
+  side:     { name: "Aside", pts: xf(ell(2.2, 1.2), { dx: 2.6, dy: -.4 }) },
+  sleep:    { name: "Asleep", pts: ell(2.2, .7) },
+};
+const DYNAMIC = { level: "Level meter", talk: "Talking" };
+
+const EYES = {
+  open:   { name: "Open" },
+  wide:   { name: "Wide" },
+  happy:  { name: "Happy" },
+  closed: { name: "Closed" },
+  half:   { name: "Focused" },
+  up:     { name: "Up" },
+  side:   { name: "Aside" },
+  sad:    { name: "Sad" },
+  wink:   { name: "Wink" },
+};
+const EYE_POS = [[51, 46], [69, 46]];
+function eyeSvg(kind) {
+  const one = (x, y, i) => {
+    const open = (r = 5, dx = 0, dy = 0) => `<circle class="w" cx="${x}" cy="${y}" r="${r}"/>`;
+    const pupil = (dx = 0, dy = 0, r = 2.5) => `<circle class="k" cx="${x + .6 + dx}" cy="${y + .6 + dy}" r="${r}"/>`;
+    const arcUp = `<path class="sw" stroke-width="2.4" d="M${x - 4.5} ${y + 1.8} Q ${x} ${y - 4.5} ${x + 4.5} ${y + 1.8}"/>`;
+    const arcDown = `<path class="sw" stroke-width="2.2" d="M${x - 4.5} ${y} Q ${x} ${y + 3.4} ${x + 4.5} ${y}"/>`;
+    const outer = i === 0 ? -1 : 1;
+    switch (kind) {
+      case "wide": return [open(6.2), pupil(0, 0, 2.3)];
+      case "happy": return [arcUp, ""];
+      case "closed": return [arcDown, ""];
+      case "half": return [open() + `<rect class="k" x="${x - 6.5}" y="${y - 6.5}" width="13" height="6.3"/>`, pupil(0, .8)];
+      case "up": return [open(), pupil(.4, -2.3)];
+      case "side": return [open(), pupil(-2.3, .4)];
+      case "sad": return [open() + `<path class="k" d="M${x + outer * 6.5} ${y - 6.5} L ${x - outer * 3} ${y - 6.5} L ${x + outer * 6.5} ${y + .5} Z"/>`, pupil(0, 1)];
+      case "wink": return i === 0 ? [arcUp, ""] : [open(), pupil()];
+      default: return [open(), pupil()];
+    }
+  };
+  const parts = EYE_POS.map(([x, y], i) => one(x, y, i));
+  return `${parts.map((p) => p[0]).join("")}<g class="pupils">${parts.map((p) => p[1]).join("")}</g>`;
+}
+
+/* Expressions */
+const EXPR = [
+  { id: "rest", name: "Rest", eyes: "open", mouth: "round", motion: "bob", moment: "Idle. The home face." },
+  { id: "hello", name: "Hello", eyes: "happy", mouth: "smile", motion: "hop", moment: "First launch, and the consent reminder." },
+  { id: "alert", name: "Oh, a call", eyes: "wide", mouth: "open", motion: "perk", fx: "bang", moment: "Call detected. Record?" },
+  { id: "listen", name: "Listening", eyes: "side", mouth: "level", motion: "tilt", fx: "rec", moment: "Recording. The mouth is the level meter." },
+  { id: "muted", name: "Muted", eyes: "half", mouth: "flat", motion: "lean", fx: "mute", moment: "Recording, and your microphone is muted." },
+  { id: "write", name: "Writing", eyes: "half", mouth: "flat", motion: "scribble", ink: true, moment: "Transcribing. Ink flows down the slit." },
+  { id: "think", name: "Thinking", eyes: "up", mouth: "side", motion: "sway", fx: "think", ink: true, moment: "Summarizing with the on-device model." },
+  { id: "proud", name: "Done", eyes: "happy", mouth: "grin", motion: "hop", fx: "spark", moment: "Summary ready." },
+  { id: "love", name: "Thanks", eyes: "happy", mouth: "heart", motion: "bob", moment: "The first meeting, or the first summary." },
+  { id: "secret", name: "Secret", eyes: "wink", mouth: "keyhole", motion: "bob", fx: "lock", moment: "Encrypted. Audio deleted. MCP asks for access." },
+  { id: "ooh", name: "Ooh", eyes: "wide", mouth: "ooh", motion: "perk", moment: "Granola import found 120 meetings." },
+  { id: "unsure", name: "Not sure", eyes: "side", mouth: "wobble", motion: "sway", fx: "q", moment: "Two voices can be one speaker. Confirm?" },
+  { id: "smirk", name: "Wry", eyes: "wink", mouth: "smirk", motion: "bob", moment: "A Wry line, if you choose that tone." },
+  { id: "sad", name: "Can't hear", eyes: "sad", mouth: "frown", motion: "droop", moment: "No microphone access." },
+  { id: "tear", name: "Goodbye", eyes: "sad", mouth: "teardrop", motion: "droop", moment: "A meeting moves to the trash." },
+  { id: "sleep", name: "Asleep", eyes: "closed", mouth: "sleep", motion: "breathe", fx: "zzz", moment: "No more meetings today." },
+];
+const ex = (id) => EXPR.find((e) => e.id === id);
+
+/* One nib instance */
+const FX = `<div class="fx fx-rec"><i></i>REC</div>
+  <div class="fx fx-think"><i></i><i></i><i></i></div>
+  <div class="fx fx-zzz"><b>z</b><b>z</b><b>z</b></div>
+  <div class="fx fx-spark"><i></i><i></i><i></i></div>
+  <div class="fx fx-bang">!</div><div class="fx fx-q">?</div>
+  <div class="fx fx-lock"><svg viewBox="0 0 24 24"><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M6 10h12v11H6z"/></svg></div>
+  <div class="fx fx-mute"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/><path d="M4 4l16 16"/></svg></div>`;
+const MOUTH_AT = [60, 66];
+const NIB = "M60 112 L 36 66 C 30 54, 32 36, 40 24 L 80 24 C 88 36, 90 54, 84 66 Z";
+const pathOf = (pts, sc = 1) => { const [ox, oy] = MOUTH_AT; const p = pts.map(([x, y]) => `${(x * sc + ox).toFixed(2)} ${(y * sc + oy - (sc - 1) * 4).toFixed(2)}`); return `M${p[0]} C${p.slice(1, 4).join(" ")} C${p.slice(4, 7).join(" ")} C${p.slice(7, 10).join(" ")} C${p.slice(10, 13).join(" ")} Z`; };
+
+const pets = [];
+let uid = 0;
+let level = 0, muted = false;
+class Nib {
+  constructor(el, { expr = "rest", fx = true, simple = false, mono = false, click = false } = {}) {
+    this.el = el; this.id = `m${uid++}`; this.talk = 0; this.sc = simple ? 1.9 : 1;
+    el.classList.add("stage");
+    if (!fx) el.classList.add("nofx");
+    if (simple) el.classList.add("simple");
+    if (mono) el.classList.add("mono");
+    if (click) el.classList.add("click");
+    el.insertAdjacentHTML("afterbegin", (fx ? FX : "") + `<svg class="pet" viewBox="0 0 120 120">
+      <mask id="${this.id}" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
+        <rect width="120" height="120" fill="#fff"/><path class="mm" fill="#000"/>
+        <path d="M60 71 L60 111" stroke="#000" stroke-width="${simple ? 5 : 2.4}" stroke-linecap="round"/>
+      </mask>
+      <ellipse class="shadow" cx="60" cy="113" rx="16" ry="3"/>
+      <g class="p-body">
+        <rect class="a2" x="40" y="11" width="40" height="14" rx="4"/>
+        <path class="k" d="${NIB}" mask="url(#${this.id})"/>
+        <path class="ink" pathLength="1" d="M60 72 L60 110"/>
+        <g class="cheeks"><circle class="a" cx="43.5" cy="57" r="3.4" opacity=".85"/><circle class="a" cx="76.5" cy="57" r="3.4" opacity=".85"/></g>
+        <g class="eyes"></g>
+      </g></svg>`);
+    this.mask = el.querySelector(".mm");
+    this.eyesEl = el.querySelector(".eyes");
+    this.cur = MOUTHS.round.pts.map((p) => [...p]);
+    this.set(expr, true);
+    this.nextBlink = performance.now() + 1500 + Math.random() * 4000;
+    pets.push(this);
+  }
+  set(id, instant = false) {
+    const e = typeof id === "string" ? ex(id) : id;
+    this.e = e;
+    const swap = () => { this.eyesEl.innerHTML = eyeSvg(e.eyes); };
+    if (instant) swap(); else { this.eyesEl.classList.add("blink"); setTimeout(() => { swap(); this.eyesEl.classList.remove("blink"); }, 80); }
+    this.el.dataset.motion = e.motion || "";
+    this.el.dataset.fx = e.fx || "";
+    if (e.ink) this.el.dataset.ink = ""; else delete this.el.dataset.ink;
+    if (instant) this.cur = this.target(performance.now()).map((p) => [...p]);
+  }
+  target(t) {
+    const m = this.e.mouth;
+    if (m === "level") return muted ? MOUTHS.flat.pts : ell(3.8, .7 + 5 * level);
+    if (m === "talk") return ell(3.6 + this.talk * .6, .7 + 4.6 * this.talk);
+    if (m === "sleep") { const b = (Math.sin(t / 700) + 1) / 2; return ell(2 + b * .5, .6 + b * .5); }
+    return (this.override && MOUTHS[this.override] ? MOUTHS[this.override] : MOUTHS[m]).pts;
+  }
+  frame(t) {
+    const tgt = this.target(t);
+    const fast = this.e.mouth === "level" || this.e.mouth === "talk";
+    const k = fast ? .45 : .2;
+    for (let i = 0; i < 13; i++) { this.cur[i][0] += (tgt[i][0] - this.cur[i][0]) * k; this.cur[i][1] += (tgt[i][1] - this.cur[i][1]) * k; }
+    this.mask.setAttribute("d", pathOf(this.cur, this.sc));
+    if (t > this.nextBlink) {
+      if (["open", "wide", "up", "side", "half", "sad"].includes(this.e.eyes)) {
+        this.eyesEl.classList.add("blink"); setTimeout(() => this.eyesEl.classList.remove("blink"), 120);
+      }
+      this.nextBlink = t + 2500 + Math.random() * 4500;
+    }
+  }
+}
+function loop(t) { pets.forEach((p) => p.frame(t)); requestAnimationFrame(loop); }
+
+/* Poke: a short "oh", then a smile */
+document.addEventListener("click", (e) => {
+  const st = e.target.closest(".stage.click");
+  if (!st) return;
+  const p = pets.find((x) => x.el === st);
+  if (!p) return;
+  st.classList.remove("poke"); void st.offsetWidth; st.classList.add("poke");
+  p.override = "open";
+  setTimeout(() => (p.override = "smile"), 260);
+  setTimeout(() => { p.override = null; st.classList.remove("poke"); }, 900);
+});
+
+/* Pupils follow the pointer */
+let raf = 0;
+document.addEventListener("pointermove", (e) => {
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    pets.forEach(({ el }) => {
+      if (el.classList.contains("simple")) return;
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+      const len = Math.hypot(dx, dy) || 1, k = Math.min(1, len / 300) * 1.4;
+      el.style.setProperty("--px", `${(dx / len) * k}px`);
+      el.style.setProperty("--py", `${(dy / len) * k}px`);
+    });
+  });
+});
+
+/* Review store */
+let store = {};
+try { store = JSON.parse(localStorage.getItem("plumin-review") || "{}"); } catch {}
+store.keep ||= {}; store.holes ||= {}; store.notes ||= "";
+const save = () => { try { localStorage.setItem("plumin-review", JSON.stringify(store)); } catch {} renderReview(); };
+
+/* Hero */
+const hero = new Nib(document.getElementById("hero"), { click: true });
+function showHero(id) {
+  const e = ex(id);
+  hero.set(e);
+  document.querySelectorAll("#heroChips button").forEach((b) => b.classList.toggle("on", b.dataset.id === id));
+  document.getElementById("roEyes").textContent = EYES[e.eyes].name;
+  document.getElementById("roMouth").textContent = MOUTHS[e.mouth]?.name || DYNAMIC[e.mouth];
+  document.getElementById("roMoment").textContent = e.moment;
+}
+document.getElementById("heroChips").innerHTML = EXPR.map((e) => `<button data-id="${e.id}">${e.name}</button>`).join("");
+document.querySelectorAll("#heroChips button").forEach((b) => (b.onclick = () => showHero(b.dataset.id)));
+showHero("rest");
+
+/* Anatomy */
+document.getElementById("anatSvg").innerHTML = `
+  <g transform="translate(120 0) scale(2)">
+    <mask id="anatM" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120"><rect width="120" height="120" fill="#fff"/>
+      <path d="${pathOf(MOUTHS.round.pts)}" fill="#000"/><path d="M60 71 L60 111" stroke="#000" stroke-width="2.4" stroke-linecap="round"/></mask>
+    <rect x="40" y="11" width="40" height="14" rx="4" fill="var(--accent-strong)"/>
+    <path d="${NIB}" fill="var(--ink)" mask="url(#anatM)"/>
+    <circle cx="43.5" cy="57" r="3.4" fill="var(--accent)"/><circle cx="76.5" cy="57" r="3.4" fill="var(--accent)"/>
+    <circle cx="51" cy="46" r="5" fill="var(--paper)"/><circle cx="69" cy="46" r="5" fill="var(--paper)"/>
+    <circle cx="51.6" cy="46.6" r="2.5" fill="var(--ink)"/><circle cx="69.6" cy="46.6" r="2.5" fill="var(--ink)"/>
+  </g>
+  <path class="lead" d="M92 36 H 196"/><text x="20" y="40">Feed</text>
+  <path class="lead" d="M92 92 H 212"/><text x="20" y="96">Eyes</text>
+  <path class="lead" d="M92 186 H 236"/><text x="20" y="190">Slit</text>
+  <path class="lead" d="M300 76 H 388"/><text x="396" y="80">Shoulders</text>
+  <path class="lead" d="M250 132 H 388"/><text x="396" y="136">Breather hole</text>
+  <path class="lead" d="M246 224 H 388"/><text x="396" y="228">Tip</text>`;
+
+/* Holes */
+const HOLES = [
+  { id: "round", ex: "rest", name: "Round", real: "The usual hole on most nibs.", mean: "Rest. The home face that every other face returns to." },
+  { id: "heart", ex: "love", name: "Heart", real: "Common on vintage and decorative nibs.", mean: "Thanks and small wins: the first meeting, the first summary." },
+  { id: "keyhole", ex: "secret", name: "Keyhole", real: "A round hole with a narrow cut below it.", mean: "Privacy: the library is encrypted, the audio is deleted, MCP asks for access." },
+  { id: "teardrop", ex: "tear", name: "Teardrop", real: "An ink-drop shape, on some modern nibs.", mean: "Loss: a meeting moves to the trash, or a recording fails." },
+];
+const holesEl = document.getElementById("holesEl");
+holesEl.innerHTML = HOLES.map((h) => `<div class="box hole"><div class="st"></div><h3>${h.name}</h3><p>${h.real}</p><p class="meaning">In Tinta: ${h.mean}</p><button class="keep" data-hole="${h.id}">Keep</button></div>`).join("");
+holesEl.querySelectorAll(".hole").forEach((el, i) => new Nib(el.querySelector(".st"), { expr: HOLES[i].ex, click: true }));
+holesEl.querySelectorAll("[data-hole]").forEach((b) => {
+  b.classList.toggle("on", !!store.holes[b.dataset.hole]);
+  b.onclick = () => { store.holes[b.dataset.hole] = !store.holes[b.dataset.hole]; b.classList.toggle("on"); save(); };
+});
+
+/* Expression sheet */
+const sheetEl = document.getElementById("sheetEl");
+sheetEl.innerHTML = EXPR.map((e) => `<div class="ex ${store.keep[e.id] ? "kept" : ""}" data-id="${e.id}"><div class="st"></div>
+  <div class="row"><h3>${e.name}</h3><button class="keep ${store.keep[e.id] ? "on" : ""}">Keep</button></div>
+  <div class="moment">${e.moment}</div>
+  <div class="combo">eyes: ${EYES[e.eyes].name.toLowerCase()} · mouth: ${(MOUTHS[e.mouth]?.name || DYNAMIC[e.mouth]).toLowerCase()}</div></div>`).join("");
+sheetEl.querySelectorAll(".ex").forEach((card) => {
+  const id = card.dataset.id;
+  const n = new Nib(card.querySelector(".st"), { expr: id });
+  n.el.style.cursor = "pointer";
+  n.el.onclick = () => { showHero(id); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  card.querySelector(".keep").onclick = (ev) => {
+    store.keep[id] = !store.keep[id];
+    ev.target.classList.toggle("on", store.keep[id]);
+    card.classList.toggle("kept", store.keep[id]);
+    save();
+  };
+});
+const legEyes = document.getElementById("legEyes");
+legEyes.innerHTML = Object.entries(EYES).map(([k, v]) => `<div class="item"><div data-e="${k}"></div>${v.name}</div>`).join("");
+legEyes.querySelectorAll("[data-e]").forEach((el) => new Nib(el, { expr: { eyes: el.dataset.e, mouth: "round" }, fx: false }));
+const legMouths = document.getElementById("legMouths");
+legMouths.innerHTML = Object.entries(MOUTHS).map(([k, v]) => `<div class="item"><div data-m="${k}"></div>${v.name}</div>`).join("");
+legMouths.querySelectorAll("[data-m]").forEach((el) => new Nib(el, { expr: { eyes: "open", mouth: el.dataset.m }, fx: false }));
+
+/* Level meter */
+const levelNib = new Nib(document.getElementById("levelStage"), { expr: "listen" });
+const meter = document.getElementById("meter");
+meter.innerHTML = Array.from({ length: 12 }, (_, i) => `<i style="height:${6 + i * 1.7}px"></i>`).join("");
+let sim = true, speaking = true, speakUntil = 0, phase = 0;
+const levelIn = document.getElementById("levelIn");
+document.getElementById("simBtn").onclick = (e) => { sim = !sim; e.target.classList.toggle("on", sim); if (!sim) level = levelIn.value / 100; };
+levelIn.oninput = () => { sim = false; document.getElementById("simBtn").classList.remove("on"); level = levelIn.value / 100; };
+document.getElementById("muteBtn").onclick = (e) => {
+  muted = !muted; e.target.classList.toggle("on", muted);
+  levelNib.set(muted ? "muted" : "listen");
+};
+setInterval(() => {
+  const t = performance.now();
+  if (sim) {
+    if (t > speakUntil) { speaking = !speaking; speakUntil = t + (speaking ? 1800 + Math.random() * 2600 : 500 + Math.random() * 1400); }
+    phase += .9 + Math.random() * .6;
+    const target = speaking ? Math.max(0, .35 + .4 * Math.sin(phase) + (Math.random() - .5) * .5) : Math.random() * .05;
+    level += (Math.min(1, target) - level) * .5;
+    levelIn.value = Math.round(level * 100);
+  }
+  const shown = muted ? 0 : level;
+  meter.querySelectorAll("i").forEach((b, i) => b.classList.toggle("on", shown * 12 > i));
+}, 60);
+
+/* Talking */
+const talkNib = new Nib(document.getElementById("talkStage"), { expr: { eyes: "open", mouth: "talk", motion: "bob" }, click: true });
+const TALK = [
+  "Hi, I'm Pluma. I write down your meetings, and I keep them on this Mac.",
+  "Before we start: tell the others that I'm here.",
+  "Your first meeting will appear here.",
+  "I deleted last week's audio, as you asked. The notes stay.",
+];
+const said = document.getElementById("said");
+let talkTimer = null;
+function sayLine(text) {
+  clearInterval(talkTimer);
+  let i = 0;
+  talkNib.set({ eyes: "open", mouth: "talk", motion: "bob" });
+  const endFace = text.includes("audio") ? "secret" : text.startsWith("Before") ? "hello" : "rest";
+  talkTimer = setInterval(() => {
+    const c = text[i] || " ";
+    talkNib.talk = /[aeiouáéíóú]/i.test(c) ? .75 + Math.random() * .25 : /[a-z]/i.test(c) ? .3 + Math.random() * .2 : .02;
+    said.innerHTML = `${text.slice(0, i + 1)}<span>${text.slice(i + 1)}</span>`;
+    i++;
+    if (i > text.length) { clearInterval(talkTimer); talkNib.talk = 0; setTimeout(() => talkNib.set(endFace), 250); }
+  }, 55);
+}
+document.getElementById("talkBtns").innerHTML = ["First launch", "Consent", "Empty library", "Audio deleted"].map((l, i) => `<button data-i="${i}">${l}</button>`).join("");
+document.querySelectorAll("#talkBtns button").forEach((b) => (b.onclick = () => sayLine(TALK[b.dataset.i])));
+setTimeout(() => sayLine(TALK[0]), 900);
+
+/* Story */
+const STORY = [
+  ["09:59", "Reminder", "Weekly sync starts in 1 minute.", "alert"],
+  ["10:00", "Call detected", "A Google Meet call started. Record?", "ooh"],
+  ["10:00", "Consent", "Tell the others that you record.", "hello"],
+  ["10:01", "Recording", "The mouth follows the voices of the call.", "listen"],
+  ["10:14", "Muted", "Your microphone is muted.", "muted"],
+  ["10:32", "Transcribing", "The call ended. Ink flows down the slit.", "write"],
+  ["10:33", "Summarizing", "The on-device model reads the notes and the transcript.", "think"],
+  ["10:34", "Summary ready", "4 decisions, 6 action items.", "proud"],
+  ["Day 7", "Audio deleted", "The audio is gone. The notes stay.", "secret"],
+  ["22:00", "Night", "No more meetings today.", "sleep"],
+];
+const storyNib = new Nib(document.getElementById("storyStage"), { click: true });
+const stepsEl = document.getElementById("steps");
+stepsEl.innerHTML = STORY.map((s, i) => `<div class="step" data-i="${i}"><span class="t">${s[0]}</span><div><b>${s[1]}</b><span>${s[2]}</span></div></div>`).join("");
+let storyI = 0, storyTimer = null;
+function showStep(i) {
+  storyI = i;
+  stepsEl.querySelectorAll(".step").forEach((s, j) => s.classList.toggle("cur", j === i));
+  storyNib.set(STORY[i][3]);
+  document.getElementById("storyCap").textContent = STORY[i][2];
+}
+const playBtn = document.getElementById("playBtn");
+function play(on) {
+  clearInterval(storyTimer); storyTimer = null; playBtn.classList.toggle("on", on); playBtn.textContent = on ? "Pause" : "Play the day";
+  if (on) storyTimer = setInterval(() => showStep((storyI + 1) % STORY.length), 2800);
+}
+playBtn.onclick = () => play(!storyTimer);
+stepsEl.querySelectorAll(".step").forEach((s) => (s.onclick = () => { play(false); showStep(+s.dataset.i); }));
+showStep(0); play(true);
+
+/* Sizes */
+const PX = [16, 20, 24, 32, 48, 96];
+const SIZE_ROWS = [["Rest", "rest"], ["Call", "alert"], ["Thanks", "love"], ["Secret", "secret"]];
+const sizesEl = document.getElementById("sizesEl");
+sizesEl.innerHTML = `<span></span>${PX.map((p) => `<span class="lbl" style="text-align:center">${p} px</span>`).join("")}` +
+  SIZE_ROWS.map(([l, id]) => `<span class="lbl">${l}</span>${PX.map((p) => `<div data-x="${id}" data-p="${p}" style="width:${p}px;height:${p}px"></div>`).join("")}`).join("");
+sizesEl.querySelectorAll("[data-x]").forEach((el) => {
+  const n = new Nib(el, { expr: el.dataset.x, fx: false, simple: +el.dataset.p < 24 });
+  el.classList.add("plain"); el.dataset.motion = "";
+});
+["mbLight", "mbDark"].forEach((id) => {
+  const bar = document.getElementById(id);
+  bar.innerHTML = `<span>Wi‑Fi</span>` + SIZE_ROWS.map(() => `<div></div>`).join("") + `<span>Thu 25 Sep 10:02</span>`;
+  bar.querySelectorAll("div").forEach((el, i) => { new Nib(el, { expr: SIZE_ROWS[i][1], fx: false, simple: true, mono: true }); el.classList.add("plain"); el.dataset.motion = ""; });
+});
+
+/* Theme */
+const themeBtn = document.getElementById("theme");
+themeBtn.onclick = () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  themeBtn.textContent = dark ? "Light" : "Dark";
+};
+
+/* Review */
+const notesEl = document.getElementById("notes");
+notesEl.value = store.notes;
+notesEl.oninput = () => { store.notes = notesEl.value; save(); };
+function renderReview() {
+  const kept = EXPR.filter((e) => store.keep[e.id]);
+  const holes = HOLES.filter((h) => store.holes[h.id]);
+  document.getElementById("summary").textContent = `${kept.length} of ${EXPR.length} faces kept. ${holes.length} of ${HOLES.length} mouth shapes kept.`;
+  document.getElementById("md").value = [
+    "# Plumín review", "",
+    "## Mouth shapes", ...HOLES.map((h) => `- ${store.holes[h.id] ? "[x]" : "[ ]"} ${h.name}`), "",
+    "## Faces", ...EXPR.map((e) => `- ${store.keep[e.id] ? "[x]" : "[ ]"} ${e.name} (${e.moment})`), "",
+    ...(store.notes ? ["## Notes", "", store.notes, ""] : []),
+  ].join("\n");
+}
+document.getElementById("copy").onclick = () => navigator.clipboard.writeText(document.getElementById("md").value).then(() => {
+  document.getElementById("copied").textContent = "Copied.";
+  setTimeout(() => (document.getElementById("copied").textContent = ""), 1500);
+});
+document.getElementById("reset").onclick = () => {
+  store = { keep: {}, holes: {}, notes: "" }; notesEl.value = ""; save();
+  document.querySelectorAll(".keep").forEach((b) => b.classList.remove("on"));
+  document.querySelectorAll(".ex").forEach((c) => c.classList.remove("kept"));
+};
+
+renderReview();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
