@@ -27,10 +27,19 @@ The site runs on the shared Hetzner server (`178.105.63.159`), behind the edge C
 | `deploy/tinta.caddy` | The site in the edge proxy: `usetinta.com`, and a redirect from `www`. HTTPS comes from Caddy. |
 | `deploy/docker-compose.yml`, `deploy/nginx/` | The nginx container that serves this folder. `experiments/` is not served. |
 | `deploy/deploy.sh` | Pulls `main` into `/opt/tinta`, updates the Caddy site with a check and a rollback, and starts nginx. |
+| `deploy/stats/` | The stats: GoAccess builds `https://usetinta.com/stats/` every 10 minutes from the nginx access log. |
 
 To deploy by hand, run `ssh hetzner /opt/tinta/deploy/deploy.sh`. To deploy again from GitHub, run the workflow from the Actions tab.
 
 The wordmark paths come from the Brush Script MT font that the app uses. Check the font license before public use.
+
+### Stats
+
+The page has no analytics script and no cookies. The stats come from the nginx access log on the server:
+
+- `https://usetinta.com/stats/` shows visitors, pages, referrers, countries, and browsers. The user is `tinta`, and the password is in `/etc/tinta/stats-password` on the server.
+- The GitHub links of the page go to `/github?from=header`, `hero`, or `footer`. nginx redirects them to the repository, so the stats count the clicks of each link. The local preview has no `/github`, so these links give a 404 there.
+- The raw logs stay 14 days in `/var/log/tinta`. GoAccess keeps two years of history in `/var/lib/tinta-stats`, without full IPs. Crawlers are not counted.
 
 ## Experiments
 

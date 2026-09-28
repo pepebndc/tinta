@@ -50,9 +50,31 @@ if ! cmp -s "$APP/deploy/tinta.caddy" "$SITE"; then
   echo "Caddy site updated and reloaded"
 fi
 
-# Step 3: nginx. The files are directory mounts, so a reload is enough for config changes.
+# Step 3: stats. The access log, its rotation, GoAccess, and the password of /stats/.
+command -v goaccess >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq goaccess; }
+install -d -m 755 /var/log/tinta /var/lib/tinta-stats/html /etc/tinta
+if [ ! -f /etc/tinta/stats.htpasswd ]; then
+  pw="$(openssl rand -base64 18)"
+  printf 'tinta:%s\n' "$(openssl passwd -apr1 "$pw")" > /etc/tinta/stats.htpasswd
+  printf '%s\n' "$pw" > /etc/tinta/stats-password
+  chmod 600 /etc/tinta/stats-password
+  echo "stats password created: user tinta, password in /etc/tinta/stats-password"
+fi
+chown root:101 /etc/tinta/stats.htpasswd && chmod 640 /etc/tinta/stats.htpasswd   # 101 = nginx in the image
+install -m 644 "$APP/deploy/stats/logrotate.conf" /etc/logrotate.d/tinta
+units_changed=0
+for u in tinta-stats.service tinta-stats.timer; do
+  if ! cmp -s "$APP/deploy/stats/$u" "/etc/systemd/system/$u"; then
+    install -m 644 "$APP/deploy/stats/$u" "/etc/systemd/system/$u"; units_changed=1
+  fi
+done
+[ "$units_changed" = 1 ] && systemctl daemon-reload
+systemctl enable --now tinta-stats.timer >/dev/null
+
+# Step 4: nginx. The files are directory mounts, so a reload is enough for config changes.
 cd "$APP/deploy"
 docker compose up -d
+systemctl start tinta-stats.service || echo "the stats build failed, the site is not affected"
 docker compose exec -T web nginx -t
 docker compose exec -T web nginx -s reload
 docker compose ps

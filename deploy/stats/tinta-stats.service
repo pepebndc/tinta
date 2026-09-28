@@ -1,0 +1,7 @@
+[Unit]
+Description=Tinta website stats (GoAccess)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tinta/deploy/stats/stats.sh
+Nice=10

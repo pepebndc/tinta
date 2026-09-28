@@ -10,6 +10,13 @@ services:
       # Directory mounts, so a git pull shows up without a restart.
       - ../website:/srv/website:ro
       - ./nginx:/etc/nginx/conf.d:ro
+      # Stats: the access log, the GoAccess report, and the password file (server only).
+      - /var/log/tinta:/var/log/nginx/tinta
+      - /var/lib/tinta-stats/html:/srv/stats:ro
+      - /etc/tinta:/etc/tinta:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
     networks:
       edge:
         aliases: [tinta-web]
