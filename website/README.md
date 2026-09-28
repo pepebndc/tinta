@@ -18,10 +18,19 @@ The landing page of Tinta, at [usetinta.com](https://usetinta.com/). It is a sta
 
 The intro plays a short meeting in the app window, and then the window becomes the hero. It plays once per browser session. Add `?intro` to the address to play it again. A key press, a click, a scroll, or **Skip intro** ends it. With "Reduce motion" on in macOS, or with JavaScript off, the page opens without the intro.
 
-## Before you publish
+## Publish
 
-- Point the DNS of `usetinta.com` to the static host, and serve this folder as the site root.
-- The wordmark paths come from the Brush Script MT font that the app uses. Check the font license before public use.
+The site runs on the shared Hetzner server (`178.105.63.159`), behind the edge Caddy proxy that also serves Tavola and Emulsioncamp. Every push to `main` that changes `website/` or `deploy/` deploys it: the workflow `.github/workflows/deploy-website.yml` runs `deploy/deploy.sh` on the server over SSH.
+
+| File | Content |
+|---|---|
+| `deploy/tinta.caddy` | The site in the edge proxy: `usetinta.com`, and a redirect from `www`. HTTPS comes from Caddy. |
+| `deploy/docker-compose.yml`, `deploy/nginx/` | The nginx container that serves this folder. `experiments/` is not served. |
+| `deploy/deploy.sh` | Pulls `main` into `/opt/tinta`, updates the Caddy site with a check and a rollback, and starts nginx. |
+
+To deploy by hand, run `ssh hetzner /opt/tinta/deploy/deploy.sh`. To deploy again from GitHub, run the workflow from the Actions tab.
+
+The wordmark paths come from the Brush Script MT font that the app uses. Check the font license before public use.
 
 ## Experiments
 

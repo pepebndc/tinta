@@ -1,0 +1,19 @@
+# Tinta website in production: static nginx behind the shared proxy in /opt/edge.
+# deploy.sh runs it. By hand: cd /opt/tinta/deploy && docker compose up -d
+name: tinta
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      # Directory mounts, so a git pull shows up without a restart.
+      - ../website:/srv/website:ro
+      - ./nginx:/etc/nginx/conf.d:ro
+    networks:
+      edge:
+        aliases: [tinta-web]
+
+networks:
+  edge:
+    external: true

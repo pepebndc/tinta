@@ -1,0 +1,18 @@
+# Tinta website: a tenant of the shared proxy in /opt/edge (see tavola/DEPLOY.md).
+# deploy.sh copies this file to /opt/edge/sites/tinta.caddy and reloads Caddy.
+# The nginx container joins the `edge` network with the alias `tinta-web`.
+
+usetinta.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	reverse_proxy tinta-web:80
+}
+
+www.usetinta.com {
+	redir https://usetinta.com{uri} permanent
+}
