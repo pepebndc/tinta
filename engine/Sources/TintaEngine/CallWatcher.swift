@@ -20,7 +20,7 @@ final class CallWatcher: @unchecked Sendable {
 
     static let apps = [
         App(id: "us.zoom.xos", name: "Zoom", prefix: "us.zoom."),
-        App(id: "com.microsoft.teams2", name: "Microsoft Teams", prefix: "com.microsoft.teams2"),
+        App(id: "com.microsoft.teams2", name: "Microsoft Teams", prefix: "com.microsoft.teams"),
     ]
 
     /// The time without audio activity before a call counts as ended.
