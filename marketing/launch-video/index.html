@@ -132,7 +132,9 @@ html.v .mcard { width: auto; padding: 12px 22px; }
 html.v #gchat { left: 90px !important; top: 900px !important; width: 900px !important; height: 560px !important; }
 html.v #gfoot { top: 1500px !important; flex-wrap: wrap; padding: 0 80px; gap: 14px !important; }
 html.v #gfoot .epill { font-size: 22px; padding: 12px 22px; }
-html.v #efoot { top: 1400px !important; flex-wrap: wrap; padding: 0 120px; gap: 16px !important; }
+html.v #efoot { top: 1420px !important; gap: 24px !important; }
+html.v #esub { font-size: 27px !important; }
+html.v #wm { display: none; }
 html.v #eglow { left: 40px !important; top: 460px !important; }
 #cursor { position: absolute; left: 0; top: 0; width: 26px; height: 36px; z-index: 50; pointer-events: none; filter: drop-shadow(0 3px 5px #0003); }
 #vignette { position: absolute; inset: 0; pointer-events: none; z-index: 90; background: radial-gradient(ellipse at center, transparent 55%, #1a163a18 100%); }
@@ -362,10 +364,15 @@ html.v #eglow { left: 40px !important; top: 460px !important; }
     <div class="brush" id="elkw" style="font-size: 330px; color: var(--paper); padding: 40px 50px 70px 10px">tinta</div>
   </div>
   <div class="abs split title" id="etag" style="left: 0; right: 0; top: 690px; text-align: center; font-size: 76px; color: var(--paper)">Meeting notes.<br class="vbr"> <span class="serif" style="color: var(--accent)">On your Mac.</span></div>
-  <div class="abs" id="efoot" style="left: 0; right: 0; top: 850px; display: flex; justify-content: center; gap: 16px">
-    <div class="epill" id="ep0" style="background: #ffffff12; color: var(--paper); border: 1px solid #ffffff22">Open source</div>
-    <div class="epill" id="ep1" style="background: #ffffff12; color: var(--paper); border: 1px solid #ffffff22">Apple Silicon</div>
-    <div class="epill" id="ep2" style="background: var(--accent); color: var(--ink)">github.com/pepebndc/tinta</div>
+  <div class="abs" id="efoot" style="left: 0; right: 0; top: 830px; display: flex; flex-direction: column; align-items: center; gap: 26px">
+    <div id="ecta" style="display: inline-flex; align-items: center; gap: 22px; background: var(--paper); color: var(--ink); border-radius: 999px; padding: 20px 44px 20px 22px; box-shadow: 0 30px 80px -20px #0008, 0 0 0 1px #ffffff30; position: relative; overflow: hidden">
+      <span style="width: 64px; height: 64px; border-radius: 50%; background: var(--ink); display: grid; place-items: center; flex-shrink: 0">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#aaa4e8" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg>
+      </span>
+      <span style="font-size: 60px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; white-space: nowrap"><span id="eurl"></span><span id="ecaret" class="caret" style="height: 0.9em; width: 4px"></span><span id="erest" style="visibility: hidden"></span></span>
+      <span id="eshine" style="position: absolute; top: 0; bottom: 0; width: 160px; left: 0; background: linear-gradient(100deg, transparent, #ffffffcc, transparent); pointer-events: none"></span>
+    </div>
+    <div id="esub" style="font-size: 28px; color: var(--paper); opacity: 0.78; letter-spacing: 0.01em">Free and open source. Apple Silicon. macOS 14.2 or later.</div>
   </div>
 </div>
 
@@ -381,6 +388,7 @@ html.v #eglow { left: 40px !important; top: 460px !important; }
   </defs>
   <g id="floodg" filter="url(#goo)"></g>
 </svg>
+<div id="wm" style="position: absolute; right: 56px; bottom: 42px; z-index: 85; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; pointer-events: none">usetinta.com</div>
 <div id="vignette"></div>
 <div id="fade"></div>
 </div>
@@ -806,7 +814,14 @@ function renderEnd(t) {
   const m = `linear-gradient(100deg, #000 ${wk}%, transparent ${wk + 15}%)`;
   set("elkw", { webkitMaskImage: m, maskImage: m, transform: `rotate(-2deg) translateX(${(1 - E.out(p(t, N.word, N.word + 0.9))) * 30}px)` });
   words("etag", t, N.tag, { stagger: 0.07, dur: 0.8 });
-  ["ep0", "ep1", "ep2"].forEach((id, i) => { const k = E.out(p(t, N.pills + i * 0.1, N.pills + 0.7 + i * 0.1)); set(id, { opacity: k, transform: `translateY(${(1 - k) * 26}px)` }); });
+  const ck = spring(t - N.cta, 0.62, 14);
+  set("ecta", { opacity: t > N.cta ? 1 : 0, transform: `translateY(${(1 - E.out(p(t, N.cta, N.cta + 0.6))) * 30}px) scale(${lerp(0.85, 1, ck) * (1 + 0.035 * Math.sin(Math.PI * p(t, N.url[1], N.url[1] + 0.35)))})` });
+  const URL = "usetinta.com", n = Math.round(URL.length * p(t, N.url[0], N.url[1]));
+  $("eurl").textContent = URL.slice(0, n); $("erest").textContent = URL.slice(n);
+  set("ecaret", { opacity: t < N.url[1] + 0.2 || Math.floor(t * 2.2) % 2 === 0 ? 1 : 0 });
+  set("eshine", { transform: `translateX(${lerp(-200, 760, E.inOut(p(t, N.shine, N.shine + 0.9)))}px) skewX(-18deg)`, opacity: t > N.shine && t < N.shine + 0.9 ? 1 : 0 });
+  const sk = E.out(p(t, N.sub, N.sub + 0.7));
+  set("esub", { opacity: 0.78 * sk, transform: `translateY(${(1 - sk) * 20}px)` });
   set("eglow", { opacity: E.out(p(t, 32, 33.5)) * (0.8 + 0.2 * Math.sin(t * 1.3)), transform: `scale(${lerp(0.8, 1.1, E.soft(p(t, 32, 38)))})` });
 }
 
@@ -855,6 +870,9 @@ window.render = (t) => {
   $("logo").style.background = t > TL.logo.fly[0] ? "transparent" : "";
   set("sum", { background: t < 16.0 ? "transparent" : "" });
   renderFloods(t);
+  const wmIn = E.out(p(t, 8.3, 9.0)) * (1 - E.in(p(t, 31.3, 31.6)));
+  const darkNow = t >= 20.0 && t < 28.0;
+  set("wm", { opacity: wmIn * 0.72, color: darkNow ? "#faf9f6" : "#292456" });
   $("fade").style.opacity = E.inOut(p(t, TL.end.fade[0], TL.end.fade[1]));
 };
 render(Number(new URLSearchParams(location.search).get("t") || 0));

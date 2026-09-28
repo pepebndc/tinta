@@ -34,7 +34,7 @@ var TL = (function () {
     sum: { head: 15.75, panel: 16.1, sections: [16.5, 16.95, 17.4, 17.85], check: 18.7 },
     priv: { head: 20.15, draw: 20.1, labels: 20.9, push: [22.2, 22.9], zero: 22.7, count: [22.75, 23.35], zeroOut: 24.55, lock: 24.7, click: 25.3, lines: [25.5, 25.75, 26.0, 26.25] },
     mcp: { head: 28.05, src: 28.15, chat: 28.2, q: [28.55, 29.05], tool: 29.15, packets: 29.2, done: 30.0, answer: [30.1, 30.9], cites: 30.95, pills: 31.05 },
-    end: { mark: 32.1, glyph: 32.3, dot: 32.45, slide: 32.55, word: 32.6, tag: 33.15, pills: 33.6, fade: [37.4, 38.0] },
+    end: { mark: 32.1, glyph: 32.3, dot: 32.45, slide: 32.55, word: 32.6, tag: 33.15, cta: 33.6, url: [33.8, 34.5], shine: 34.75, sub: 34.6, fade: [37.4, 38.0] },
   };
 })();
 if (typeof module !== "undefined") module.exports = TL;

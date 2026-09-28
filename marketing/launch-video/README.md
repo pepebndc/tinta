@@ -75,6 +75,7 @@ The video recreates the brand and the app UI in HTML. When the app changes, upda
 - **Wordmark.** The wordmark uses the `.wordmark` style from `app/src/styles.css`: Brush Script MT, `letter-spacing: 0.01em`, and `rotate(-2deg)`.
 - **Lockup.** The lockup uses the proportions of `Lockup` in `app/src/Brand.tsx`: a 30 px mark, a 44 px wordmark, and a 12 px gap. The large lockups use these proportions at 7.5 times the size, so the logo lands exactly on the app sidebar logo.
 - **App screens.** The app screens follow `docs/images/home.png` and `docs/images/recording.png`.
+- **Website.** The end card types `usetinta.com` into an address bar, above the line from the website hero: "Free and open source. Apple Silicon. macOS 14.2 or later." The landscape cut also shows `usetinta.com` in the lower-right corner from 8 s to 31.5 s. The vertical cut does not show it there, because the TikTok controls cover that area. If the address or the hero line changes, update `#efoot` and `#wm` in `index.html`.
 
 ## Licenses
 

@@ -67,3 +67,6 @@ if (mode === "stills") {
   rmSync("seg", { recursive: true, force: true });
   console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 }
+
+// Puppeteer can leave handles open after the browsers close, so exit when the work is done.
+process.exit(0);
