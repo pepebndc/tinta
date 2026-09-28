@@ -119,7 +119,7 @@
 
   function textNodes(root) {
     const out = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
       acceptNode(node) {
         if (node.nodeType === Node.ELEMENT_NODE) {
           return node.matches(CONFIG.skipSubtreeSelector) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
@@ -180,7 +180,7 @@
   }
 
   function pageSelfName() {
-    for (const el of document.querySelectorAll("[" + CONFIG.selfNameAttribute + "]")) {
+    for (const el of queryAll("[" + CONFIG.selfNameAttribute + "]")) {
       if (el.closest(CONFIG.participantSelector)) continue;
       const n = clean(el.getAttribute(CONFIG.selfNameAttribute));
       if (n && plausibleName(n)) return n;
@@ -246,7 +246,7 @@
   }
 
   // Meet can move the call into a Document Picture-in-Picture window when the user switches tabs.
-  // The tiles then leave this document, so the scan keeps the last state until the window closes.
+  // The tiles then go into the document of that window, so the scan reads both documents.
   function pipWindow() {
     try {
       const w = window.documentPictureInPicture && window.documentPictureInPicture.window;
@@ -259,17 +259,26 @@
   function onPipClosed() {
     // The tiles come back to this document. The leave grace time starts now.
     lastTileSeenAt = Date.now();
+    for (const doc of debugStyles.keys()) if (doc !== document) debugStyles.delete(doc);
     log("picture-in-picture closed");
     scheduleScan();
   }
 
+  // The documents that can contain the call: the picture-in-picture window first, then the page.
+  function callDocuments() {
+    const pip = pipWindow();
+    return pip ? [pip.document, document] : [document];
+  }
+
+  function queryAll(selector) {
+    return callDocuments().flatMap((doc) => [...doc.querySelectorAll(selector)]);
+  }
+
   function scan() {
-    if (pipWindow()) {
-      lastTileSeenAt = Date.now();
-      return;
-    }
+    const pip = pipWindow();
+    if (pip) lastTileSeenAt = Date.now();
     const seen = new Set();
-    for (const el of document.querySelectorAll(CONFIG.participantSelector)) {
+    for (const el of queryAll(CONFIG.participantSelector)) {
       if (!isOutermostTile(el)) continue;
       const id = participantId(el);
       if (!id) continue;
@@ -302,7 +311,7 @@
       });
     }
 
-    for (const item of document.querySelectorAll(CONFIG.peoplePanelItemSelector)) {
+    for (const item of queryAll(CONFIG.peoplePanelItemSelector)) {
       const id = participantId(item);
       if (!id) continue;
       const d = describe(item, true);
@@ -318,6 +327,15 @@
     // A presentation tile can share the participant id of the presenter.
     for (const id of presentationIds) {
       if (!next.has(id)) tracker.remove(id);
+    }
+
+    // The picture-in-picture window shows only some tiles. The other participants are still in the call.
+    if (pip) {
+      for (const [id, p] of participants) {
+        const cur = next.get(id);
+        if (!cur) next.set(id, p);
+        else if (!cur.name) cur.name = p.name;
+      }
     }
 
     const selfName = pageSelfName();
@@ -503,11 +521,12 @@
   const rings = new Set();
 
   function isIndicator(el, tile) {
-    if (!(el instanceof HTMLElement) || !tile.contains(el) || el === tile) return false;
+    // A node of the picture-in-picture window is not an HTMLElement of this window.
+    if (!el || el.nodeType !== Node.ELEMENT_NODE || !tile.contains(el) || el === tile) return false;
     const r = el.getBoundingClientRect();
     const { min, max } = CONFIG.indicatorSize;
     if (r.width < min || r.width > max || Math.abs(r.width - r.height) > 3) return false;
-    const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    const radius = parseFloat(el.ownerDocument.defaultView.getComputedStyle(el).borderTopLeftRadius) || 0;
     return radius >= r.width / 2 - 2;
   }
 
@@ -569,18 +588,26 @@
       [${CONFIG.ringAttribute}] { animation: none !important; }
     }`;
 
-  let debugStyle = null;
+  // The highlight style of each document: the page, and the picture-in-picture window when it is open.
+  const debugStyles = new Map();
+
+  function addDebugStyle(doc) {
+    if (debugStyles.has(doc)) return;
+    const style = doc.createElement("style");
+    style.textContent = HIGHLIGHT_CSS;
+    (doc.head || doc.documentElement).appendChild(style);
+    debugStyles.set(doc, style);
+  }
+
+  function removeDebugStyles() {
+    for (const style of debugStyles.values()) style.remove();
+    debugStyles.clear();
+  }
 
   function setDebug(on) {
     debug = on;
-    if (on && !debugStyle) {
-      debugStyle = document.createElement("style");
-      debugStyle.textContent = HIGHLIGHT_CSS;
-      (document.head || document.documentElement).appendChild(debugStyle);
-    } else if (!on && debugStyle) {
-      debugStyle.remove();
-      debugStyle = null;
-    }
+    if (on) for (const doc of callDocuments()) addDebugStyle(doc);
+    else removeDebugStyles();
     if (!on) for (const info of tiles.values()) info.targets.clear();
     paintSpeaking(new Set(on ? currentSpeakers() : []));
     log("debug mode", on ? "on" : "off");
@@ -597,23 +624,30 @@
 
   // Start and stop.
 
-  function onPipOpened(event) {
+  // The observers also watch the document of the picture-in-picture window, where the tiles go.
+  function watchPip(w) {
     log("picture-in-picture opened");
-    event.window.addEventListener("pagehide", onPipClosed);
+    w.addEventListener("pagehide", onPipClosed);
+    pageObserver.observe(w.document.documentElement, { childList: true, subtree: true });
+    micObserver.observe(w.document.documentElement, micObserverOptions);
+    if (debug) addDebugStyle(w.document);
+    scheduleScan();
+  }
+
+  function onPipOpened(event) {
+    watchPip(event.window);
   }
 
   const pageObserver = new MutationObserver(scheduleScan);
   pageObserver.observe(document.documentElement, { childList: true, subtree: true });
   // A mute changes an attribute of the toolbar button. The observer reports it in the next frame.
   const micObserver = new MutationObserver(onMicMutations);
-  micObserver.observe(document.documentElement, {
-    attributes: true,
-    subtree: true,
-    attributeFilter: ["data-is-muted", "aria-label"],
-  });
+  const micObserverOptions = { attributes: true, subtree: true, attributeFilter: ["data-is-muted", "aria-label"] };
+  micObserver.observe(document.documentElement, micObserverOptions);
   const scanTimer = setInterval(scan, CONFIG.rescanIntervalMs);
   window.addEventListener("pagehide", () => endCall());
   if (window.documentPictureInPicture) window.documentPictureInPicture.addEventListener("enter", onPipOpened);
+  if (pipWindow()) watchPip(pipWindow());
 
   // Removes all observers and timers.
   function stop() {
@@ -632,7 +666,7 @@
     if (window.documentPictureInPicture) window.documentPictureInPicture.removeEventListener("enter", onPipOpened);
     for (const el of rings) el.removeAttribute(CONFIG.ringAttribute);
     rings.clear();
-    if (debugStyle) debugStyle.remove();
+    removeDebugStyles();
   }
 
   scan();

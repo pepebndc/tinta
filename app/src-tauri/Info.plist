@@ -8,5 +8,7 @@
   <string>Tinta shows your next meetings and reminds you when they start. The calendar data stays on this Mac.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Tinta records the audio of the meeting app that you select. The audio stays on this Mac.</string>
+  <key>NSUserNotificationAlertStyle</key>
+  <string>alert</string>
 </dict>
 </plist>

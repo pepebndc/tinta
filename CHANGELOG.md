@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 (2026-09-28)
+
+### Changed
+- A meeting reminder stays on the screen for 2 minutes. It goes away earlier when you join the meeting or close the reminder. If Tinta already showed reminders on your Mac, open **System Settings > Notifications > Tinta** and set the style to **Persistent** (Alerts).
+
+### Fixed
+- Tinta finds the names of the speakers when Meet shows the call in its picture-in-picture window.
+
 ## 0.5.0 (2026-09-28)
 
 ### Fixed

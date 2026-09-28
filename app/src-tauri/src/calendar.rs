@@ -6,7 +6,7 @@
 use crate::{notify, state, system, AppState};
 use anyhow::{anyhow, Result};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tinta_core::calendar::{Event, Snapshot};
@@ -22,6 +22,8 @@ const TICK: Duration = Duration::from_secs(15);
 const REMINDER_LEAD_MS: i64 = 60_000;
 /// A reminder for a meeting that started this long ago still shows, for example after the Mac wakes up.
 const REMINDER_LATE_MS: i64 = 5 * 60_000;
+/// The time that a reminder stays on the screen, when the user does not join the meeting or close the reminder.
+const REMINDER_SHOW_MS: i64 = 2 * 60_000;
 /// The setting with the IDs of the calendars that the user hides, as a JSON list.
 const HIDDEN_SETTING: &str = "calendar_hidden";
 
@@ -32,6 +34,8 @@ pub struct CalendarState {
     read_at: Option<i64>,
     /// The events that had a reminder.
     reminded: HashSet<String>,
+    /// The events with a reminder on the screen, with the time when the reminder showed.
+    shown: HashMap<String, i64>,
 }
 
 impl AppState {
@@ -98,6 +102,9 @@ impl AppState {
         let event = self.calendar_view().events.into_iter().find(|e| e.id == event_id);
         let event = event.ok_or_else(|| anyhow!("the event is not in the calendar now"))?;
         let meeting = self.db.lock().unwrap().meeting_for_event(&event.id, event.display_title())?;
+        if join {
+            self.withdraw_reminder(&event.id);
+        }
         if let Some(link) = event.link.as_ref().filter(|_| join) {
             let source = system::open_call(link);
             let idle = self.active.lock().unwrap().is_none();
@@ -132,28 +139,52 @@ impl AppState {
         }
     }
 
+    fn withdraw_reminder(&self, event_id: &str) {
+        if self.calendar.lock().unwrap().shown.remove(event_id).is_some() {
+            notify::withdraw(event_id);
+        }
+    }
+
+    /// True when the user is in the call of the event, or records its meeting.
+    fn joined(&self, event: &Event, in_call: &Option<String>) -> bool {
+        let in_this_call = event.link.as_ref().is_some_and(|l| l.code.is_some() && l.code == *in_call);
+        let recorded = event.meeting_id.as_ref().map(|id| self.db.lock().unwrap().meeting(id).map(|m| m.started_at.is_some()));
+        in_this_call || matches!(recorded, Some(Ok(true)))
+    }
+
+    /// Removes each reminder that is on the screen for [`REMINDER_SHOW_MS`], or for a meeting that the user joined.
+    fn withdraw_done(&self, events: &[Event], in_call: &Option<String>, now: i64) {
+        let shown: Vec<(String, i64)> = self.calendar.lock().unwrap().shown.iter().map(|(id, at)| (id.clone(), *at)).collect();
+        for (id, at) in shown {
+            let joined = events.iter().find(|e| e.id == id).is_some_and(|e| self.joined(e, in_call));
+            if joined || now - at >= REMINDER_SHOW_MS {
+                self.withdraw_reminder(&id);
+            }
+        }
+    }
+
     /// Shows a reminder for each meeting with a call link that starts now.
     /// A meeting that the user joined or records already gets no reminder.
     fn remind_due(&self) {
+        let now = now_ms();
+        let in_call = self.extension.lock().unwrap().meeting_code.clone();
+        let events = self.calendar_view().events;
+        self.withdraw_done(&events, &in_call, now);
         if self.setting("meeting_reminders", "true") != "true" {
             return;
         }
-        let now = now_ms();
-        let in_call = self.extension.lock().unwrap().meeting_code.clone();
-        let due: Vec<Event> = self
-            .calendar_view()
-            .events
-            .into_iter()
+        let due: Vec<&Event> = events
+            .iter()
             .filter(|e| e.start - now <= REMINDER_LEAD_MS && now - e.start <= REMINDER_LATE_MS)
-            .filter(|e| e.link.as_ref().is_some_and(|l| l.code.is_none() || l.code != in_call))
+            .filter(|e| e.link.is_some() && !self.joined(e, &in_call))
             .filter(|e| !self.calendar.lock().unwrap().reminded.contains(&e.id))
-            .filter(|e| {
-                let recorded = e.meeting_id.as_ref().map(|id| self.db.lock().unwrap().meeting(id).map(|m| m.started_at.is_some()));
-                !matches!(recorded, Some(Ok(true)))
-            })
             .collect();
         for event in due {
-            self.calendar.lock().unwrap().reminded.insert(event.id.clone());
+            {
+                let mut calendar = self.calendar.lock().unwrap();
+                calendar.reminded.insert(event.id.clone());
+                calendar.shown.insert(event.id.clone(), now);
+            }
             let platform = event.link.as_ref().map(|l| l.platform.name()).unwrap_or_default();
             let minutes = ((event.start - now) as f64 / 60_000.0).round() as i64;
             let when = match minutes {

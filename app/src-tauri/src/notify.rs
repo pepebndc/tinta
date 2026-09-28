@@ -1,5 +1,6 @@
 //! Meeting reminders in the macOS Notification Center.
 //!
+//! The Info.plist sets the alert style, so a reminder stays on the screen until the app or the user removes it.
 //! The reminders need the app bundle. A development build that runs outside the bundle shows no reminders.
 
 use block2::{DynBlock, RcBlock};
@@ -130,4 +131,11 @@ pub fn remind(event_id: &str, title: &str, body: &str) {
     let identifier = NSString::from_str(&format!("{PREFIX}{event_id}"));
     let request = UNNotificationRequest::requestWithIdentifier_content_trigger(&identifier, &content, None);
     center.addNotificationRequest_withCompletionHandler(&request, None);
+}
+
+/// Removes the reminder for a calendar event from the screen and from the Notification Center.
+pub fn withdraw(event_id: &str) {
+    let Some(center) = center() else { return };
+    let identifier = NSString::from_str(&format!("{PREFIX}{event_id}"));
+    center.removeDeliveredNotificationsWithIdentifiers(&NSArray::from_retained_slice(&[identifier]));
 }

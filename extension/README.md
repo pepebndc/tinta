@@ -53,7 +53,8 @@ The content script ignores tiles that show "Presentation" or "presenting".
 Detection runs only when the URL has a meeting code and the page shows at least one tile.
 The call ends when no tile is present for 3 seconds, when the meeting code changes, or when the page or the tab closes.
 Meet can move the call into a picture-in-picture window when you switch tabs.
-While that window is open, the tiles are not in the page, so the content script keeps the last call state.
+While that window is open, the content script reads the tiles and detects speakers in the document of that window.
+The window shows only some tiles, so the content script keeps the other participants of the call.
 The 3-second time starts again when the window closes.
 
 The microphone button in the Meet toolbar has a `data-is-muted` attribute and a label that names the microphone.
