@@ -1,0 +1,863 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="timeline.js"></script>
+<style>
+@font-face { font-family: "Instrument Serif"; font-style: italic; src: url(fonts/InstrumentSerif-Italic.ttf); }
+@font-face { font-family: "Instrument Serif"; font-style: normal; src: url(fonts/InstrumentSerif-Regular.ttf); }
+:root {
+  --ink: #292456; --paper: #faf9f6; --accent: #aaa4e8; --accent-strong: #8174dc; --soft: #eeecf7;
+  --muted: #787586; --line: #e5e2e9; --panel: #fff; --back: #f0eef3; --text: #343141; --record: #c2413b;
+  --record-soft: #f7e3e1; --warn: #8a5a00; --warn-soft: #fbf1dc; --ok: #3f7a55;
+  --sans: BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --serif: "Instrument Serif", Georgia, serif;
+  --mono: Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+body { font-family: var(--sans); -webkit-font-smoothing: antialiased; color: var(--text); }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); }
+.scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+.abs { position: absolute; }
+.dark { background: var(--ink); color: var(--paper); }
+.paperbg { background: radial-gradient(1200px 800px at 20% 10%, #f2f0fb 0%, #faf9f6 60%), var(--paper); }
+.inkbg { background: radial-gradient(1100px 760px at 50% 45%, #332e6a 0%, #292456 55%, #221e4a 100%); }
+.serif { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+.brush { font-family: "Brush Script MT", cursive; font-weight: 500; letter-spacing: 0.01em; line-height: 0.8; display: inline-block; transform: rotate(-2deg); }
+.eyebrow { font-size: 17px; letter-spacing: 0.24em; text-transform: uppercase; font-weight: 650; color: var(--accent-strong); }
+.title { font-weight: 680; letter-spacing: -0.038em; line-height: 1.02; color: var(--ink); }
+.title .serif { font-size: 1.12em; line-height: 0.9; color: var(--accent-strong); letter-spacing: -0.015em; }
+/* Word reveal masks */
+.w { display: inline-block; overflow: hidden; vertical-align: top; padding: 0.06em 0.1em 0.16em; margin: -0.06em -0.1em -0.16em; }
+.wi { display: inline-block; will-change: transform; }
+
+/* Mark */
+.mark { position: relative; display: grid; place-items: center; background: var(--ink); border-radius: 24%; }
+.mark svg { width: 70%; height: 70%; overflow: visible; }
+.mark .gb, .mark .gd { fill: var(--paper); transform-box: fill-box; transform-origin: 50% 50%; }
+
+/* App window (built at 1440 x 900, the size of the real screenshots) */
+#win { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; transform-origin: 0 0; border-radius: 14px; overflow: hidden;
+  background: var(--paper); box-shadow: 0 50px 120px -20px #29245640, 0 18px 40px -12px #2924561f, 0 0 0 1px #2924561a; display: flex; font-size: 13px; }
+.sb { width: 260px; flex-shrink: 0; background: var(--back); border-right: 1px solid var(--line); position: relative; }
+.sb .lk { position: absolute; left: 22px; top: 25px; display: flex; align-items: center; gap: 12px; }
+.nav { position: absolute; left: 14px; right: 14px; display: flex; align-items: center; gap: 9px; height: 26px; padding: 0 10px; border-radius: 7px; color: var(--ink); font-size: 13px; }
+.nav svg, .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.pillbtn { position: absolute; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+.pillbtn.primary { background: var(--ink); color: var(--paper); }
+.pillbtn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink); }
+.field { position: absolute; background: #fff; border: 1px solid var(--line); border-radius: 7px; display: flex; align-items: center; gap: 9px; padding: 0 12px; color: var(--muted); font-size: 13px; }
+.sbitem { position: absolute; left: 14px; right: 14px; height: 50px; border-radius: 8px; padding: 7px 12px 0 36px; }
+.sbitem b { display: block; font-size: 13px; color: var(--ink); font-weight: 650; }
+.sbitem small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.sbitem .ic { position: absolute; left: 12px; top: 9px; color: var(--muted); }
+.sbitem .rdot { position: absolute; left: 14px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: #e0918c; }
+.sbfoot { position: absolute; left: 24px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 9px; }
+.main { position: relative; flex: 1; }
+.view { position: absolute; inset: 0; }
+.card { position: absolute; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.ta { background: #f1e1dc; color: #7c4a3c; } .tb { background: #e4e1f7; color: #4d4596; } .tc { background: #dcebe2; color: #3f7a55; } .td { background: #ecebef; color: #807b8f; } .te { background: #e1ebf3; color: #3d6386; }
+.tag { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; font-size: 10.5px; color: var(--muted); line-height: 16px; margin-right: 4px; }
+.turn { position: absolute; left: 20px; right: 20px; display: flex; gap: 14px; }
+.turn .nm { font-size: 13px; font-weight: 650; color: var(--ink); font-style: italic; display: flex; align-items: center; gap: 9px; height: 20px; }
+.turn .nm time { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11px; }
+.prov { font-style: normal; font-weight: 400; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; line-height: 15px; }
+.turn p { margin: 6px 0 0; font-size: 14px; line-height: 24px; color: var(--text); }
+.flip { position: relative; display: inline-block; height: 20px; overflow: hidden; vertical-align: top; }
+.flip > span { display: block; height: 20px; line-height: 20px; }
+
+/* Headlines */
+.head { position: absolute; left: 0; right: 0; text-align: center; z-index: 5; }
+.head .eyebrow { margin-bottom: 16px; }
+
+/* Summary */
+.spanel { position: absolute; left: 960px; top: 150px; width: 820px; background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 34px 40px 20px;
+  box-shadow: 0 60px 120px -30px #2924563a, 0 20px 40px -20px #29245622; }
+.ssec { margin-bottom: 22px; position: relative; }
+.ssec h4 { margin: 0 0 10px; font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-strong); font-weight: 700; }
+.ssec .txt { font-size: 23px; line-height: 1.55; color: var(--text); }
+.ssec ul { margin: 0; padding: 0; list-style: none; }
+.ssec li { display: flex; gap: 14px; align-items: center; font-size: 22px; line-height: 1.5; margin: 3px 0; color: var(--text); }
+.sk { position: absolute; left: 0; height: 14px; border-radius: 7px; background: linear-gradient(90deg, #efedf5 0%, #e3e0f0 40%, #efedf5 80%); background-size: 600px 100%; }
+.bul { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.cbx { width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--accent-strong); flex-shrink: 0; display: grid; place-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 10px; border-radius: 999px; padding: 12px 22px; font-size: 20px; font-weight: 600; }
+
+/* MCP */
+.mcard { width: 380px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 24px; font-size: 22px; font-weight: 650; color: var(--ink); box-shadow: 0 20px 50px -10px #2924561f; }
+.mcard small { display: block; font-size: 15px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+.cite { font-size: 16px; font-weight: 600; color: var(--accent-strong); background: var(--soft); border-radius: 999px; padding: 8px 16px; display: inline-block; }
+.caret { display: inline-block; width: 2px; height: 1.05em; background: var(--accent-strong); vertical-align: -0.15em; margin-left: 1px; }
+
+/* Privacy */
+.plabel { position: absolute; display: flex; align-items: center; gap: 16px; font-size: 30px; font-weight: 600; letter-spacing: -0.02em; color: var(--paper); white-space: nowrap; }
+.plabel i { width: 40px; height: 40px; border-radius: 50%; background: #aaa4e826; display: grid; place-items: center; font-style: normal; color: var(--accent); font-size: 20px; font-weight: 800; }
+.prow { white-space: nowrap; display: flex; align-items: center; gap: 24px; height: 84px; }
+.prow span.big { font-size: 58px; font-weight: 680; letter-spacing: -0.035em; color: var(--paper); }
+.prow span.t { font-family: var(--mono); font-size: 18px; color: var(--accent); border: 1px solid #aaa4e855; border-radius: 999px; padding: 6px 14px; }
+.epill { display: inline-flex; align-items: center; border-radius: 999px; padding: 14px 26px; font-size: 24px; font-weight: 600; }
+
+/* Vertical 1080 x 1920 layout */
+html.v, html.v body, html.v #stage { width: 1080px; height: 1920px; }
+.vbr { display: none; } html.v .vbr { display: inline; }
+html.v #h1 { font-size: 112px !important; top: 880px !important; }
+html.v #h2 { font-size: 104px !important; top: 830px !important; line-height: 1.08 !important; }
+html.v #lk, html.v #elk { flex-direction: column; gap: 20px !important; }
+html.v #ltag, html.v #etag { top: 1140px !important; font-size: 96px !important; line-height: 1.08; }
+html.v .head { top: 250px !important; padding: 0 60px; }
+html.v .head .title { font-size: 84px !important; }
+html.v #aband { height: 640px !important; background: linear-gradient(#faf9f6 75%, #faf9f600) !important; }
+html.v #meet { left: 305px !important; top: 1440px !important; }
+html.v #shead { left: 90px !important; top: 230px !important; width: 900px !important; }
+html.v #shead .title { font-size: 92px !important; }
+html.v #schip { margin-top: 34px !important; }
+html.v .spanel { left: 70px; top: 690px; width: 940px; }
+html.v #phead .title { font-size: 84px !important; }
+html.v #laptop { left: 260px !important; top: 816px !important; }
+html.v #pmark { left: 485px !important; top: 905px !important; }
+html.v #pl0 { left: 110px !important; top: 1330px !important; } html.v #pl1 { left: 110px !important; top: 1430px !important; }
+html.v #pl2 { left: 590px !important; top: 1330px !important; } html.v #pl3 { left: 590px !important; top: 1430px !important; }
+html.v .plabel { font-size: 32px; }
+html.v #zero { top: 620px !important; }
+html.v #zero .eyebrow { font-size: 22px !important; letter-spacing: 0.26em !important; }
+html.v #locksvg { left: 390px !important; top: 380px !important; }
+html.v #plines { left: 110px !important; top: 860px !important; }
+html.v .prow span.big { font-size: 52px; }
+html.v #mhead .title { font-size: 80px !important; }
+html.v #gsrc { left: 90px !important; top: 560px !important; width: 900px !important; display: grid !important; grid-template-columns: 140px 1fr; column-gap: 40px; row-gap: 12px !important; align-items: start !important; }
+html.v #gmark { grid-row: 1 / span 3; margin: 0 !important; }
+html.v .mcard { width: auto; padding: 12px 22px; }
+html.v #gchat { left: 90px !important; top: 900px !important; width: 900px !important; height: 560px !important; }
+html.v #gfoot { top: 1500px !important; flex-wrap: wrap; padding: 0 80px; gap: 14px !important; }
+html.v #gfoot .epill { font-size: 22px; padding: 12px 22px; }
+html.v #efoot { top: 1400px !important; flex-wrap: wrap; padding: 0 120px; gap: 16px !important; }
+html.v #eglow { left: 40px !important; top: 460px !important; }
+#cursor { position: absolute; left: 0; top: 0; width: 26px; height: 36px; z-index: 50; pointer-events: none; filter: drop-shadow(0 3px 5px #0003); }
+#vignette { position: absolute; inset: 0; pointer-events: none; z-index: 90; background: radial-gradient(ellipse at center, transparent 55%, #1a163a18 100%); }
+#floods { position: absolute; left: 0; top: 0; z-index: 80; pointer-events: none; }
+#fade { position: absolute; inset: 0; background: #000; opacity: 0; z-index: 100; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- ================= HOOK ================= -->
+<div class="scene inkbg" id="hook">
+  <div class="abs" id="h1" style="left: 0; right: 0; top: 440px; display: flex; justify-content: center; font-size: 150px; font-weight: 700; letter-spacing: -0.045em; color: var(--paper); line-height: 1.2em; height: 1.2em">
+    <span style="display: inline-block; height: 1.2em; overflow: hidden"><span id="h1a" style="display: block">Every</span></span><span style="width: 0.26em"></span>
+    <span id="roller" style="display: inline-block; height: 1.2em; overflow: hidden">
+      <span id="rollin" style="display: block">
+        <span class="rw" style="display: block; height: 1.2em">call.</span>
+        <span class="rw" style="display: block; height: 1.2em">idea.</span>
+        <span class="rw" style="display: block; height: 1.2em">decision.</span>
+      </span>
+    </span>
+  </div>
+  <div class="abs split" id="h2" style="left: 0; right: 0; top: 470px; text-align: center; font-size: 112px; font-weight: 700; letter-spacing: -0.042em; color: var(--paper); line-height: 1">Why send them<br class="vbr"> to <span class="serif" style="color: var(--accent); font-size: 1.14em">the cloud?</span></div>
+</div>
+
+<!-- ================= LOGO ================= -->
+<div class="scene paperbg" id="logo">
+  <svg class="abs" id="splash" width="1920" height="1080" style="left: 0; top: 0">
+    <defs>
+      <filter id="goo2" filterUnits="userSpaceOnUse" x="560" y="140" width="800" height="800" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="2" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" result="d"/>
+        <feGaussianBlur in="d" stdDeviation="7" result="b"/>
+        <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9"/>
+      </filter>
+    </defs>
+    <circle id="rip0" cx="960" cy="540" r="0" fill="none" stroke="#aaa4e8" stroke-width="2"/>
+    <circle id="rip1" cx="960" cy="540" r="0" fill="none" stroke="#aaa4e8" stroke-width="1.5"/>
+    <g filter="url(#goo2)" fill="#292456" id="splashg"><circle id="sp0" cx="960" cy="540" r="0"/></g>
+    <path id="drop" fill="#292456" d="M0 -30 C 8 -14 18 -2 18 10 C 18 21 10 29 0 29 C -10 29 -18 21 -18 10 C -18 -2 -8 -14 0 -30 Z"/>
+  </svg>
+  <div class="abs" id="lk" style="display: flex; align-items: center; gap: 90px">
+    <div class="mark" id="lkm" style="width: 225px; height: 225px"><svg viewBox="0 0 100 100"><path class="gb" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path class="gd" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></div>
+    <div class="brush" id="lkw" style="font-size: 330px; color: var(--ink); padding: 40px 50px 70px 10px">tinta</div>
+  </div>
+  <div class="abs split title" id="ltag" style="left: 0; right: 0; top: 690px; text-align: center; font-size: 84px">Meeting notes.<br class="vbr"> <span class="serif">On your Mac.</span></div>
+</div>
+
+<!-- ================= APP ================= -->
+<div class="scene paperbg" id="app">
+  <div class="abs" id="aband" style="left: 0; right: 0; top: 0; height: 250px; z-index: 4; background: linear-gradient(#faf9f6 62%, #faf9f600)"></div>
+  <div class="head" id="ah0" style="top: 62px"><div class="eyebrow split">Google Meet call detected</div><div class="title split" style="font-size: 64px">One click<br class="vbr"> <span class="serif">to record.</span></div></div>
+  <div class="head" id="ah1" style="top: 62px"><div class="eyebrow split">Notes and transcript</div><div class="title split" style="font-size: 64px">You write.<br class="vbr"> <span class="serif">Tinta listens.</span></div></div>
+  <div class="head" id="ah2" style="top: 62px"><div class="eyebrow split">Speaker names</div><div class="title split" style="font-size: 64px">It knows<br class="vbr"> <span class="serif">who said what.</span></div></div>
+
+  <div id="win">
+    <div class="sb">
+      <div class="lk" id="sblk"><div class="mark" style="width: 30px; height: 30px"><svg viewBox="0 0 100 100"><path class="gb" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path class="gd" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></div><span class="brush" style="font-size: 44px; color: var(--ink)">tinta</span></div>
+      <div class="nav" id="navhome" style="top: 75px; background: #e7e4f4"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5"/></svg>Home</div>
+      <div class="pillbtn primary" style="left: 14px; top: 111px; width: 187px; height: 32px"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New meeting</div>
+      <div class="pillbtn ghost" style="left: 209px; top: 111px; width: 36px; height: 32px; color: var(--ink)"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M5 13v7h14v-7"/></svg></div>
+      <div class="field" style="left: 14px; top: 157px; width: 231px; height: 31px"><svg class="ic" viewBox="0 0 24 24"><path d="M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12zM15 15l5 5"/></svg>Find a conversation</div>
+      <div class="abs" style="left: 22px; top: 213px; right: 22px; display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 2.2px; color: var(--muted); font-weight: 600"><span>YOUR MEETINGS</span><span>ALL</span></div>
+      <div id="sblist"></div>
+      <div class="sbfoot" style="top: 712px"><span style="width: 12px; height: 12px; border: 1px solid #aaa; border-radius: 3px; display: block; background: #fff"></span>Show archived</div>
+      <div class="abs" style="left: 14px; right: 14px; top: 735px; height: 1px; background: var(--line)"></div>
+      <div class="sbfoot" style="top: 751px"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block"></span>Meet: in call, 4 people</div>
+      <div class="sbfoot" style="top: 780px"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>MCP activity</div>
+      <div class="sbfoot" style="top: 809px"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>Trash</div>
+      <div class="sbfoot" style="top: 838px"><svg class="ic" viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6zM12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Settings</div>
+      <div class="sbfoot" style="top: 872px"><svg class="ic" viewBox="0 0 24 24"><path d="M8 10V7a4 4 0 0 1 8 0v3M6 10h12v11H6z"/></svg>Stored on this Mac</div>
+    </div>
+    <div class="main">
+      <!-- Home -->
+      <div class="view" id="vhome">
+        <div class="abs blk" style="left: 44px; top: 40px; font-size: 10.5px; letter-spacing: 2.6px; color: var(--muted); font-weight: 600">WEDNESDAY, SEPTEMBER 23</div>
+        <div class="abs blk" style="left: 43px; top: 62px; font-size: 34px; font-weight: 600; letter-spacing: -1.2px; color: var(--ink)">Good afternoon, Sam</div>
+        <div class="abs blk" style="left: 44px; top: 110px; font-size: 14px; color: var(--muted)">5 meetings this week, 128 minutes transcribed.</div>
+        <div class="pillbtn ghost" style="left: 831px; top: 99px; width: 160px; height: 32px"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M5 13v7h14v-7"/></svg>Import recording</div>
+        <div class="pillbtn primary" style="left: 999px; top: 99px; width: 137px; height: 32px"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New meeting</div>
+        <div class="card" id="meetcard" style="left: 44px; top: 158px; width: 1092px; height: 131px; border: 1.5px solid var(--accent); box-shadow: 0 10px 30px -10px #8174dc33">
+          <div class="mark abs" style="left: 28px; top: 43px; width: 44px; height: 44px"><svg viewBox="0 0 100 100"><path class="gb" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path class="gd" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></div>
+          <div class="abs" style="left: 94px; top: 27px; font-size: 10.5px; letter-spacing: 2.6px; color: var(--muted); font-weight: 600">GOOGLE MEET CALL DETECTED</div>
+          <div class="abs" style="left: 94px; top: 46px; font-size: 24px; font-weight: 600; letter-spacing: -0.6px; color: var(--ink)">Design review</div>
+          <div class="abs" style="left: 94px; top: 82px; font-size: 14px; color: var(--muted)">4 people in the call. Tell everyone that you record and transcribe this meeting.</div>
+          <div class="pillbtn primary" id="recbtn" style="left: 912px; top: 46px; width: 150px; height: 38px; font-size: 15px; font-weight: 600">Record this call</div>
+        </div>
+        <div class="abs" style="left: 44px; top: 320px; font-size: 13px; font-weight: 600; color: var(--ink)">Recent meetings</div>
+        <div id="homegrid"></div>
+        <div class="card" style="left: 836px; top: 319px; width: 300px; height: 176px; padding: 18px"><div style="font-weight: 600; color: var(--ink); margin-bottom: 12px">Needs attention</div><div style="font-size: 14px; font-weight: 650; color: var(--ink); text-decoration: underline">Client kickoff</div><div style="color: var(--muted); margin: 2px 0 8px">The final pass failed.</div><span class="tag" style="color: var(--ink)">Run the final pass again</span></div>
+        <div class="card" style="left: 836px; top: 509px; width: 300px; height: 141px; padding: 18px"><div style="font-weight: 600; color: var(--ink); margin-bottom: 10px">Moving from Granola?</div><div style="color: var(--muted); line-height: 1.5; margin-bottom: 12px">Tinta found a Granola export in ~/granola-export.</div><span class="pillbtn primary" style="position: static; display: inline-flex; padding: 7px 16px">Import from Granola</span></div>
+        <div class="card" style="left: 836px; top: 664px; width: 300px; height: 168px; padding: 18px; background: #efedf3"><div style="font-weight: 600; color: var(--ink); margin-bottom: 10px">On this Mac</div><div style="color: var(--ink); line-height: 1.5">Audio, notes, and transcripts are encrypted and never leave this Mac.</div></div>
+      </div>
+      <!-- Meeting, recording -->
+      <div class="view" id="vmeet">
+        <div class="abs blk" style="left: 0; right: 0; top: 0; height: 55px; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 28px; justify-content: space-between; font-size: 12px; color: var(--muted)"><span>Your meetings / <b style="color: var(--ink); font-weight: 500">Design review</b></span><span style="display: flex; gap: 36px"><span>Export</span><span>Copy</span><span>Archive</span><span>Delete</span></span></div>
+        <div class="abs blk" style="left: 40px; top: 86px; font-size: 12px; color: var(--muted)">Sep 23, 2026, 2:59 PM · English</div>
+        <div class="abs blk" style="left: 39px; top: 106px; font-size: 28px; font-weight: 600; letter-spacing: -0.9px; color: var(--ink)">Design review</div>
+        <div class="abs blk" style="left: 40px; top: 155px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted)">
+          <span style="display: flex"><span class="av te" style="width: 22px; height: 22px; font-size: 8px">Y</span><span class="av ta" style="width: 22px; height: 22px; font-size: 8px; margin-left: -5px">AM</span><span class="av tb" style="width: 22px; height: 22px; font-size: 8px; margin-left: -5px">ML</span><span class="av tc" style="width: 22px; height: 22px; font-size: 8px; margin-left: -5px">SR</span></span>
+          You, Alex Moreno, Morgan Lee, Sam Rivera <span style="background: var(--record); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 11px">Recording</span></div>
+        <div class="card blk" style="left: 40px; top: 190px; width: 1100px; height: 70px; border: 1.5px solid #e59a95; box-shadow: 0 0 0 3px #f7e3e1">
+          <div class="abs" id="recdot" style="left: 18px; top: 29px; width: 11px; height: 11px; border-radius: 50%; background: var(--record)"></div>
+          <div class="abs" style="left: 44px; top: 24px; font-size: 15px; font-weight: 650; color: var(--ink)">Recording</div>
+          <div class="abs" id="rectime" style="left: 130px; top: 21px; font-size: 19px; color: var(--ink); font-variant-numeric: tabular-nums">00:00</div>
+          <div class="abs" style="left: 200px; top: 17px; width: 170px; font-size: 12px; color: var(--muted)">Microphone<div style="margin-top: 7px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden"><div id="m1" style="height: 100%; background: var(--accent-strong); width: 0"></div></div></div>
+          <div class="abs" style="left: 390px; top: 17px; width: 170px; font-size: 12px; color: var(--muted)">Meeting audio<div style="margin-top: 7px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden"><div id="m2" style="height: 100%; background: var(--accent-strong); width: 0"></div></div></div>
+          <div class="pillbtn ghost" style="left: 590px; top: 16px; width: 68px; height: 34px; font-size: 14px">Pause</div>
+          <div class="pillbtn ghost" style="left: 670px; top: 16px; width: 60px; height: 34px; font-size: 14px; color: var(--record); border-color: #e59a95">Stop</div>
+          <div class="abs" style="right: 22px; top: 26px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px"><svg class="ic" viewBox="0 0 24 24"><path d="M8 10V7a4 4 0 0 1 8 0v3M6 10h12v11H6z"/></svg>Transcribing on this Mac</div>
+        </div>
+        <div class="card blk" style="left: 40px; top: 280px; width: 540px; height: 640px">
+          <div class="abs" style="left: 20px; right: 20px; top: 16px; height: 34px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px"><b style="color: var(--ink); font-size: 13px">Your notes</b><span class="tag" style="color: var(--ink); font-size: 11px; padding: 1px 9px">Insert timestamp</span></div>
+          <div class="abs" id="notes" style="left: 22px; right: 20px; top: 66px; font-size: 14.5px; line-height: 27px; color: var(--text); white-space: pre-wrap"></div>
+        </div>
+        <div class="card blk" id="tcard" style="left: 600px; top: 280px; width: 540px; height: 640px">
+          <div class="abs" style="left: 20px; right: 20px; top: 16px; height: 34px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px"><b style="color: var(--ink); font-size: 13px">Transcript</b><span style="color: var(--muted); font-size: 11.5px">Draft. Editing starts after the final pass.</span></div>
+          <div id="turns"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="abs" id="meet" style="left: 1330px; top: 300px; width: 470px; background: #202124; border-radius: 22px; padding: 20px; box-shadow: 0 40px 90px -20px #0007">
+    <div style="color: #e8eaed; font-size: 17px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 10px"><span style="width: 12px; height: 12px; background: #34a853; border-radius: 3px; display: block"></span>Design review · Google Meet</div>
+    <div id="meetgrid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px"></div>
+  </div>
+</div>
+
+<!-- ================= SUMMARY ================= -->
+<div class="scene paperbg" id="sum">
+  <div class="abs" id="shead" style="left: 150px; top: 330px; width: 780px">
+    <div class="eyebrow split" style="margin-bottom: 22px">Summary</div>
+    <div class="title split" style="font-size: 96px">A summary,<br class="vbr"> <span class="serif">written on your Mac.</span></div>
+    <div id="schip" class="chip" style="margin-top: 44px; background: var(--ink); color: var(--paper)">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+      Apple on-device model</div>
+  </div>
+  <div class="spanel" id="spanel">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px"><b style="font-size: 22px; color: var(--ink)">Summary</b><span style="font-size: 14px; color: var(--muted)">Written on this Mac · Check it against the transcript</span></div>
+    <div class="ssec" id="ss0"><h4>Overview</h4><div class="txt">The team agreed to make the first screen calm, to keep the transcript easy to scan, and to give notes their own space.</div></div>
+    <div class="ssec" id="ss1"><h4>Key points</h4><ul><li><span class="bul"></span>Speaker names and timestamps help people find a moment</li><li><span class="bul"></span>Notes stay on this Mac. Sharing is a choice</li></ul></div>
+    <div class="ssec" id="ss2"><h4>Decisions</h4><ul><li><span style="color: var(--ok); font-weight: 800">✓</span>Keep the transcript easy to scan</li><li><span style="color: var(--ok); font-weight: 800">✓</span>Give notes their own space</li></ul></div>
+    <div class="ssec" id="ss3"><h4>Action items</h4><ul>
+      <li><span class="cbx" id="cb0"><svg width="14" height="14" viewBox="0 0 14 14"><path id="cbp" d="M2.5 7.5l3 3 6-7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg></span><span id="ai0">Review the icon at small sizes</span><span class="av tc" style="margin-left: auto">SR</span></li>
+      <li><span class="cbx"></span>Share the new flow with the team<span class="av tb" style="margin-left: auto">ML</span></li></ul></div>
+  </div>
+</div>
+
+<!-- ================= PRIVACY ================= -->
+<div class="scene inkbg" id="priv">
+  <div id="pcam" class="abs" style="inset: 0; transform-origin: 960px 540px">
+    <div class="head" id="phead" style="top: 90px"><div class="eyebrow split" style="color: var(--accent)">Private by design</div><div class="title split" style="font-size: 76px; color: var(--paper)">Everything runs<br class="vbr"> <span class="serif" style="color: var(--accent)">on your Mac.</span></div></div>
+    <svg class="abs" id="psvg" width="1920" height="1080" style="left: 0; top: 0">
+      <ellipse id="pring" cx="960" cy="590" rx="760" ry="330" fill="none" stroke="#aaa4e8" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="3 12" stroke-linecap="round"/>
+    </svg>
+    <svg class="abs" id="laptop" width="560" height="368" viewBox="0 0 700 460" style="left: 680px; top: 396px; overflow: visible">
+      <rect class="draw" x="90" y="10" width="520" height="340" rx="22" fill="#2d2860" stroke="#aaa4e8" stroke-width="3.5" pathLength="1"/>
+      <path class="draw" d="M 30 370 L 670 370 Q 678 370 673 377 L 656 399 Q 651 405 643 405 L 57 405 Q 49 405 44 399 L 27 377 Q 22 370 30 370 Z" fill="none" stroke="#aaa4e8" stroke-width="3.5" pathLength="1" stroke-linejoin="round"/>
+      <path class="draw" d="M 290 370 Q 290 382 302 382 L 398 382 Q 410 382 410 370" fill="none" stroke="#aaa4e8" stroke-width="3" pathLength="1"/>
+    </svg>
+    <div class="mark abs" id="pmark" style="left: 905px; top: 485px; width: 110px; height: 110px; background: var(--accent)"><svg viewBox="0 0 100 100"><path d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z" fill="#292456"/><path d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z" fill="#292456"/></svg></div>
+    <div class="plabel" id="pl0" style="left: 250px; top: 440px"><i>✓</i>Transcription</div>
+    <div class="plabel" id="pl1" style="left: 250px; top: 690px"><i>✓</i>Speaker names</div>
+    <div class="plabel" id="pl2" style="left: 1370px; top: 440px"><i>✓</i>Summaries</div>
+    <div class="plabel" id="pl3" style="left: 1370px; top: 690px"><i>✓</i>Encrypted storage</div>
+  </div>
+  <div class="abs" id="zero" style="left: 0; right: 0; top: 200px; text-align: center">
+    <div id="znum" style="font-size: 440px; font-weight: 700; letter-spacing: -0.05em; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; text-shadow: 0 0 80px #aaa4e855">0</div>
+    <div class="eyebrow" style="color: var(--paper); font-size: 26px; letter-spacing: 0.32em; margin-top: 26px">Network requests after setup</div>
+  </div>
+  <div class="abs" id="plock" style="left: 0; top: 0">
+    <svg class="abs" id="locksvg" width="300" height="375" viewBox="0 0 24 30" style="left: 330px; top: 352px; overflow: visible">
+      <path id="lshackle" d="M6 13V8a6 6 0 0 1 12 0v5" fill="none" stroke="#aaa4e8" stroke-width="2.4" stroke-linecap="round" pathLength="1" stroke-dasharray="1"/>
+      <rect id="lbody" x="3" y="13" width="18" height="15" rx="3.2" fill="#aaa4e8" fill-opacity="0" stroke="#aaa4e8" stroke-width="1.6" pathLength="1" stroke-dasharray="1"/>
+      <g id="lhole"><circle cx="12" cy="19.6" r="2.1" fill="#292456"/><path d="M12 21v3" stroke="#292456" stroke-width="1.9" stroke-linecap="round"/></g>
+    </svg>
+    <div class="abs" id="plines" style="left: 780px; top: 268px">
+      <div class="eyebrow split" id="pleb" style="color: var(--accent); margin-bottom: 18px">Encrypted on disk</div>
+      <div class="prow" id="pr0"><span class="big split">Encrypted library</span><span class="t">SQLCipher</span></div>
+      <div class="prow" id="pr1"><span class="big split">Encrypted audio</span><span class="t">AES-GCM</span></div>
+      <div class="prow" id="pr2"><span class="big split">Key in your Keychain</span><span class="t">macOS</span></div>
+      <div class="prow" id="pr3"><span class="big split">Audio deleted after 7 days</span><span class="t">Automatic</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MCP ================= -->
+<div class="scene paperbg" id="mcp">
+  <div class="head" id="mhead" style="top: 62px"><div class="eyebrow split">MCP server</div><div class="title split" style="font-size: 72px">Your meetings, in Claude.<br class="vbr"> <span class="serif">When you choose.</span></div></div>
+  <svg class="abs" id="gsvg" width="1920" height="1080" style="left: 0; top: 0">
+    <path id="gpath" d="M 612 530 C 780 530, 780 470, 940 470" fill="none" stroke="#aaa4e8" stroke-width="4" stroke-dasharray="2 14" stroke-linecap="round"/>
+    <g id="gpk"></g>
+  </svg>
+  <div id="gsrc" class="abs" style="left: 190px; top: 300px; width: 400px; display: flex; flex-direction: column; align-items: center; gap: 16px">
+    <div class="mark" id="gmark" style="width: 140px; height: 140px; margin-bottom: 16px"><svg viewBox="0 0 100 100"><path class="gb" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path class="gd" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></div>
+    <div class="mcard" id="gm0">Design review<small>Today · 32 min</small></div>
+    <div class="mcard" id="gm1">Weekly planning<small>Sep 22 · 45 min</small></div>
+    <div class="mcard" id="gm2">Client kickoff<small>Sep 19 · 28 min</small></div>
+  </div>
+  <div id="gchat" class="abs" style="left: 940px; top: 240px; width: 820px; height: 560px; background: #fff; border: 1px solid var(--line); border-radius: 26px; box-shadow: 0 60px 120px -30px #2924563a, 0 20px 40px -20px #29245622; padding: 0 40px; overflow: hidden">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 76px; border-bottom: 1px solid var(--line); margin: 0 -40px 30px; padding: 0 40px">
+      <span style="font-size: 22px; font-weight: 650; color: var(--ink)">Claude</span>
+      <span style="display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted)"><i style="width: 9px; height: 9px; border-radius: 50%; background: var(--ok); display: block"></i>MCP · tinta connected</span>
+    </div>
+    <div style="display: flex; justify-content: flex-end"><div id="gq" style="background: var(--ink); color: var(--paper); font-size: 23px; padding: 15px 22px; border-radius: 22px 22px 6px 22px; max-width: 620px; min-height: 60px"></div></div>
+    <div id="gtool" style="display: inline-flex; align-items: center; gap: 14px; margin-top: 26px; background: var(--soft); border-radius: 14px; padding: 13px 20px; font-family: var(--mono); font-size: 17px; color: var(--ink)">
+      <span id="gspin" style="width: 22px; height: 22px; border-radius: 50%; border: 3px solid #aaa4e8; border-top-color: #292456; display: grid; place-items: center; font-family: var(--sans); font-size: 13px; font-weight: 800; color: #fff"></span>
+      <span>tinta · <b>search_meetings</b>("design review")</span>
+      <span id="gfound" style="color: var(--ok); font-family: var(--sans); font-weight: 650"></span>
+    </div>
+    <div id="ga" style="font-size: 25px; line-height: 1.55; color: var(--text); margin-top: 24px; min-height: 120px"></div>
+    <div style="display: flex; gap: 12px; margin-top: 10px"><span class="cite" id="gc0">Design review · 00:12</span><span class="cite" id="gc1">Design review · 00:46</span></div>
+  </div>
+  <div id="gfoot" class="abs" style="left: 0; right: 0; top: 880px; display: flex; justify-content: center; gap: 16px">
+    <div class="epill" id="gf0" style="background: var(--ink); color: var(--paper)">Local MCP server</div>
+    <div class="epill" id="gf1" style="background: var(--ink); color: var(--paper)">Every change logged</div>
+    <div class="epill" id="gf2" style="background: var(--accent); color: var(--ink)">Undo any change</div>
+  </div>
+</div>
+
+<!-- ================= END ================= -->
+<div class="scene inkbg" id="end">
+  <div class="abs" id="eglow" style="left: 460px; top: 40px; width: 1000px; height: 1000px; border-radius: 50%; background: radial-gradient(circle, #aaa4e833 0%, #aaa4e800 65%)"></div>
+  <div class="abs" id="elk" style="display: flex; align-items: center; gap: 90px">
+    <div class="mark" id="elkm" style="width: 225px; height: 225px; background: var(--accent)"><svg viewBox="0 0 100 100"><path class="gb" style="fill: var(--ink)" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/><path class="gd" style="fill: var(--ink)" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/></svg></div>
+    <div class="brush" id="elkw" style="font-size: 330px; color: var(--paper); padding: 40px 50px 70px 10px">tinta</div>
+  </div>
+  <div class="abs split title" id="etag" style="left: 0; right: 0; top: 690px; text-align: center; font-size: 76px; color: var(--paper)">Meeting notes.<br class="vbr"> <span class="serif" style="color: var(--accent)">On your Mac.</span></div>
+  <div class="abs" id="efoot" style="left: 0; right: 0; top: 850px; display: flex; justify-content: center; gap: 16px">
+    <div class="epill" id="ep0" style="background: #ffffff12; color: var(--paper); border: 1px solid #ffffff22">Open source</div>
+    <div class="epill" id="ep1" style="background: #ffffff12; color: var(--paper); border: 1px solid #ffffff22">Apple Silicon</div>
+    <div class="epill" id="ep2" style="background: var(--accent); color: var(--ink)">github.com/pepebndc/tinta</div>
+  </div>
+</div>
+
+<svg id="cursor" viewBox="0 0 26 36"><path d="M2 2 L2 27 L8.2 21.2 L12.4 31 L16.6 29.2 L12.5 19.6 L21 19.6 Z" fill="#111" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+<svg id="floods" width="1920" height="1080">
+  <defs>
+    <filter id="goo" filterUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1080" color-interpolation-filters="sRGB">
+      <feTurbulence id="fturb" type="fractalNoise" baseFrequency="0.0022" numOctaves="3" seed="3" result="n"/>
+      <feDisplacementMap id="fdisp" in="SourceGraphic" in2="n" scale="140" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feGaussianBlur in="d" stdDeviation="16" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 30 -14"/>
+    </filter>
+  </defs>
+  <g id="floodg" filter="url(#goo)"></g>
+</svg>
+<div id="vignette"></div>
+<div id="fade"></div>
+</div>
+
+<script>
+// ---------- Orientation ----------
+const V = new URLSearchParams(location.search).has("v");
+const W = V ? 1080 : 1920, H = V ? 1920 : 1080, CX = W / 2, CY = H / 2;
+if (V) {
+  document.documentElement.classList.add("v");
+  const attrs = (id, a) => Object.entries(a).forEach(([k, v]) => document.getElementById(id).setAttribute(k, v));
+  ["splash", "floods", "gsvg", "psvg"].forEach((id) => attrs(id, { width: W, height: H }));
+  attrs("goo", { width: W, height: H });
+  attrs("goo2", { x: CX - 400, y: CY - 400 });
+  ["rip0", "rip1", "sp0"].forEach((id) => attrs(id, { cx: CX, cy: CY }));
+  attrs("pring", { cx: 540, cy: 1110, rx: 500, ry: 480 });
+  attrs("gpath", { d: "M 160 720 C 160 810, 300 800, 300 900" });
+  document.getElementById("pcam").style.transformOrigin = `${CX}px ${CY}px`;
+  TL.floods.forEach((f) => { f.x = f.vx; f.y = f.vy; });
+}
+// ---------- Motion toolkit ----------
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const p = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, x) => a + (b - a) * x;
+const set = (el, s) => Object.assign((typeof el === "string" ? $(el) : el).style, s);
+const rand = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = (u) => ((ax * u + bx) * u + cx) * u, sy = (u) => ((ay * u + by) * u + cy) * u, dx = (u) => (3 * ax * u + 2 * bx) * u + cx;
+  return (x) => {
+    if (x <= 0) return 0; if (x >= 1) return 1;
+    let u = x;
+    for (let i = 0; i < 10; i++) { const d = sx(u) - x; if (Math.abs(d) < 1e-7) break; const s = dx(u); if (Math.abs(s) < 1e-7) break; u -= d / s; }
+    return sy(clamp(u));
+  };
+}
+const E = { out: bezier(0.16, 1, 0.3, 1), inOut: bezier(0.65, 0, 0.35, 1), in: bezier(0.55, 0, 0.9, 0.3), move: bezier(0.76, 0, 0.24, 1), soft: bezier(0.25, 0.1, 0.25, 1) };
+// Damped spring from 0 to 1; s is seconds since the start.
+const spring = (s, zeta = 0.6, w = 14) => {
+  if (s <= 0) return 0;
+  const wd = w * Math.sqrt(1 - zeta * zeta);
+  return 1 - Math.exp(-zeta * w * s) * (Math.cos(wd * s) + (zeta * w / wd) * Math.sin(wd * s));
+};
+const tw = (t, a, d, e = E.out) => e(p(t, a, a + d));
+
+// Split text into masked words, keeping inline elements such as .serif spans.
+function splitWords(el) {
+  const walk = (node) => {
+    [...node.childNodes].forEach((c) => {
+      if (c.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach((part) => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) frag.appendChild(document.createTextNode(" "));
+          else { const w = document.createElement("span"); w.className = "w"; w.innerHTML = `<span class="wi">${part}</span>`; frag.appendChild(w); }
+        });
+        c.replaceWith(frag);
+      } else if (c.nodeType === 1 && !c.classList.contains("w")) walk(c);
+    });
+  };
+  walk(el);
+}
+document.querySelectorAll(".split").forEach(splitWords);
+// Reveal words with a masked rise; optional exit rises them out.
+function words(el, t, tIn, o = {}) {
+  el = typeof el === "string" ? $(el) : el;
+  const ws = el.querySelectorAll(".wi");
+  const st = o.stagger ?? 0.05, d = o.dur ?? 0.7;
+  ws.forEach((w, i) => {
+    const k = E.out(p(t, tIn + i * st, tIn + i * st + d));
+    let y = (1 - k) * 140, op = 1;
+    if (o.out != null) { const ko = E.in(p(t, o.out + i * 0.025, o.out + i * 0.025 + (o.outDur ?? 0.4))); y -= ko * 140; op = 1 - ko * 0.3; }
+    w.style.transform = `translateY(${y}%)`;
+    w.style.opacity = op;
+  });
+}
+const shown = {};
+function scene(id, on) { if (shown[id] !== on) { $(id).style.display = on ? "block" : "none"; shown[id] = on; } }
+const inside = (t, [a, b]) => t >= a && t < b;
+
+// ---------- Static content ----------
+const MARK_PATHS = ['M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z', 'M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z'];
+const SBITEMS = [["Design review", "Sep 23, 2026, 2:59 PM"], ["Weekly planning", "Sep 22, 2026, 2:39 PM"], ["Product catch-up", "Sep 20, 2026, 2:19 PM"], ["Client kickoff", "Sep 19, 2026, 11:39 AM"], ["Audit retro", "Sep 17, 2026, 9:39 AM"]];
+$("sblist").innerHTML = SBITEMS.map(([n, d], i) => `<div class="sbitem" id="sbi${i}" style="top:${238 + i * 54}px"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg>${i === 0 ? '<span class="rdot" id="sbdot"></span>' : ""}<b>${n}</b><small>${d}<span id="${i === 0 ? "sbrec" : ""}"></span></small></div>`).join("");
+const HOME = [["Design review", "Sep 23, 2026, 2:59 PM · 32 min", ["audit", "weekly"]], ["Weekly planning", "Sep 22, 2026, 2:39 PM · 32 min", ["audit", "weekly"]], ["Product catch-up", "Sep 20, 2026, 2:19 PM · 32 min", ["audit", "weekly"]], ["Client kickoff", "Sep 19, 2026, 11:39 AM", ["audit", "weekly"]], ["Audit retro", "Sep 17, 2026, 9:39 AM · 32 min", ["retro"]]];
+$("homegrid").innerHTML = HOME.map(([n, d, tags], i) => `<div class="card" style="left:${44 + (i % 3) * 259}px;top:${357 + Math.floor(i / 3) * 130}px;width:247px;height:117px;padding:16px">
+  <svg class="ic" viewBox="0 0 24 24" style="color:var(--muted)"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg>
+  <div style="font-size:13px;font-weight:600;color:var(--ink);margin:10px 0 6px">${n}</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">${d}</div>${tags.map((x) => `<span class="tag">${x}</span>`).join("")}</div>`).join("");
+const TURNS = [
+  ["AM", "ta", "Alex Moreno", "00:12", "The first screen should feel calm. I want to open a meeting and find the conversation straight away."],
+  ["S1", "td", "Speaker 1", "00:28", "Agreed. The speaker names and timestamps help me find the part I need. Everything else can stay quiet."],
+  ["SR", "tc", "Sam Rivera", "00:46", "Let's give the notes their own space. I want to write down what matters to me while the transcript keeps the full conversation."],
+  ["AM", "ta", "Alex Moreno", "01:08", "And keep the notes on this Mac. Sharing should be something I choose."],
+];
+const TURN_Y = [70, 164, 258, 376];
+$("turns").innerHTML = TURNS.map(([i, tone, name, time, say], n) => `<div class="turn" id="tu${n}" style="top:${TURN_Y[n]}px">
+  <div class="av ${tone}" id="tav${n}">${i}</div><div style="flex:1">
+  <div class="nm">${n === 1 ? `<span class="flip" id="flipbox"><span id="flipin" style="display:block"><span>Speaker 1</span><span>Morgan Lee</span></span></span>` : name}<time>${time}</time><span class="prov">provisional</span>${n === 1 ? '<span class="prov" id="mchip" style="border-color:#e9d9b6;background:#fbf1dc;color:#8a5a00">named from Google Meet</span>' : ""}</div>
+  <p>${say.split(" ").map((w, k) => `<span class="tw" data-k="${k}">${w}</span>`).join(" ")}</p></div></div>`).join("");
+const MEET = [["AM", "Alex", "ta"], ["ML", "Morgan", "tb"], ["SR", "Sam", "tc"], ["Y", "You", "te"]];
+$("meetgrid").innerHTML = MEET.map(([i, n, tone], k) => `<div id="mg${k}" style="background:#3c4043;border-radius:14px;height:132px;display:grid;place-items:center;position:relative">
+  <div class="av ${tone}" style="width:60px;height:60px;font-size:18px">${i}</div><span style="position:absolute;left:12px;bottom:9px;color:#e8eaed;font-size:14px">${n}</span>
+  ${k === 1 ? '<span id="mbars" style="position:absolute;right:12px;top:12px;display:flex;gap:3px;align-items:flex-end;height:18px"><b style="width:4px;background:#8ab4f8;border-radius:2px;display:block"></b><b style="width:4px;background:#8ab4f8;border-radius:2px;display:block"></b><b style="width:4px;background:#8ab4f8;border-radius:2px;display:block"></b></span>' : ""}</div>`).join("");
+$("gpk").innerHTML = Array.from({ length: 7 }, (_, i) => `<circle id="pk${i}" r="8" fill="#8174dc"/>`).join("");
+
+// ---------- Layout measured once ----------
+const L = {};
+function measure() {
+  ["logo", "end", "hook"].forEach((id) => ($(id).style.display = "block"));
+  const lockLayout = (lk, mark) => {
+    set(lk, { transform: "none", left: "0px", top: "0px" });
+    const r = $(lk).getBoundingClientRect(), m = $(mark).getBoundingClientRect();
+    // Place the finished lockup centered, with the mark center at a fixed height.
+    const left = CX - r.width / 2, top = (V ? 650 : 455) - (m.top - r.top) - m.height / 2;
+    set(lk, { left: left + "px", top: top + "px" });
+    const mx = left + (m.left - r.left), my = top + (m.top - r.top);
+    return { left, top, ox: m.left - r.left, oy: m.top - r.top, cx: CX - (mx + m.width / 2), cy: CY - (my + m.height / 2), mx, my };
+  };
+  L.logo = lockLayout("lk", "lkm");
+  L.end = lockLayout("elk", "elkm");
+  L.roll = [...document.querySelectorAll(".rw")].map((el) => { el.style.display = "inline-block"; const w = el.getBoundingClientRect().width; el.style.display = "block"; return w; });
+  $("app").style.display = "block";
+  L.flip = [...$("flipin").children].map((el) => { el.style.display = "inline-block"; const w = el.getBoundingClientRect().width; el.style.display = "block"; return w + 2; });
+  ["logo", "end", "hook", "app"].forEach((id) => ($(id).style.display = "none"));
+}
+measure();
+
+// ---------- Camera for the app window ----------
+const logLerp = (a, b, k) => Math.exp(lerp(Math.log(a), Math.log(b), k));
+function appCam(t) {
+  // Focus point in window coordinates, placed at a screen point, at a scale.
+  const A = TL.app;
+  let fx = 720, fy = 450, sx = 960, sy = 665, s = lerp(1, 1.03, E.soft(p(t, 7.9, 12)));
+  const z = E.move(p(t, A.zoom[0], A.zoom[1]));
+  if (V) {
+    // Whole window first, then the notes and transcript, then the transcript alone.
+    fx = 720; fy = 450; sx = 540; sy = 1050; s = 0.72 * lerp(1, 1.02, E.soft(p(t, 7.9, 9.3)));
+    const m = E.move(p(t, A.swap + 0.1, A.swap + 1.0));
+    fx = lerp(fx, 850, m); fy = lerp(fy, 560, m); sy = lerp(sy, 1120, m); s = logLerp(s, 0.93 * lerp(1, 1.03, E.soft(p(t, 10, 12))), m);
+    if (z > 0) { fx = lerp(fx, 1130, z); fy = lerp(fy, 520, z); sy = lerp(sy, 1000, z); s = logLerp(s, 1.75, z); }
+  } else if (z > 0) { fx = lerp(fx, 1130, z); fy = lerp(fy, 520, z); sx = lerp(sx, 720, z); sy = lerp(sy, 650, z); s = logLerp(s, 1.75, z); }
+  s *= lerp(1, 1.015, E.soft(p(t, A.zoom[1], A.out[0])));
+  const o = E.in(p(t, A.out[0], A.out[1]));
+  return { x: sx - fx * s - o * (V ? 700 : 900), y: sy - fy * s, s, o };
+}
+
+// ---------- Scenes ----------
+function renderHook(t) {
+  const H = TL.hook;
+  const k = E.out(p(t, H.in, H.in + 0.8));
+  const ko = E.in(p(t, H.out, H.out + 0.45));
+  set("h1a", { transform: `translateY(${(1 - k) * 1.2 - ko * 1.2}em)` });
+  // The roller swaps the last word; its width follows the word so the line stays centered.
+  const r0 = E.inOut(p(t, H.roll[0], H.roll[0] + 0.5)), r1 = E.inOut(p(t, H.roll[1], H.roll[1] + 0.5));
+  const idx = r0 + r1;
+  const wv = idx < 1 ? lerp(L.roll[0], L.roll[1], r0) : lerp(L.roll[1], L.roll[2], r1);
+  set("roller", { width: wv + 6 + "px" });
+  set("rollin", { transform: `translateY(${(1 - k) * 1.2 - idx * 1.2 - ko * 1.2 * 3}em)` });
+  // Words blur slightly while they roll.
+  const blur = Math.sin(Math.PI * r0) * 3 + Math.sin(Math.PI * r1) * 3;
+  set("rollin", { filter: `blur(${blur}px)` });
+  words("h2", t, H.q, { stagger: 0.06, dur: 0.75 });
+  set("h2", { transform: `scale(${lerp(1, 1.04, E.soft(p(t, H.q, 3.6)))})` });
+}
+
+function markGlyph(root, t, tb, td) {
+  const gb = root.querySelector(".gb"), gd = root.querySelector(".gd");
+  gb.style.transform = `scale(${spring(t - tb, 0.55, 15)})`;
+  const s = spring(t - td, 0.5, 18);
+  gd.style.transform = `translateY(${(1 - s) * -26}px) scale(${s})`;
+  gd.style.opacity = t > td ? 1 : 0;
+}
+
+function renderLogo(t) {
+  const G = TL.logo;
+  // The drop falls under gravity and lands on the screen center at G.drop.
+  const f = p(t, 3.6, G.drop);
+  set("drop", { display: t < G.drop ? "" : "none" });
+  $("drop").setAttribute("transform", `translate(${CX} ${lerp(-60, CY - 30, f * f)}) scale(${lerp(0.9, 0.8, f)} ${lerp(1.05, 1.3, f)})`);
+  // Splash: an ink blob swells and satellites throw out and merge back.
+  const ts = t - G.drop;
+  const blobR = ts > 0 && ts < 0.55 ? 104 * spring(ts, 0.5, 20) * (1 - E.in(p(ts, 0.35, 0.55)) * 0.25) : 0;
+  $("sp0").setAttribute("r", blobR);
+  const g = $("splashg");
+  if (!g.dataset.init) { g.innerHTML += Array.from({ length: 8 }, (_, i) => `<circle id="sat${i}" r="0"/>`).join(""); g.dataset.init = 1; }
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + rand(i) * 0.5, D = 150 + rand(i + 9) * 90;
+    const k = p(ts, 0.02, 0.5), d = D * Math.sin(Math.PI * E.soft(k)) * (ts > 0 ? 1 : 0);
+    const el = $(`sat${i}`);
+    el.setAttribute("cx", CX + Math.cos(a) * d); el.setAttribute("cy", CY + Math.sin(a) * d);
+    el.setAttribute("r", ts > 0 && k < 1 ? 16 + rand(i + 3) * 16 : 0);
+  }
+  [0, 1].forEach((i) => {
+    const k = E.out(p(ts, i * 0.12, 1.1 + i * 0.12));
+    $(`rip${i}`).setAttribute("r", k > 0 ? 110 + k * 520 : 0);
+    $(`rip${i}`).setAttribute("stroke-opacity", (1 - k) * 0.7);
+  });
+  // The mark grows out of the blob, then the glyph forms inside it.
+  const ms = spring(ts - 0.2, 0.62, 16);
+  const slide = E.inOut(p(t, G.slide, G.slide + 0.65));
+  const fly = E.move(p(t, G.fly[0], G.fly[1]));
+  const lg = L.logo;
+  // Flight target: the sidebar lockup of the app window.
+  const cam = appCam(G.fly[1]);
+  const tx = cam.x + 22 * cam.s - lg.mx, ty = cam.y + 25 * cam.s - lg.my, ts2 = (30 * cam.s) / 225;
+  const sc = logLerp(1, ts2, fly);
+  set("lk", { transformOrigin: `${lg.ox}px ${lg.oy}px`, transform: `translate(${lg.cx * (1 - slide) + tx * fly}px, ${lg.cy * (1 - slide) + ty * fly}px) scale(${sc})`, opacity: t < G.fly[1] ? 1 : 0 });
+  set("lkm", { transform: `scale(${lerp(0.5, 1, ms)})`, opacity: ts > 0.2 ? 1 : 0 });
+  markGlyph($("lkm"), t, G.glyph, G.dot);
+  // The wordmark writes itself in behind a moving soft edge.
+  const wk = E.soft(p(t, G.word, G.word + 0.75)) * 130 - 15;
+  const m = `linear-gradient(100deg, #000 ${wk}%, transparent ${wk + 15}%)`;
+  set("lkw", { webkitMaskImage: m, maskImage: m, transform: `rotate(-2deg) translateX(${(1 - E.out(p(t, G.word, G.word + 0.9))) * 30}px)` });
+  words("ltag", t, G.tag, { stagger: 0.07, dur: 0.8, out: G.tagOut });
+}
+
+function renderApp(t) {
+  const A = TL.app;
+  const cam = appCam(t);
+  // The window fades in around the arriving lockup.
+  const wi = E.out(p(t, 7.2, 7.9));
+  const ws = lerp(0.965, 1, wi);
+  set("win", { transform: `translate(${cam.x + 720 * cam.s * (1 - ws)}px, ${cam.y + 450 * cam.s * (1 - ws)}px) scale(${cam.s * ws})`, opacity: wi * (1 - cam.o) });
+  set("sblk", { opacity: t >= TL.logo.fly[1] ? 1 : 0 });
+  set("aband", { opacity: E.inOut(p(t, A.zoom[0] + 0.2, A.zoom[1])) * (1 - cam.o) });
+  // Headlines.
+  A.heads.forEach(([a, b], i) => { const h = $(`ah${i}`); set(h, { display: t > a - 0.1 && t < b + 0.6 ? "" : "none" }); h.querySelectorAll(".split").forEach((el, j) => words(el, t, a + j * 0.08, { stagger: 0.045, dur: 0.7, out: b - 0.05 + j * 0.03 })); });
+  // Home view, the click, and the swap to the recording view.
+  const sw = E.in(p(t, A.swap, A.swap + 0.3));
+  set("vhome", { opacity: 1 - sw, transform: `translateX(${-30 * sw}px)`, display: sw < 1 ? "" : "none" });
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  set("meetcard", { boxShadow: `0 10px 30px -10px #8174dc33, 0 0 0 ${2 + pulse * 5}px #aaa4e8${Math.round(40 + pulse * 30).toString(16)}` });
+  const press = t > A.click - 0.04 && t < A.click + 0.25 ? Math.sin(Math.PI * p(t, A.click - 0.04, A.click + 0.25)) : 0;
+  set("recbtn", { transform: `scale(${1 - press * 0.06})`, background: press > 0 ? "#1e1a44" : "" });
+  const mv = $("vmeet");
+  set(mv, { display: t > A.swap + 0.1 ? "" : "none" });
+  mv.querySelectorAll(":scope > .blk").forEach((b, i) => {
+    const k = E.out(p(t, A.swap + 0.18 + i * 0.05, A.swap + 0.9 + i * 0.05));
+    set(b, { opacity: k, transform: `translateY(${(1 - k) * 18}px)` });
+  });
+  // Sidebar: the meeting turns into a live recording.
+  const lr = t > A.swap + 0.2;
+  set("sbi0", { background: lr ? "#e7e4f4" : "", boxShadow: lr ? "inset 3px 0 0 #aaa4e8" : "" });
+  set("navhome", { background: lr ? "transparent" : "#e7e4f4" });
+  set("sbdot", { display: lr ? "" : "none", opacity: 0.55 + 0.45 * Math.sin(t * 6) });
+  $("sbi0").querySelector(".ic").style.display = lr ? "none" : "";
+  $("sbrec").innerHTML = lr ? ' · <span style="color:#c2413b">recording</span>' : "";
+  // Recording panel.
+  const secs = Math.max(0, Math.floor(t - A.rec));
+  $("rectime").textContent = `00:${String(secs).padStart(2, "0")}`;
+  set("recdot", { opacity: 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 6)) });
+  const lvl = (k) => 20 + 70 * Math.abs(Math.sin(t * (5.3 + k) + k) * Math.sin(t * 2.1 + k * 3));
+  set("m1", { width: lvl(0) + "%" }); set("m2", { width: lvl(1.7) + "%" });
+  // Notes type in.
+  const n = A.noteTimes.filter((x) => x <= t).length;
+  const caretOn = n < A.notes.length || Math.floor(t * 2.4) % 2 === 0;
+  $("notes").innerHTML = A.notes.slice(0, n).replace("[00:46]", '<span style="color:#8174dc;font-weight:600">[00:46]</span>') + (t > A.swap + 0.5 ? `<span class="caret" style="opacity:${caretOn ? 1 : 0}"></span>` : "");
+  // Transcript turns arrive and their words stream in.
+  A.turns.forEach((at, i) => {
+    const k = E.out(p(t, at, at + 0.6));
+    set(`tu${i}`, { opacity: k, transform: `translateY(${(1 - k) * 14}px)` });
+    const ws = $(`tu${i}`).querySelectorAll(".tw");
+    const shownW = (t - at - 0.1) / 0.04;
+    ws.forEach((w, j) => { const a = clamp(shownW - j); w.style.opacity = 0.15 + 0.85 * a; });
+  });
+  // Speaker names: the Meet panel arrives, Morgan speaks, and Speaker 1 becomes Morgan Lee.
+  const mi = E.out(p(t, A.meet, A.meet + 0.8)), mo = E.in(p(t, A.out[0], A.out[1]));
+  set("meet", { transform: `translateX(${(1 - mi) * 620 - mo * 900}px) rotate(${(1 - mi) * 4}deg)`, opacity: Math.min(mi * 1.5, 1) * (1 - mo) });
+  const speak = t > A.speak && t < A.out[0];
+  set("mg1", { boxShadow: speak ? `0 0 0 ${3 + 3 * Math.abs(Math.sin(t * 7))}px #8ab4f8` : "none" });
+  $("mbars").querySelectorAll("b").forEach((b, j) => (b.style.height = (speak ? 5 + 13 * Math.abs(Math.sin(t * (9 + j * 3) + j)) : 4) + "px"));
+  const fl = E.inOut(p(t, A.rename, A.rename + 0.45));
+  set("flipin", { transform: `translateY(${-20 * fl}px)` });
+  set("flipbox", { width: lerp(L.flip[0], L.flip[1], fl) + "px" });
+  const hl = p(t, A.rename - 0.1, A.rename + 1.6);
+  set("tu1", { background: hl > 0 && hl < 1 ? `rgba(170,164,232,${0.22 * Math.sin(Math.PI * hl)})` : "transparent", borderRadius: "10px", boxShadow: hl > 0 && hl < 1 ? `0 0 0 10px rgba(170,164,232,${0.22 * Math.sin(Math.PI * hl)})` : "none" });
+  const cs = spring(t - A.rename - 0.25, 0.55, 16);
+  set("mchip", { transform: `scale(${cs})`, opacity: t > A.rename + 0.25 ? 1 : 0 });
+  const av = $("tav1");
+  if (t > A.rename + 0.15) { av.className = "av tb"; av.textContent = "ML"; } else { av.className = "av td"; av.textContent = "S1"; }
+  set(av, { transform: `scale(${1 + 0.25 * Math.sin(Math.PI * p(t, A.rename + 0.05, A.rename + 0.45))})` });
+  // Cursor: moves to "Record this call", clicks, and leaves.
+  const cur = $("cursor");
+  const cIn = p(t, A.cursor[0], A.cursor[1]);
+  if (t > A.cursor[0] - 0.3 && t < A.swap + 1.0) {
+    const r = $("recbtn").getBoundingClientRect();
+    const tx = r.left + r.width * 0.55, ty = r.top + r.height * 0.55;
+    const k = E.move(cIn);
+    const sx0 = V ? 900 : 1500, sy0 = V ? 1700 : 1000;
+    const x = lerp(sx0, tx, k) + Math.sin(Math.PI * k) * -80, y = lerp(sy0, ty, k) + Math.sin(Math.PI * k) * 30;
+    const leave = E.in(p(t, A.swap + 0.3, A.swap + 0.9));
+    const cp = t > A.click - 0.05 && t < A.click + 0.15 ? Math.sin(Math.PI * p(t, A.click - 0.05, A.click + 0.15)) : 0;
+    set(cur, { display: "", transform: `translate(${x + leave * 260}px, ${y + leave * 320}px) scale(${1.25 * (1 - cp * 0.15)})`, opacity: Math.min(1, p(t, A.cursor[0] - 0.3, A.cursor[0])) * (1 - leave) });
+  } else set(cur, { display: "none" });
+}
+
+function renderSum(t) {
+  const S = TL.sum;
+  const inn = E.out(p(t, 15.35, 16.2));
+  set("sum", { opacity: 1 });
+  $("shead").querySelectorAll(".split").forEach((el, j) => words(el, t, S.head + j * 0.1, { stagger: 0.05, dur: 0.8 }));
+  const ck = spring(t - S.head - 0.7, 0.6, 14);
+  set("schip", { transform: `scale(${ck})`, opacity: t > S.head + 0.7 ? 1 : 0 });
+  const pk = E.out(p(t, S.panel - 0.5, S.panel + 0.7));
+  set("spanel", { opacity: pk, transform: `perspective(2200px) translateX(${(1 - pk) * 420}px) rotateY(${(1 - pk) * -14}deg) translateY(${Math.sin(t * 1.2) * 4}px)` });
+  S.sections.forEach((at, i) => {
+    const sec = $(`ss${i}`);
+    const hk = E.out(p(t, at, at + 0.5));
+    set(sec.querySelector("h4"), { opacity: hk, transform: `translateY(${(1 - hk) * 10}px)` });
+    // Skeleton bars shimmer, then the text resolves over them.
+    const body = sec.querySelector(".txt, ul");
+    const rk = E.out(p(t, at + 0.35, at + 0.9));
+    set(body, { opacity: rk, transform: `translateY(${(1 - rk) * 6}px)`, filter: `blur(${(1 - rk) * 4}px)` });
+    if (!sec.dataset.sk) {
+      const h = body.offsetHeight || 60, lines = Math.max(1, Math.round(h / 30));
+      for (let l = 0; l < lines; l++) { const s = document.createElement("div"); s.className = "sk"; s.style.top = 34 + l * 30 + 8 + "px"; s.style.width = (l === lines - 1 ? 55 : 92 - l * 4) + "%"; sec.appendChild(s); }
+      sec.dataset.sk = 1;
+    }
+    sec.querySelectorAll(".sk").forEach((s) => set(s, { opacity: hk * (1 - rk), backgroundPosition: `${(t - at) * 900}px 0` }));
+  });
+  const cb = E.out(p(t, S.check, S.check + 0.35));
+  set("cb0", { background: cb > 0 ? `rgba(129,116,220,${cb})` : "transparent", transform: `scale(${1 + 0.2 * Math.sin(Math.PI * p(t, S.check, S.check + 0.3))})` });
+  $("cbp").setAttribute("stroke-dashoffset", 1 - E.out(p(t, S.check + 0.08, S.check + 0.4)));
+  set("ai0", { color: t > S.check + 0.2 ? "#787586" : "", textDecoration: t > S.check + 0.2 ? "line-through" : "none" });
+  set("sum", { transform: `translateX(${(1 - inn) * 0}px)` });
+}
+
+function renderPriv(t) {
+  const P = TL.priv;
+  $("phead").querySelectorAll(".split").forEach((el, j) => words(el, t, P.head + j * 0.1, { stagger: 0.05, dur: 0.8, out: P.push[0] - 0.15 }));
+  const dk = E.inOut(p(t, P.draw, P.draw + 0.9));
+  document.querySelectorAll("#laptop .draw").forEach((el, i) => { el.setAttribute("stroke-dasharray", "1"); el.setAttribute("stroke-dashoffset", 1 - E.inOut(p(t, P.draw + i * 0.12, P.draw + 0.9 + i * 0.12))); });
+  $("laptop").querySelector("rect").setAttribute("fill-opacity", E.out(p(t, P.draw + 0.6, P.draw + 1.1)));
+  const mk = spring(t - P.draw - 0.7, 0.55, 14);
+  set("pmark", { transform: `scale(${mk})` });
+  $("pring").setAttribute("stroke-dashoffset", -t * 30);
+  set("pring", { opacity: E.out(p(t, P.draw + 0.3, P.draw + 1.2)) });
+  [0, 1, 2, 3].forEach((i) => {
+    const k = E.out(p(t, P.labels + i * 0.12, P.labels + 0.7 + i * 0.12));
+    const side = i < 2 ? -1 : 1;
+    set(`pl${i}`, { opacity: k * (1 - E.in(p(t, P.push[0], P.push[0] + 0.25))), transform: `translateX(${(1 - k) * 60 * side}px)` });
+  });
+  // Push through the laptop screen.
+  const pk = E.in(p(t, P.push[0], P.push[1]));
+  set("pcam", { transform: `scale(${logLerp(1, 14, pk)})`, opacity: 1 - p(t, P.push[1] - 0.12, P.push[1]), display: t < P.push[1] ? "" : "none" });
+  // The zero: count down to 0, then hold.
+  const zi = E.out(p(t, P.zero, P.zero + 0.5)), zo = E.in(p(t, P.zeroOut, P.zeroOut + 0.35));
+  set("zero", { display: t > P.zero && t < P.zeroOut + 0.4 ? "" : "none", opacity: zi * (1 - zo), filter: `blur(${(1 - zi) * 14 + zo * 10}px)`,
+    transform: `scale(${lerp(1.15, 1, zi) * lerp(1, 1.04, E.soft(p(t, P.count[1], P.zeroOut))) * lerp(1, 0.9, zo)})` });
+  const c = E.out(p(t, P.count[0], P.count[1]));
+  $("znum").textContent = c < 1 ? Math.round(1284 * (1 - c)).toLocaleString("en-US") : "0";
+  set("znum", { transform: `scale(${1 + 0.06 * Math.sin(Math.PI * p(t, P.count[1], P.count[1] + 0.3))})` });
+  // Lock and the encryption facts.
+  const lon = t > P.lock - 0.05;
+  set("plock", { display: lon ? "" : "none" });
+  if (lon) {
+    $("lbody").setAttribute("stroke-dashoffset", 1 - E.inOut(p(t, P.lock, P.lock + 0.45)));
+    $("lbody").setAttribute("fill-opacity", E.out(p(t, P.lock + 0.35, P.lock + 0.65)));
+    $("lshackle").setAttribute("stroke-dashoffset", 1 - E.inOut(p(t, P.lock + 0.1, P.lock + 0.5)));
+    const drop = spring(t - P.click, 0.45, 26);
+    $("lshackle").setAttribute("transform", `translate(0 ${-3.2 * (1 - drop)})`);
+    set("lhole", { opacity: E.out(p(t, P.click, P.click + 0.2)) });
+    set("locksvg", { transform: `scale(${1 + 0.05 * Math.sin(Math.PI * p(t, P.click, P.click + 0.3))})` });
+    words("pleb", t, P.lines[0] - 0.2, { stagger: 0.05 });
+    P.lines.forEach((at, i) => {
+      const row = $(`pr${i}`);
+      words(row.querySelector(".big"), t, at, { stagger: 0.04, dur: 0.7 });
+      const tk = E.out(p(t, at + 0.25, at + 0.75));
+      set(row.querySelector(".t"), { opacity: tk, transform: `translateX(${(1 - tk) * -16}px)` });
+    });
+    set("plock", { transform: `scale(${lerp(1, 1.03, E.soft(p(t, P.lock, 28)))})`, transformOrigin: `${CX}px ${CY}px` });
+  }
+}
+
+function renderMcp(t) {
+  const M = TL.mcp;
+  $("mhead").querySelectorAll(".split").forEach((el, j) => words(el, t, M.head + j * 0.08, { stagger: 0.045, dur: 0.7 }));
+  const sk = E.out(p(t, M.src, M.src + 0.8));
+  set("gsrc", { opacity: sk, transform: `translateX(${(1 - sk) * -80}px)` });
+  set("gmark", { transform: `scale(${spring(t - M.src, 0.6, 14) * (1 + 0.06 * Math.sin(Math.PI * p(t, M.tool, M.tool + 0.3)))})` });
+  ["gm0", "gm1", "gm2"].forEach((id, i) => {
+    const k = E.out(p(t, M.src + 0.1 + i * 0.07, M.src + 0.8 + i * 0.07));
+    const hit = E.out(p(t, M.tool, M.tool + 0.4));
+    const h = i === 0 ? hit : 0;
+    set(id, { opacity: k, transform: `translateY(${(1 - k) * 30}px) translateX(${h * 22}px) scale(${1 + h * 0.03})`, borderColor: h > 0 ? "#8174dc" : "", boxShadow: h > 0 ? `0 0 0 ${4 * h}px #aaa4e855, 0 20px 50px -10px #29245626` : "" });
+  });
+  const wk = E.out(p(t, M.chat, M.chat + 0.9));
+  set("gchat", { opacity: wk, transform: `perspective(2200px) translateX(${(1 - wk) * 160}px) rotateY(${(1 - wk) * -12}deg)` });
+  const Q = "What did we decide in the design review?";
+  $("gq").textContent = Q.slice(0, Math.floor(Q.length * p(t, M.q[0], M.q[1])));
+  set("gq", { opacity: t > M.q[0] ? 1 : 0 });
+  const tk = spring(t - M.tool, 0.6, 16);
+  set("gtool", { opacity: t > M.tool ? 1 : 0, transform: `scale(${lerp(0.8, 1, tk)})`, transformOrigin: "0 50%" });
+  const done = t >= M.done;
+  set("gspin", { transform: done ? `scale(${spring(t - M.done, 0.5, 18)})` : `rotate(${t * 720}deg)`, background: done ? "#3f7a55" : "transparent", borderColor: done ? "#3f7a55" : "" });
+  $("gspin").textContent = done ? "✓" : "";
+  $("gfound").textContent = done ? "1 meeting" : "";
+  const path = $("gpath"), len = path.getTotalLength();
+  set("gpath", { strokeDashoffset: -t * 50, opacity: E.out(p(t, M.src + 0.4, M.src + 0.9)) });
+  for (let i = 0; i < 7; i++) {
+    const k = p(t, M.packets + i * 0.1, M.packets + 0.45 + i * 0.1);
+    const pt = path.getPointAtLength(len * E.inOut(k));
+    const el = $(`pk${i}`);
+    el.setAttribute("cx", pt.x); el.setAttribute("cy", pt.y);
+    el.setAttribute("opacity", k > 0 && k < 1 ? Math.sin(Math.PI * k) * 1.4 : 0);
+  }
+  const ANS = "Two things: keep the transcript easy to scan, and keep the notes on this Mac. Sam reviews the icon at small sizes.";
+  const aw = ANS.split(" "), an = (t - M.answer[0]) / (M.answer[1] - M.answer[0]) * aw.length;
+  $("ga").innerHTML = aw.map((w, j) => `<span style="opacity:${clamp(an - j) * 0.9 + (clamp(an - j) > 0 ? 0.1 : 0)}">${w}</span>`).join(" ");
+  ["gc0", "gc1"].forEach((id, i) => { const s = spring(t - M.cites - i * 0.1, 0.55, 16); set(id, { transform: `scale(${s})`, opacity: t > M.cites + i * 0.1 ? 1 : 0 }); });
+  ["gf0", "gf1", "gf2"].forEach((id, i) => { const k = E.out(p(t, M.pills + i * 0.12, M.pills + 0.7 + i * 0.12)); set(id, { opacity: k, transform: `translateY(${(1 - k) * 30}px)` }); });
+}
+
+function renderEnd(t) {
+  const N = TL.end, lg = L.end;
+  const ms = spring(t - N.mark, 0.62, 16);
+  const slide = E.inOut(p(t, N.slide, N.slide + 0.65));
+  set("elk", { transform: `translate(${lg.cx * (1 - slide)}px, ${lg.cy * (1 - slide)}px) scale(${lerp(1, 1.025, E.soft(p(t, 33.5, 37.5)))})`, transformOrigin: "50% 50%" });
+  set("elkm", { transform: `scale(${lerp(0.4, 1, ms)})`, opacity: t > N.mark ? 1 : 0 });
+  markGlyph($("elkm"), t, N.glyph, N.dot);
+  const wk = E.soft(p(t, N.word, N.word + 0.75)) * 130 - 15;
+  const m = `linear-gradient(100deg, #000 ${wk}%, transparent ${wk + 15}%)`;
+  set("elkw", { webkitMaskImage: m, maskImage: m, transform: `rotate(-2deg) translateX(${(1 - E.out(p(t, N.word, N.word + 0.9))) * 30}px)` });
+  words("etag", t, N.tag, { stagger: 0.07, dur: 0.8 });
+  ["ep0", "ep1", "ep2"].forEach((id, i) => { const k = E.out(p(t, N.pills + i * 0.1, N.pills + 0.7 + i * 0.1)); set(id, { opacity: k, transform: `translateY(${(1 - k) * 26}px)` }); });
+  set("eglow", { opacity: E.out(p(t, 32, 33.5)) * (0.8 + 0.2 * Math.sin(t * 1.3)), transform: `scale(${lerp(0.8, 1.1, E.soft(p(t, 32, 38)))})` });
+}
+
+// Floods: an organic ink edge that covers the cut.
+const floodEls = TL.floods.map((f, i) => {
+  const g = $("floodg");
+  g.insertAdjacentHTML("beforeend", `<g id="fl${i}"><circle cx="${f.x}" cy="${f.y}" r="0" fill="${f.color}"/>${Array.from({ length: 9 }, () => `<circle r="0" fill="${f.color}"/>`).join("")}</g>`);
+  return $(`fl${i}`);
+});
+function renderFloods(t) {
+  let any = false;
+  TL.floods.forEach((f, i) => {
+    const on = t >= f.t0 && t < f.t1;
+    const el = floodEls[i];
+    el.style.display = on ? "" : "none";
+    if (!on) return;
+    any = true;
+    $("fturb").setAttribute("seed", f.seed);
+    const k = E.in(p(t, f.t0, f.t1)) * 0.35 + E.inOut(p(t, f.t0, f.t1)) * 0.65;
+    const R = k * 2350;
+    const cs = el.querySelectorAll("circle");
+    cs[0].setAttribute("r", R);
+    for (let j = 1; j < cs.length; j++) {
+      const a = (j / 9) * Math.PI * 2 + f.seed, r = (0.16 + rand(j + f.seed) * 0.1) * R * (j % 3 ? 1 : 0);
+      const d = R * (0.86 + rand(j * 3 + f.seed) * 0.08);
+      cs[j].setAttribute("cx", f.x + Math.cos(a) * d); cs[j].setAttribute("cy", f.y + Math.sin(a) * d); cs[j].setAttribute("r", r);
+    }
+    $("fdisp").setAttribute("scale", 50 + R * 0.05);
+  });
+  $("floods").style.display = any ? "" : "none";
+}
+
+window.render = (t) => {
+  const S = TL.scenes;
+  scene("hook", inside(t, S.hook)); scene("logo", inside(t, S.logo)); scene("app", inside(t, S.app)); scene("sum", inside(t, S.sum));
+  scene("priv", inside(t, S.priv)); scene("mcp", inside(t, S.mcp)); scene("end", inside(t, S.end));
+  if (shown.hook) renderHook(t);
+  if (shown.logo) renderLogo(t);
+  if (shown.app) renderApp(t); else $("cursor").style.display = "none";
+  if (shown.sum) renderSum(t);
+  if (shown.priv) renderPriv(t);
+  if (shown.mcp) renderMcp(t);
+  if (shown.end) renderEnd(t);
+  // The logo scene sits above the app during the lockup flight.
+  $("logo").style.zIndex = 3; $("app").style.zIndex = 2; $("sum").style.zIndex = 4;
+  $("logo").style.background = t > TL.logo.fly[0] ? "transparent" : "";
+  set("sum", { background: t < 16.0 ? "transparent" : "" });
+  renderFloods(t);
+  $("fade").style.opacity = E.inOut(p(t, TL.end.fade[0], TL.end.fade[1]));
+};
+render(Number(new URLSearchParams(location.search).get("t") || 0));
+</script>
+</body>
+</html>

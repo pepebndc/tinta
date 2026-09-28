@@ -1,0 +1,13 @@
+{
+  "name": "tinta-launch-video",
+  "private": true,
+  "description": "The Tinta launch video: animation, soundtrack, and renderer.",
+  "scripts": {
+    "build": "./build.sh",
+    "music": "node music.mjs",
+    "stills": "node render.mjs stills"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

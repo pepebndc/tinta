@@ -1,0 +1,7 @@
+node_modules/
+stills/
+seg/
+*.mp4
+*.wav
+*.jpg
+*.log
