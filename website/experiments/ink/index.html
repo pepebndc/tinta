@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Tinta: meeting notes on your Mac</title>
+  <meta name="robots" content="noindex">
+  <meta name="author" content="Pepe Blasco">
+  <meta name="description" content="Tinta is a free, open-source macOS app for meeting notes. Write your notes, get a transcript with speaker names, and keep everything on your own computer.">
+  <link rel="canonical" href="https://usetinta.com/experiments/ink/">
+  <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#191824" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Tinta">
+  <meta property="og:title" content="Tinta: meeting notes on your Mac">
+  <meta property="og:description" content="Write your notes, get a transcript with speaker names, and keep everything on your own computer.">
+  <meta property="og:url" content="https://usetinta.com/experiments/ink/">
+  <meta property="og:image" content="https://usetinta.com/experiments/ink/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Tinta: meeting notes on your Mac">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tinta: meeting notes on your Mac">
+  <meta name="twitter:description" content="Write your notes, get a transcript with speaker names, and keep everything on your own computer.">
+  <meta name="twitter:image" content="https://usetinta.com/experiments/ink/assets/og.png">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="intro-gate.js"></script>
+  <script src="main.js" defer></script>
+</head>
+<body id="top">
+  <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <path id="wm-1" class="wm-letter" d="M367 -834H410Q463 -929 506.0 -968.5Q549 -1008 604 -1008Q659 -1008 659 -983Q659 -971 616.0 -918.0Q573 -865 551 -829Q585 -825 611.5 -822.0Q638 -819 653 -817Q596 -711 510 -600Q482 -602 463.0 -603.5Q444 -605 424.5 -606.5Q405 -608 377 -610Q323 -523 286.5 -454.5Q250 -386 230.5 -329.0Q211 -272 211 -221Q211 -152 266 -152Q304 -152 365.5 -192.5Q427 -233 530 -317V-250Q260 43 131 43Q86 43 58.5 8.0Q31 -27 31 -82Q31 -119 46.5 -170.0Q62 -221 102 -324Q88 -312 75.5 -300.5Q63 -289 52.5 -279.5Q42 -270 30.0 -259.5Q18 -249 6 -238V-307Q111 -395 260 -616Q245 -617 232.0 -617.5Q219 -618 201 -618Q142 -618 113 -610Q101 -607 90.5 -603.5Q80 -600 76.0 -600.0Q72 -600 72 -606Q72 -639 113 -705Q146 -761 175.5 -788.0Q205 -815 247.5 -824.5Q290 -834 367 -834Z"/>
+      <path id="wm-2" class="wm-letter" d="M958.48 -762Q933.48 -762 910.98 -781.0Q888.48 -800 888.48 -829Q888.48 -873 930.48 -927.0Q972.48 -981 1017.48 -981Q1047.48 -981 1067.48 -962.5Q1087.48 -944 1087.48 -909Q1087.48 -866 1046.48 -814.0Q1005.48 -762 958.48 -762ZM1026.48 -315V-242Q929.48 -117 845.48 -53.5Q761.48 10 702.48 10Q620.48 10 580.48 -76.0Q540.48 -162 540.48 -264Q540.48 -303 548.48 -338.5Q556.48 -374 567.48 -397.0Q578.48 -420 608.48 -469Q750.48 -690 868.48 -690Q929.48 -690 929.48 -643Q929.48 -611 889.98 -543.0Q850.48 -475 819.48 -446Q732.48 -362 705.98 -329.0Q679.48 -296 679.48 -254Q679.48 -218 706.48 -194.0Q733.48 -170 776.48 -170Q823.48 -170 879.98 -204.5Q936.48 -239 1026.48 -315Z"/>
+      <path id="wm-3" class="wm-letter" d="M1711.96 -496Q1535.96 -300 1535.96 -223Q1535.96 -180 1570.96 -180Q1599.96 -180 1646.46 -210.5Q1692.96 -241 1791.96 -319V-250Q1649.96 -110 1573.96 -48.0Q1497.96 14 1449.96 14Q1367.96 14 1367.96 -94Q1367.96 -126 1377.96 -157.0Q1387.96 -188 1405.46 -221.5Q1422.96 -255 1458.96 -317.5Q1494.96 -380 1541.96 -459Q1484.96 -430 1398.96 -344Q1342.96 -290 1303.96 -241.5Q1264.96 -193 1220.46 -133.5Q1175.96 -74 1155.46 -53.5Q1134.96 -33 1113.96 -33Q1081.96 -33 1054.96 -100.0Q1027.96 -167 1027.96 -256Q1027.96 -311 1040.46 -342.0Q1052.96 -373 1089.96 -430Q1158.96 -536 1208.96 -585.5Q1258.96 -635 1304.96 -635Q1336.96 -635 1356.46 -624.0Q1375.96 -613 1375.96 -590Q1375.96 -580 1369.96 -569.0Q1363.96 -558 1356.46 -549.0Q1348.96 -540 1324.96 -514Q1166.96 -339 1166.96 -287Q1166.96 -258 1185.96 -258Q1197.96 -258 1232.46 -296.5Q1266.96 -335 1321.46 -397.5Q1375.96 -460 1450.46 -528.0Q1524.96 -596 1619.96 -659Q1672.96 -696 1707.96 -696Q1723.96 -696 1739.46 -652.0Q1754.96 -608 1754.96 -563Q1754.96 -541 1711.96 -496Z"/>
+      <path id="wm-4" class="wm-letter" d="M2157.44 -834H2200.44Q2253.44 -929 2296.44 -968.5Q2339.44 -1008 2394.44 -1008Q2449.44 -1008 2449.44 -983Q2449.44 -971 2406.44 -918.0Q2363.44 -865 2341.44 -829Q2375.44 -825 2401.94 -822.0Q2428.44 -819 2443.44 -817Q2386.44 -711 2300.44 -600Q2272.44 -602 2253.44 -603.5Q2234.44 -605 2214.94 -606.5Q2195.44 -608 2167.44 -610Q2113.44 -523 2076.94 -454.5Q2040.44 -386 2020.94 -329.0Q2001.44 -272 2001.44 -221Q2001.44 -152 2056.44 -152Q2094.44 -152 2155.94 -192.5Q2217.44 -233 2320.44 -317V-250Q2050.44 43 1921.44 43Q1876.44 43 1848.94 8.0Q1821.44 -27 1821.44 -82Q1821.44 -119 1836.94 -170.0Q1852.44 -221 1892.44 -324Q1878.44 -312 1865.94 -300.5Q1853.44 -289 1842.94 -279.5Q1832.44 -270 1820.44 -259.5Q1808.44 -249 1796.44 -238V-307Q1901.44 -395 2050.44 -616Q2035.44 -617 2022.44 -617.5Q2009.44 -618 1991.44 -618Q1932.44 -618 1903.44 -610Q1891.44 -607 1880.94 -603.5Q1870.44 -600 1866.44 -600.0Q1862.44 -600 1862.44 -606Q1862.44 -639 1903.44 -705Q1936.44 -761 1965.94 -788.0Q1995.44 -815 2037.94 -824.5Q2080.44 -834 2157.44 -834Z"/>
+      <path id="wm-5" class="wm-letter" d="M2455.92 -494Q2607.92 -632 2750.92 -699.0Q2893.92 -766 2971.92 -766Q2992.92 -766 3010.92 -748.5Q3028.92 -731 3039.42 -708.0Q3049.92 -685 3049.92 -674Q3049.92 -656 3035.92 -647.5Q3021.92 -639 2986.92 -627Q2993.92 -611 3004.92 -586.0Q3015.92 -561 3021.92 -545.5Q3027.92 -530 3027.92 -518Q3027.92 -494 2979.42 -428.5Q2930.92 -363 2911.42 -332.0Q2891.92 -301 2891.92 -256Q2891.92 -182 2959.92 -182Q3029.92 -182 3178.92 -313V-252Q2925.92 29 2816.92 29Q2777.92 29 2761.42 3.5Q2744.92 -22 2744.92 -72Q2744.92 -151 2801.92 -301Q2655.92 -139 2584.92 -70.5Q2513.92 -2 2467.92 -2Q2445.92 -2 2412.92 -40.0Q2379.92 -78 2354.42 -138.5Q2328.92 -199 2328.92 -264Q2328.92 -311 2337.92 -342.5Q2346.92 -374 2372.92 -407.0Q2398.92 -440 2455.92 -494ZM2934.92 -604Q2674.92 -485 2564.42 -402.0Q2453.92 -319 2453.92 -231Q2453.92 -199 2464.92 -178.5Q2475.92 -158 2494.92 -158Q2505.92 -158 2533.92 -172Q2638.92 -234 2725.92 -333.5Q2812.92 -433 2934.92 -604Z"/>
+      <g id="wordmark">
+        <g transform="rotate(-2 1592 -482)">
+          <use href="#wm-1"/><use href="#wm-2"/><use href="#wm-3"/><use href="#wm-4"/><use href="#wm-5"/>
+        </g>
+      </g>
+      <path id="mk-blot" d="M24 19C38 8 59 10 69 22C80 36 64 46 55 57C48 65 47 82 32 82C15 82 8 66 9 49C9 36 14 27 24 19Z"/>
+      <path id="mk-drop" d="M79 58C81 68 91 71 87 80C83 91 69 90 67 81C65 72 75 67 79 58Z"/>
+      <g id="mark">
+        <rect class="mk-square" x="100" y="100" width="824" height="824" rx="200"/>
+        <g class="mk-blot" transform="translate(212 212) scale(6)"><use href="#mk-blot"/><use href="#mk-drop"/></g>
+      </g>
+      <clipPath id="sq-clip"><rect x="100" y="100" width="824" height="824" rx="200"/></clipPath>
+    </defs>
+  </svg>
+
+  <a class="skip-link" href="#main">Skip to the content</a>
+
+  <div class="intro" aria-hidden="true">
+    <div class="intro-paper"></div>
+    <div class="intro-stage">
+      <div class="lockup intro-lockup">
+        <div class="intro-markwrap">
+          <svg class="lockup-mark intro-mark" viewBox="100 100 824 824" overflow="visible" focusable="false">
+            <g class="i-specks">
+              <circle class="i-speck i-speck-1" cx="236" cy="262" r="16"/>
+              <circle class="i-speck i-speck-2" cx="708" cy="232" r="11"/>
+              <circle class="i-speck i-speck-3" cx="262" cy="780" r="13"/>
+              <circle class="i-speck i-speck-4" cx="800" cy="430" r="8"/>
+            </g>
+            <g transform="translate(212 212) scale(6)">
+              <g class="i-blot"><use href="#mk-blot"/></g>
+              <g class="i-droplet"><use href="#mk-drop"/></g>
+            </g>
+            <rect class="i-outline" x="100" y="100" width="824" height="824" rx="200" pathLength="1"/>
+            <g clip-path="url(#sq-clip)"><g transform="translate(212 212) scale(6)"><g class="i-flood"><use href="#mk-blot"/></g></g></g>
+            <g class="i-paper" transform="translate(212 212) scale(6)"><use href="#mk-blot"/><use href="#mk-drop"/></g>
+          </svg>
+          <span class="intro-drop"><svg viewBox="0 0 24 30" focusable="false"><path d="M12 0C13 5 22 13 22 20A10 10 0 0 1 2 20C2 13 11 5 12 0Z"/></svg></span>
+        </div>
+        <svg class="lockup-word intro-word" viewBox="-76 -1090 3337 1215" focusable="false">
+          <g transform="rotate(-2 1592 -482)">
+            <use class="wm-l wm-l1" href="#wm-1"/>
+            <use class="wm-l wm-l2" href="#wm-2"/>
+            <use class="wm-l wm-l3" href="#wm-3"/>
+            <use class="wm-l wm-l4" href="#wm-4"/>
+            <use class="wm-l wm-l5" href="#wm-5"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <button class="intro-skip" type="button">Skip intro</button>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="Tinta, go to the top of the page">
+        <span class="lockup brand-lockup">
+          <svg class="lockup-mark" viewBox="100 100 824 824" aria-hidden="true" focusable="false"><use href="#mark"/></svg>
+          <svg class="lockup-word" viewBox="-76 -1090 3337 1215" aria-hidden="true" focusable="false"><use href="#wordmark"/></svg>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Sections">
+        <ul>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#privacy">Privacy</a></li>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#mcp">MCP</a></li>
+          <li><a href="#install">Install</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <a class="header-install" href="#install">Install</a>
+        <a class="btn btn-small btn-quiet" href="https://github.com/pepebndc/tinta">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-wash" aria-hidden="true"></div>
+      <svg class="hero-specks" viewBox="0 0 400 300" aria-hidden="true" focusable="false">
+        <circle cx="316" cy="28" r="4"/>
+        <circle cx="330" cy="40" r="2"/>
+        <circle cx="305" cy="43" r="1.4"/>
+        <circle cx="72" cy="192" r="3.4"/>
+        <circle cx="60" cy="205" r="1.7"/>
+      </svg>
+      <div class="container hero-inner">
+        <p class="eyebrow rise d1">
+          <span>Free and open source</span>
+          <span class="dot" aria-hidden="true"></span>
+          <span>For macOS</span>
+          <span class="dot dot-pill" aria-hidden="true"></span>
+          <span class="pill">Pilot, version 0.3.1</span>
+        </p>
+        <h1 id="hero-title" class="rise d2">Meeting notes. <span class="nowrap">On <span class="ink-under">your Mac.<svg class="ink-stroke" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path pathLength="1" d="M4 16C46 9 98 7 150 9C196 11 240 12 296 6"/></svg></span></span></h1>
+        <p class="subline rise d3">Write your notes, get a transcript with speaker names, and keep everything on your own computer.</p>
+        <div class="cta-row rise d4">
+          <a class="btn btn-primary" href="#install">Install</a>
+          <a class="btn btn-quiet" href="https://github.com/pepebndc/tinta">View on GitHub</a>
+        </div>
+        <p class="hero-meta rise d4">A Mac with Apple Silicon and macOS 14.2 or later. Tinta is a pilot in active development. Expect bugs and changes.</p>
+      </div>
+      <div class="container-wide hero-figure-wrap rise d5">
+        <p class="margin-note margin-note-hero" aria-hidden="true">
+          <span>Your notes on the left.<br>The transcript on the right.</span>
+          <svg viewBox="0 0 90 60" focusable="false"><path d="M4 6C30 4 58 14 70 36C74 43 76 49 77 55M77 55L68 47M77 55L84 45"/></svg>
+        </p>
+        <figure class="window hero-window">
+          <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/meeting-dark-960.webp 960w, assets/meeting-dark-1440.webp 1440w" sizes="(min-width: 1240px) 1160px, 94vw">
+            <img src="assets/meeting-1440.webp" srcset="assets/meeting-960.webp 960w, assets/meeting-1440.webp 1440w" sizes="(min-width: 1240px) 1160px, 94vw" width="1440" height="900" alt="A meeting in Tinta: a summary at the top, the notes on the left, and a transcript with speaker names on the right" fetchpriority="high" decoding="async">
+          </picture>
+        </figure>
+      </div>
+    </section>
+
+    <section id="features" class="section features" aria-labelledby="features-title">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="label">What Tinta does</p>
+          <h2 id="features-title">You write the notes. Tinta writes the transcript.</h2>
+          <p class="lead">Tinta has no chat and no cloud AI. The transcription, the speaker separation, and the summaries run on your Mac.</p>
+        </header>
+
+        <article class="spread reveal" aria-labelledby="f1">
+          <div class="spread-text">
+            <p class="num" aria-hidden="true">01</p>
+            <h3 id="f1">Notes and transcript, side by side</h3>
+            <p>Write your notes while the draft transcript appears next to them. To mark a moment, insert a timestamp with one click.</p>
+            <ul class="ticks">
+              <li>The live draft shows during the call.</li>
+              <li>After the call, Tinta processes the recording on your Mac and improves the text.</li>
+              <li>Your notes stay separate from the transcript.</li>
+            </ul>
+          </div>
+          <figure class="window spread-media">
+            <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <img src="assets/recording-1440.webp" srcset="assets/recording-960.webp 960w, assets/recording-1440.webp 1440w" sizes="(min-width: 1000px) 700px, 94vw" width="1440" height="900" loading="lazy" decoding="async" alt="A recording in Tinta: level meters at the top, the notes on the left, and a live draft of the transcript on the right">
+          </figure>
+        </article>
+
+        <article class="spread spread-flip reveal" aria-labelledby="f2">
+          <div class="spread-text">
+            <p class="num" aria-hidden="true">02</p>
+            <h3 id="f2">Speaker names</h3>
+            <p>Tinta separates the voices in the call. Then it gives each voice a name.</p>
+            <ul class="ticks">
+              <li><strong>Google Meet:</strong> a small Chrome extension reads who speaks.</li>
+              <li><strong>Zoom and Microsoft Teams:</strong> in the desktop apps, Tinta reads who speaks from the call window (beta).</li>
+              <li><strong>After the call:</strong> you can confirm, correct, merge, or split speakers.</li>
+            </ul>
+            <p class="speakers" aria-hidden="true">
+              <span class="sp sp-1">Alex Moreno</span>
+              <span class="sp sp-2">Morgan Lee</span>
+              <span class="sp sp-3">Sam Rivera</span>
+              <span class="sp sp-4">Sam Carter</span>
+            </p>
+          </div>
+          <figure class="spread-media popup-media">
+            <img class="popup" src="assets/extension-popup.webp" width="352" height="455" loading="lazy" decoding="async" alt="The Chrome extension popup during a recording, with the participants of the call and the active speaker">
+            <figcaption class="margin-note">The extension reads only names, who speaks, and the mute state.</figcaption>
+          </figure>
+        </article>
+
+        <article class="spread reveal" aria-labelledby="f3">
+          <div class="spread-text">
+            <p class="num" aria-hidden="true">03</p>
+            <h3 id="f3">Summaries, written on your Mac</h3>
+            <p>After a call, the Apple on-device model writes a summary from your notes and the transcript. Your notes show what is important to you, so the summary uses them.</p>
+            <ul class="ticks">
+              <li>An overview</li>
+              <li>Key points</li>
+              <li>Decisions</li>
+              <li>Action items</li>
+            </ul>
+            <p class="aside">Summaries need macOS 26 and Apple Intelligence. A summary can contain mistakes, so check it against the transcript.</p>
+          </div>
+          <figure class="window spread-media crop-media">
+            <div class="crop">
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/meeting-dark-960.webp 960w, assets/meeting-dark-1440.webp 1440w" sizes="(min-width: 1000px) 920px, 124vw">
+                <img src="assets/meeting-1440.webp" srcset="assets/meeting-960.webp 960w, assets/meeting-1440.webp 1440w" sizes="(min-width: 1000px) 920px, 124vw" width="1440" height="900" loading="lazy" decoding="async" alt="A summary in Tinta with an overview, key points, and action items">
+              </picture>
+            </div>
+          </figure>
+        </article>
+
+        <article class="spread spread-flip reveal" aria-labelledby="f4">
+          <div class="spread-text">
+            <p class="num" aria-hidden="true">04</p>
+            <h3 id="f4">Next meetings</h3>
+            <p>Tinta reads the calendars on your Mac and shows your meetings of the next 7 days. You do not sign in.</p>
+            <ul class="ticks">
+              <li>A reminder shows 1 minute before each call.</li>
+              <li>Click <strong>Join and take notes</strong>. Tinta opens the call, starts the recording, and opens the notes.</li>
+              <li>Meet opens in Chrome. Zoom and Teams open in their apps.</li>
+            </ul>
+            <p class="aside">Tinta must be open to show reminders. Tell everyone that you record.</p>
+          </div>
+          <figure class="window spread-media">
+            <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <img src="assets/home-1440.webp" srcset="assets/home-960.webp 960w, assets/home-1440.webp 1440w" sizes="(min-width: 1000px) 700px, 94vw" width="1440" height="900" loading="lazy" decoding="async" alt="Home in Tinta with a Google Meet call, the recent meetings, and the next meetings from the calendar">
+          </figure>
+        </article>
+
+        <div class="grid-head reveal">
+          <h3 class="grid-title">And also</h3>
+          <svg class="ink-rule" viewBox="0 0 600 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M2 7C120 3 240 9 360 6C450 4 530 5 598 7"/></svg>
+        </div>
+        <ul class="feature-grid">
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">05</p>
+            <h4>Local transcription</h4>
+            <p>Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.</p>
+          </li>
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">06</p>
+            <h4>Call detection</h4>
+            <p>Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, and offers to record them. It stops the recording 3 seconds after you leave.</p>
+          </li>
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">07</p>
+            <h4>Your library</h4>
+            <p>Search your meetings, and put them in folders and tags. Export to Markdown, JSON, SRT, and VTT.</p>
+          </li>
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">08</p>
+            <h4>Trash</h4>
+            <p>Deleted meetings stay in the trash for 7 days. In that time, you can restore them.</p>
+          </li>
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">09</p>
+            <h4>Import from Granola</h4>
+            <p>Bring your Granola export into Tinta, with the notes, the transcripts, and the speaker names.</p>
+          </li>
+          <li class="card reveal">
+            <p class="num" aria-hidden="true">10</p>
+            <h4>MCP server</h4>
+            <p>Connect Claude or another MCP client to your meetings when you choose to. You can undo every change. <a href="#mcp">Read about MCP</a>.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="privacy" class="section privacy" aria-labelledby="privacy-title">
+      <div class="container privacy-inner">
+        <header class="section-head reveal">
+          <p class="label">Privacy</p>
+          <h2 id="privacy-title">Everything stays on your Mac.</h2>
+          <p class="lead">Tinta has no server and no cloud service. After the one-time model download, it makes no network requests.</p>
+        </header>
+        <dl class="ledger reveal">
+          <div><dt>Processing</dt><dd>Transcription, speaker separation, and summaries run on your Mac.</dd></div>
+          <div><dt>Network</dt><dd>Tinta downloads the speech models once (about 500 MB). After that, it makes no network requests: no analytics, no crash reports, and no update checks.</dd></div>
+          <div><dt>Storage</dt><dd>SQLCipher encrypts the library. AES-GCM encrypts the audio. The key is in your macOS Keychain.</dd></div>
+          <div><dt>Audio</dt><dd>By default, Tinta deletes the audio 7 days after a meeting. In Settings, you can set 0 to 30 days.</dd></div>
+          <div><dt>Summaries</dt><dd>The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server.</dd></div>
+          <div><dt>Browser</dt><dd>The Meet extension reads only participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio.</dd></div>
+          <div><dt>Zoom and Teams</dt><dd>Tinta detects a call from the use of the microphone. With names from Zoom and Teams (beta), it reads the names and who speaks from the call window. It does not keep other text of the window.</dd></div>
+          <div><dt>MCP</dt><dd>MCP access is local, and you turn it on. An AI client that reads your meetings sends that content to its own model provider.</dd></div>
+        </dl>
+        <aside class="tell reveal" aria-label="Recording consent">
+          <svg class="tell-bracket" viewBox="0 0 16 120" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M13 3C6 4 5 10 6 30C7 48 4 56 2 60C4 64 7 72 6 90C5 110 6 116 13 117"/></svg>
+          <p><strong>Tinta does not tell other people in a call that you record.</strong> Always tell them.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="how" class="section how" aria-labelledby="how-title">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="label">How it works</p>
+          <h2 id="how-title">Five parts on one Mac.</h2>
+          <p class="lead">The helpers connect to the app over a private Unix socket. The app accepts only the signed helpers inside its own bundle.</p>
+        </header>
+        <figure class="diagram reveal" aria-labelledby="diagram-caption">
+          <div class="flows">
+            <div class="flow">
+              <div class="node node-source">
+                <span class="node-title">Microphone</span>
+                <span class="node-title">Meeting app audio</span>
+                <span class="node-title">Zoom and Teams windows</span>
+                <span class="node-note">Names and who speaks (beta)</span>
+              </div>
+              <span class="arrow" aria-hidden="true"></span><span class="sr-only">sends to</span>
+              <div class="node node-helper">
+                <span class="node-kicker">Engine</span>
+                <span class="node-title"><code>tinta-engine</code></span>
+                <span class="node-note">Swift. Capture, encrypted audio, and the speech models through FluidAudio.</span>
+              </div>
+              <span class="arrow arrow-app" aria-hidden="true"></span><span class="sr-only">sends to the app</span>
+            </div>
+            <div class="flow">
+              <div class="node node-source">
+                <span class="node-title">Chrome extension</span>
+                <span class="node-note">Meet participants and who speaks</span>
+              </div>
+              <span class="arrow" aria-hidden="true"></span><span class="sr-only">sends to</span>
+              <div class="node node-helper">
+                <span class="node-kicker">Native host</span>
+                <span class="node-title"><code>tinta-native-host</code></span>
+                <span class="node-note">Chrome Native Messaging</span>
+              </div>
+              <span class="arrow arrow-app" aria-hidden="true"></span><span class="sr-only">sends to the app</span>
+            </div>
+            <div class="flow">
+              <div class="node node-source">
+                <span class="node-title">MCP client</span>
+                <span class="node-note">Claude or another client</span>
+              </div>
+              <span class="arrow" aria-hidden="true"></span><span class="sr-only">sends to</span>
+              <div class="node node-helper">
+                <span class="node-kicker">MCP server</span>
+                <span class="node-title"><code>tinta-mcp</code></span>
+                <span class="node-note">MCP over stdio. It forwards tool calls to the app.</span>
+              </div>
+              <span class="arrow arrow-app" aria-hidden="true"></span><span class="sr-only">sends to the app</span>
+            </div>
+          </div>
+          <div class="node node-app">
+            <svg class="node-mark" viewBox="100 100 824 824" aria-hidden="true" focusable="false"><use href="#mark"/></svg>
+            <span class="node-kicker">App</span>
+            <span class="node-title">Tinta</span>
+            <span class="node-note">Tauri 2 and React. It owns the encrypted library, name matching, and audio retention.</span>
+          </div>
+          <figcaption id="diagram-caption" class="diagram-caption">The components of Tinta. All of them run on your Mac.</figcaption>
+        </figure>
+
+        <div class="models reveal">
+          <h3>Speech models</h3>
+          <table>
+            <caption class="sr-only">The speech models in Tinta</caption>
+            <thead><tr><th scope="col">Model</th><th scope="col">Use</th><th scope="col">License</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Parakeet TDT 0.6B v3</th><td>Transcription</td><td>CC-BY-4.0</td></tr>
+              <tr><th scope="row">Silero VAD</th><td>Voice activity</td><td>MIT</td></tr>
+              <tr><th scope="row">pyannote Community-1</th><td>Speaker separation</td><td>CC-BY-4.0</td></tr>
+            </tbody>
+          </table>
+          <p class="aside">The models download at pinned revisions. Tinta checks each file against its SHA-256 hash.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="mcp" class="section mcp" aria-labelledby="mcp-title">
+      <div class="container mcp-inner">
+        <header class="section-head reveal">
+          <p class="label">MCP</p>
+          <h2 id="mcp-title">Give your meetings to Claude, when you choose to.</h2>
+          <p class="lead">Tinta includes an MCP server. Open <strong>MCP</strong> in the sidebar, and turn on “Allow MCP clients to read and change meetings”.</p>
+        </header>
+        <div class="mcp-grid">
+          <div class="mcp-code reveal">
+            <div class="code">
+              <div class="code-head"><span>Claude Code</span><button class="copy" type="button" data-copy="cmd-claude-code">Copy</button></div>
+              <pre><code id="cmd-claude-code">claude mcp add tinta /Applications/Tinta.app/Contents/MacOS/tinta-mcp</code></pre>
+            </div>
+            <div class="code">
+              <div class="code-head"><span>Claude Desktop configuration</span><button class="copy" type="button" data-copy="cfg-claude-desktop">Copy</button></div>
+              <pre><code id="cfg-claude-desktop">{
+  "mcpServers": {
+    "tinta": { "command": "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" }
+  }
+}</code></pre>
+            </div>
+          </div>
+          <div class="mcp-text reveal">
+            <ul class="ticks">
+              <li>The tools can list, search, and read meetings, with the notes, the transcripts, and the summaries.</li>
+              <li>They can also change titles, tags, folders, notes, summaries, speaker names, and transcript text.</li>
+              <li>Tinta records every MCP change. On the <strong>MCP</strong> screen, you can undo each change.</li>
+              <li>Deletions through MCP go to the trash.</li>
+              <li>Tinta must be open.</li>
+            </ul>
+            <p class="warn">Meeting text can contain instructions from other people. Do not let an AI client act on them.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements" class="section requirements" aria-labelledby="req-title">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="label">Requirements</p>
+          <h2 id="req-title">What you need</h2>
+        </header>
+        <div class="req-grid reveal">
+          <div class="req-col">
+            <h3>For Tinta</h3>
+            <ul class="ticks">
+              <li>A Mac with Apple Silicon (M1 or newer) and macOS 14.2 or later. We recommend 16 GB of memory.</li>
+              <li>About 1 GB of free disk space for the app and the speech models.</li>
+            </ul>
+          </div>
+          <div class="req-col">
+            <h3>For some features</h3>
+            <ul class="ticks">
+              <li>Google Chrome, for speaker names on Google Meet.</li>
+              <li>The Zoom Workplace or Microsoft Teams desktop app, for Zoom or Teams calls. Tinta does not read Zoom or Teams calls in a browser.</li>
+              <li>macOS 26 or later with Apple Intelligence, for summaries.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="section install" aria-labelledby="install-title">
+      <div class="container install-inner">
+        <header class="section-head reveal">
+          <p class="label">Install</p>
+          <h2 id="install-title">Build Tinta from source</h2>
+          <p class="lead">Tinta has no signed download yet. You build it on your Mac.</p>
+        </header>
+        <ol class="steps">
+          <li class="reveal">
+            <p>Install the Xcode Command Line Tools, Rust, Node.js 20 or later, and pnpm. To install the Xcode Command Line Tools, run:</p>
+            <div class="code code-inline"><pre><code id="cmd-xcode">xcode-select --install</code></pre><button class="copy" type="button" data-copy="cmd-xcode" aria-label="Copy the Xcode command">Copy</button></div>
+          </li>
+          <li class="reveal">
+            <p>Clone the repository:</p>
+            <div class="code code-inline"><pre><code id="cmd-clone">git clone https://github.com/pepebndc/tinta.git &amp;&amp; cd tinta</code></pre><button class="copy" type="button" data-copy="cmd-clone" aria-label="Copy the clone command">Copy</button></div>
+          </li>
+          <li class="reveal">
+            <p>Build the app:</p>
+            <div class="code code-inline"><pre><code id="cmd-build">./scripts/build.sh</code></pre><button class="copy" type="button" data-copy="cmd-build" aria-label="Copy the build command">Copy</button></div>
+          </li>
+          <li class="reveal">
+            <p>Move <code>target/release/bundle/macos/Tinta.app</code> to your Applications folder.</p>
+          </li>
+          <li class="reveal">
+            <p>Open Tinta. macOS blocks apps without Apple notarization. Open System Settings, then Privacy &amp; Security, and click <strong>Open Anyway</strong>.</p>
+          </li>
+          <li class="reveal">
+            <p>If macOS asks whether Tinta can use its key in the Keychain, click <strong>Always Allow</strong>.</p>
+          </li>
+        </ol>
+        <p class="after-install reveal"><span class="margin-note">Then</span> the first-run setup guides you: your name, the speech models, the microphone, and the Chrome extension.</p>
+      </div>
+    </section>
+
+    <section id="faq" class="section faq" aria-labelledby="faq-title">
+      <div class="container faq-inner">
+        <header class="section-head reveal">
+          <p class="label">Questions</p>
+          <h2 id="faq-title">Questions and answers</h2>
+        </header>
+        <div class="faq-list reveal">
+          <details>
+            <summary>Is Tinta free?</summary>
+            <p>Yes. Tinta is free and open source, with the Apache-2.0 license.</p>
+          </details>
+          <details>
+            <summary>Does Tinta send my meetings to a server?</summary>
+            <p>No. Tinta processes and keeps everything on your Mac. After the one-time model download, it makes no network requests. If you connect an MCP client, that client sends what it reads to its own model provider.</p>
+          </details>
+          <details>
+            <summary>Which languages can Tinta transcribe?</summary>
+            <p>English, Spanish, and 23 other European languages. Tinta detects the language. Summaries support English, Spanish, and the other Apple Intelligence languages.</p>
+          </details>
+          <details>
+            <summary>Do I need Apple Intelligence?</summary>
+            <p>Only for summaries. Summaries need macOS 26 or later with Apple Intelligence turned on. Transcripts and speaker names work on macOS 14.2 or later.</p>
+          </details>
+          <details>
+            <summary>Can Tinta read Zoom or Teams calls in a browser?</summary>
+            <p>No. For Zoom and Teams, Tinta works with the desktop apps. For Google Meet, it works with Chrome and the Tinta extension.</p>
+          </details>
+          <details>
+            <summary>Why is there no download?</summary>
+            <p>The app has no Developer ID signature or Apple notarization yet. For now, you build it from source.</p>
+          </details>
+          <details>
+            <summary>Is Tinta ready for daily use?</summary>
+            <p>Tinta is a pilot. Expect rough edges, and export the meetings that matter. To report a bug or suggest an improvement, <a href="https://github.com/pepebndc/tinta/issues">open an issue on GitHub</a>.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="lockup footer-lockup" role="img" aria-label="Tinta">
+          <svg class="lockup-mark" viewBox="100 100 824 824" aria-hidden="true" focusable="false"><use href="#mark"/></svg>
+          <svg class="lockup-word" viewBox="-76 -1090 3337 1215" aria-hidden="true" focusable="false"><use href="#wordmark"/></svg>
+        </span>
+        <p>Meeting notes. On your Mac.</p>
+      </div>
+      <div class="footer-notes">
+        <p class="footer-tell"><strong>Always tell people that you record.</strong></p>
+        <p>Version 0.3.1. Tinta is a pilot in active development. Expect bugs and changes.</p>
+        <p>This page makes no requests to other servers.</p>
+        <p class="footer-credit">Created by <a href="https://github.com/pepebndc">Pepe Blasco</a>.</p>
+      </div>
+      <nav class="footer-links" aria-label="Project links">
+        <ul>
+          <li><a href="https://github.com/pepebndc/tinta">GitHub</a></li>
+          <li><a href="https://github.com/pepebndc/tinta/issues">Issues</a></li>
+          <li><a href="https://github.com/pepebndc/tinta/blob/main/LICENSE">Apache-2.0 license</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+  <p class="sr-only" aria-live="polite" id="live"></p>
+</body>
+</html>
