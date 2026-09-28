@@ -132,12 +132,21 @@ enum CoreAudioQuery {
         return NSRunningApplication(processIdentifier: responsible)?.bundleIdentifier ?? ""
     }
 
-    static func defaultOutputUID() -> String? {
-        let device = property(
-            AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultSystemOutputDevice,
+    static func defaultOutputDevice() -> AudioObjectID {
+        property(
+            AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultOutputDevice,
             AudioObjectID(kAudioObjectUnknown))
+    }
+
+    static func defaultOutputUID() -> String? {
+        let device = defaultOutputDevice()
         guard device != kAudioObjectUnknown else { return nil }
         return string(device, kAudioDevicePropertyDeviceUID)
+    }
+
+    static func nominalSampleRate(of device: AudioObjectID) -> Float64 {
+        guard device != kAudioObjectUnknown else { return 0 }
+        return property(device, kAudioDevicePropertyNominalSampleRate, Float64(0))
     }
 
     static func defaultInputName() -> String? {
@@ -173,6 +182,7 @@ final class ProcessTapCapture: @unchecked Sendable {
     private var tappedObjects: [AudioObjectID] = []
     private var tappedOutput: String?
     private var tappedFormat: AudioStreamBasicDescription?
+    private var tappedRate: Float64 = 0
     /// The last time the tap delivered sound, or the time of the build. `lock` protects it.
     private var lastSound = Date()
     private static let silenceLimit = 2.5
@@ -216,7 +226,9 @@ final class ProcessTapCapture: @unchecked Sendable {
             return
         }
         let output = CoreAudioQuery.defaultOutputUID()
-        if isCapturing && objects == tappedObjects && output == tappedOutput {
+        let device = CoreAudioQuery.defaultOutputDevice()
+        let deviceRate = CoreAudioQuery.nominalSampleRate(of: device)
+        if isCapturing && objects == tappedObjects && output == tappedOutput && deviceRate == tappedRate {
             lock.lock()
             let silent = Date().timeIntervalSince(lastSound)
             lock.unlock()
@@ -233,6 +245,7 @@ final class ProcessTapCapture: @unchecked Sendable {
             try build(objects: objects)
             tappedObjects = objects
             tappedOutput = output
+            tappedRate = deviceRate
             isCapturing = true
             if source != "all" {
                 let names = processes.map { $0.appBundleID.isEmpty ? $0.bundleID : "\($0.bundleID) (\($0.appBundleID))" }
@@ -280,10 +293,18 @@ final class ProcessTapCapture: @unchecked Sendable {
         guard status == noErr else { throw EngineError("AudioHardwareCreateAggregateDevice status \(status)") }
         aggregateID = device
 
-        guard var streamDescription = tapFormat(), let format = AVAudioFormat(streamDescription: &streamDescription) else {
+        guard var streamDescription = tapFormat() else {
             throw EngineError("no tap format")
         }
+        let rate = CoreAudioQuery.nominalSampleRate(of: aggregateID)
+        if rate > 0 {
+            streamDescription.mSampleRate = rate
+        }
+        guard let format = AVAudioFormat(streamDescription: &streamDescription) else {
+            throw EngineError("cannot create format for rate \(streamDescription.mSampleRate)")
+        }
         tappedFormat = streamDescription
+        tappedRate = rate
         lock.lock()
         lastSound = Date()
         lock.unlock()
@@ -321,7 +342,7 @@ final class ProcessTapCapture: @unchecked Sendable {
 
     private static func sameFormat(_ a: AudioStreamBasicDescription, _ b: AudioStreamBasicDescription?) -> Bool {
         guard let b else { return false }
-        return a.mSampleRate == b.mSampleRate && a.mChannelsPerFrame == b.mChannelsPerFrame
+        return a.mChannelsPerFrame == b.mChannelsPerFrame
             && a.mFormatID == b.mFormatID && a.mFormatFlags == b.mFormatFlags
     }
 
@@ -346,6 +367,7 @@ final class ProcessTapCapture: @unchecked Sendable {
         tappedObjects = []
         tappedOutput = nil
         tappedFormat = nil
+        tappedRate = 0
     }
 }
 

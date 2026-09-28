@@ -8,9 +8,7 @@ enum OutputRoute: String {
     case headphones
 
     static func current() -> OutputRoute {
-        let device = CoreAudioQuery.property(
-            AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultSystemOutputDevice,
-            AudioObjectID(kAudioObjectUnknown))
+        let device = CoreAudioQuery.defaultOutputDevice()
         guard device != kAudioObjectUnknown else { return .speakers }
         let transport = CoreAudioQuery.property(device, kAudioDevicePropertyTransportType, UInt32(0))
         switch transport {

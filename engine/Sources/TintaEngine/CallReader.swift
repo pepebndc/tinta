@@ -241,10 +241,13 @@ enum TeamsReader {
         return found ? snapshot : nil
     }
 
-    private static let contextMenuNotes = ["has context menu", "context menu is available"]
-    private static let selfMarker = "myself video"
+    private static let contextMenuNotes = [
+        "has context menu", "context menu is available",
+        "tiene menú contextual", "el menú contextual está disponible",
+    ]
+    private static let selfMarkers = ["myself video", "vídeo de mí mismo", "video de mi mismo"]
     /// Parts of a tile label that give a state, not a name.
-    private static let states = ["muted", "unmuted"]
+    private static let states = ["muted", "unmuted", "silenciado", "no silenciado"]
 
     /// The participant name of a tile label, and whether the tile shows the user.
     /// A name can contain a comma, as in "Blasco, Pepe", so the name is all the parts that are not a marker or a state.
@@ -252,7 +255,7 @@ enum TeamsReader {
         var parts = label.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let last = parts.last, contextMenuNotes.contains(last.lowercased()) else { return nil }
         parts.removeLast()
-        let isSelf = parts.first?.lowercased() == selfMarker
+        let isSelf = parts.first.map { selfMarkers.contains($0.lowercased()) } ?? false
         if isSelf { parts.removeFirst() }
         while let state = parts.last, states.contains(state.lowercased()) { parts.removeLast() }
         var name = parts.joined(separator: ", ")
