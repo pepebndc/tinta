@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 (2026-09-29)
+
+### Fixed
+- The Meet extension connects to Tinta again after an update, with no Chrome restart.
+
 ## 0.7.0 (2026-09-29)
 
 ### Added
