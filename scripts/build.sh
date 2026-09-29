@@ -23,6 +23,15 @@ echo "Building the app bundle"
 (cd "$root/app" && pnpm install --frozen-lockfile && pnpm tauri build)
 
 app="$root/target/release/bundle/macos/Tinta.app"
-codesign --force --deep --sign - "$app"
+# macOS keeps the permissions and the Keychain access of an app that has the same certificate in each build.
+# An ad hoc signature changes with each build, so macOS asks again after each update.
+identity="$(security find-identity -v -p codesigning | grep -i '"Tinta Local"' | awk '{print $2}' | head -1 || true)"
+if [[ -n "$identity" ]]; then
+  echo "Signing with the Tinta Local certificate"
+else
+  echo "Signing ad hoc. Make a \"Tinta Local\" code signing certificate to keep the permissions after updates."
+  identity="-"
+fi
+codesign --force --deep --sign "$identity" "$app"
 codesign --verify --strict --deep "$app"
 echo "Built: $app"

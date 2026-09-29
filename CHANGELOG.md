@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2 (2026-09-29)
+
+### Fixed
+- Updates keep the permissions for the microphone, the meeting audio, and the calendars, and the access to the Keychain key. Build Tinta with a "Tinta Local" code signing certificate to get this. The README tells you how to make the certificate.
+
 ## 0.7.1 (2026-09-29)
 
 ### Fixed

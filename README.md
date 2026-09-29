@@ -72,10 +72,15 @@ Tinta has no signed download yet. Build it from source:
 
 1. Install the Xcode Command Line Tools, Rust, Node.js 20 or later, and pnpm.
 2. Clone this repository.
-3. Run `./scripts/build.sh`.
-4. Move `target/release/bundle/macos/Tinta.app` to your Applications folder.
-5. Open Tinta. macOS blocks apps without Apple notarization. Open System Settings, then Privacy & Security, and click **Open Anyway**.
-6. If macOS asks whether Tinta can use its key in the Keychain, click **Always Allow**.
+3. Optional: make a code signing certificate with the name "Tinta Local". Without it, macOS asks again for the microphone, the meeting audio, the calendars, and the Keychain after each update.
+   1. Open Keychain Access. Click **Keychain Access > Certificate Assistant > Create a Certificate…**.
+   2. Set **Name** to `Tinta Local`, **Identity Type** to **Self-Signed Root**, and **Certificate Type** to **Code Signing**. Select **Let me override defaults**, and set **Validity Period (days)** to `3650`. Keep the defaults on the other screens.
+   3. In the **login** keychain, double-click the certificate. Under **Trust**, set **Code Signing** to **Always Trust**.
+   4. Run `security find-identity -v -p codesigning`. The output must show "Tinta Local".
+4. Run `./scripts/build.sh`. When macOS asks whether `codesign` can use the key of the certificate, click **Always Allow**.
+5. Move `target/release/bundle/macos/Tinta.app` to your Applications folder.
+6. Open Tinta. macOS blocks apps without Apple notarization. Open System Settings, then Privacy & Security, and click **Open Anyway**.
+7. If macOS asks whether Tinta can use its key in the Keychain, click **Always Allow**.
 
 ## Set up
 
