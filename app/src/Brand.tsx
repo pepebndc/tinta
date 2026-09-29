@@ -62,7 +62,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
   );
 }
 
-export function InkMark({ size = 32 }: { size?: number }) {
+export function InkMark({ size = 32 }: { size?: number | string }) {
   return (
     <span className="ink-icon" style={{ width: size, height: size }} aria-hidden="true">
       <svg viewBox="0 0 100 100">

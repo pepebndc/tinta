@@ -3,6 +3,7 @@ mod commands;
 mod engine;
 mod migrate;
 mod notify;
+mod overview;
 mod socket;
 mod system;
 
@@ -948,6 +949,7 @@ pub fn run() {
             if let Ok(resources) = tauri::Manager::path(app).resource_dir() {
                 system::update_extension(&resources.join("extension"));
             }
+            overview::watch();
             Ok(())
         })
         .invoke_handler(commands::handler())

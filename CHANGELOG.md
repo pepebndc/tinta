@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0 (2026-09-29)
+
+### Added
+- In Mission Control, the Tinta window shows the Tinta logo and "Tinta is here!" in big letters. This helps you find Tinta between the windows of your other apps. The usual view comes back when Mission Control closes.
+
 ## 0.6.0 (2026-09-28)
 
 ### Changed
