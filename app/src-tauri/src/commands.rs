@@ -41,6 +41,7 @@ async fn bootstrap() -> CommandResult<Value> {
                 "audio_retention_days": db.audio_retention_days().map_err(err)?,
                 "call_reading": setting("call_reading", "false") == "true",
                 "meeting_reminders": setting("meeting_reminders", "true") == "true",
+                "call_browser": setting("call_browser", system::DEFAULT_BROWSER),
             })
         };
         // The app takes the locks one at a time.
@@ -70,7 +71,7 @@ async fn bootstrap() -> CommandResult<Value> {
 async fn set_setting(key: String, value: String) -> CommandResult<()> {
     let allowed = [
         "self_name", "mcp_enabled", "last_source", "theme", "onboarded", "auto_stop", "auto_summary", "call_reading",
-        "meeting_reminders",
+        "meeting_reminders", "call_browser",
     ];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
@@ -115,6 +116,12 @@ async fn request_calendar() -> CommandResult<Value> {
 #[tauri::command]
 async fn set_calendar_hidden(calendar_id: String, hidden: bool) -> CommandResult<()> {
     state().set_calendar_hidden(&calendar_id, hidden).map_err(err)
+}
+
+/// The browsers on this Mac, and the default browser, for the browser of call links.
+#[tauri::command]
+async fn list_browsers() -> CommandResult<Value> {
+    blocking(|| Ok(json!({"browsers": system::browsers(), "default": system::default_browser()}))).await
 }
 
 /// Opens the meeting of a calendar event and returns its ID. With `join`, it also joins the call and records it.
@@ -267,6 +274,12 @@ async fn start_recording(id: String, source: String) -> CommandResult<Value> {
 #[tauri::command]
 async fn pause_recording(paused: bool) -> CommandResult<()> {
     blocking(move || state().set_paused(paused).map_err(err)).await
+}
+
+/// Mutes or unmutes the microphone of the recording. It overrides the mute state of the call app until the next change there.
+#[tauri::command]
+async fn set_mic_muted(muted: bool) -> CommandResult<()> {
+    blocking(move || state().set_mic_muted(muted, tinta_core::now_ms(), true).map_err(err)).await
 }
 
 #[tauri::command]
@@ -607,6 +620,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         request_calendar,
         set_calendar_hidden,
         open_event,
+        list_browsers,
+        set_mic_muted,
         save_call_report,
         list_sources,
         list_meetings,

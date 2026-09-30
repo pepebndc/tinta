@@ -6,6 +6,7 @@ import { MeetingList, Notice, pressable, tagList } from "./MeetingList";
 import { Mcp, Settings, Trash } from "./Settings";
 import { CloseButton, CopyButton, Icon, Lockup } from "./Brand";
 import { Home } from "./Home";
+import { CallNotice } from "./NextMeetings";
 import { GranolaImport } from "./GranolaImport";
 import { Onboarding } from "./Onboarding";
 import { setTheme } from "./theme";
@@ -328,6 +329,16 @@ export function App() {
           </ul>
         ) : (
           <>
+            <CallNotice
+              calendar={calendar}
+              meetings={meetings}
+              active={active}
+              extension={extension}
+              ready={boot?.models_installed ?? false}
+              busy={creating}
+              onOpenEvent={openEvent}
+              onRecord={(eventId) => void recordCall("com.google.Chrome", eventId)}
+            />
             <MeetingList
               meetings={meetings}
               loaded={loaded}

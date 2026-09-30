@@ -241,6 +241,15 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
     }
   }
 
+  async function mute(muted: boolean) {
+    try {
+      await api.setMicMuted(muted);
+      if (active) onActive({ ...active, mic_muted: muted, mic_muted_by_user: true });
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
   if (!detail) return <MeetingSkeleton />;
   const m = detail.meeting;
   const ready = m.state === "ready";
@@ -348,7 +357,7 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
       )}
 
       {recordingHere && active && (
-        <RecordingPanel active={active} callApp={callApp} stopping={busy === "stopping"} onPause={pause} onStop={stop} />
+        <RecordingPanel active={active} callApp={callApp} stopping={busy === "stopping"} onPause={pause} onMute={mute} onStop={stop} />
       )}
 
       {saving && <section className="panel quiet-panel">Saving the recording…</section>}
@@ -434,14 +443,16 @@ function MeetingSkeleton() {
 }
 
 /** The recording controls. The clock and the level meters update here, so the transcript does not render again. */
-function RecordingPanel({ active, callApp, stopping, onPause, onStop }: { active: Active; callApp: string; stopping: boolean; onPause: (paused: boolean) => void; onStop: () => void }) {
+function RecordingPanel({ active, callApp, stopping, onPause, onMute, onStop }: { active: Active; callApp: string; stopping: boolean; onPause: (paused: boolean) => void; onMute: (muted: boolean) => void; onStop: () => void }) {
   const [now, setNow] = useState(Date.now());
-  const [levels, setLevels] = useState({ mic: 0, remote: 0, capturing: false, micMuted: false });
+  const [levels, setLevels] = useState({ mic: 0, remote: 0, capturing: false });
+  const muted = active.mic_muted;
+  const micLabel = !muted ? "Microphone" : active.mic_muted_by_user ? "Microphone (muted)" : `Microphone (muted in ${callApp})`;
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 1000);
     const sub = on<EngineEvent>("engine", (e) => {
       if (e.event !== "levels") return;
-      setLevels({ mic: Number(e.mic), remote: Number(e.remote), capturing: Boolean(e.remote_capturing), micMuted: Boolean(e.mic_muted) });
+      setLevels({ mic: Number(e.mic), remote: Number(e.remote), capturing: Boolean(e.remote_capturing) });
     });
     return () => {
       clearInterval(tick);
@@ -453,7 +464,17 @@ function RecordingPanel({ active, callApp, stopping, onPause, onStop }: { active
       <div className="row">
         <span className={`rec-dot big ${active.paused ? "paused" : ""}`} /> <strong>{active.paused ? "Paused" : "Recording"}</strong>
         <span className="timer">{clock((now - active.start_wall_ms) / 1000)}</span>
-        <Meter label={levels.micMuted ? `Microphone (muted in ${callApp})` : "Microphone"} value={levels.mic} />
+        <button
+          className={`icon-button mic-toggle ${muted ? "muted" : ""}`}
+          onClick={() => onMute(!muted)}
+          disabled={stopping}
+          aria-pressed={muted}
+          aria-label={muted ? "Unmute the microphone" : "Mute the microphone"}
+          title={muted ? "Record the microphone again" : "Do not record the microphone"}
+        >
+          <Icon name={muted ? "mic-off" : "mic"} size={15} />
+        </button>
+        <Meter label={micLabel} value={muted ? 0 : levels.mic} />
         <Meter label={levels.capturing ? "Meeting audio" : "Meeting audio (no sound yet)"} value={levels.remote} />
         <button onClick={() => onPause(!active.paused)} disabled={stopping}>
           {active.paused ? "Resume" : "Pause"}
@@ -462,7 +483,13 @@ function RecordingPanel({ active, callApp, stopping, onPause, onStop }: { active
           {stopping ? "Stopping…" : "Stop"}
         </button>
       </div>
-      {levels.micMuted && <div className="small muted">Your microphone is muted in {callApp}. Tinta does not record it until you unmute.</div>}
+      {muted && (
+        <div className="small muted">
+          {active.mic_muted_by_user
+            ? "Tinta does not record your microphone. Click the microphone button to record it again."
+            : `Your microphone is muted in ${callApp}. Tinta does not record it until you unmute. To record it now, click the microphone button.`}
+        </div>
+      )}
       {!levels.capturing && <div className="warn small">Tinta starts to capture the meeting audio when the app plays sound.</div>}
     </section>
   );

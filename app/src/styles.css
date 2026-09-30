@@ -212,6 +212,13 @@ input, select, textarea {
 .folder-title { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-name-input { flex: 1; min-width: 0; font-size: 12px; padding: 3px 7px; }
 .item .state-failed { color: var(--record); }
+/* The notice for a meeting that starts soon, above the meeting list. */
+.call-notice { display: flex; flex-direction: column; gap: 4px; margin: 0 2px 12px; padding: 10px 10px 12px; border: 1px solid var(--accent); border-radius: 9px; background: var(--panel); box-shadow: 0 0 0 3px var(--soft); }
+.call-notice.now .eyebrow { color: var(--ink); }
+.call-notice-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.call-notice-head .bar-icon { padding: 2px; margin: -2px -4px -2px 0; }
+.call-notice .call-notice-title { font-size: 13px; font-weight: 550; text-align: left; padding: 0; justify-content: flex-start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.call-notice .primary { margin-top: 6px; font-size: 12px; padding: 5px 12px; }
 .empty-list { padding: 10px; font-size: 12px; color: var(--muted); }
 .sidebar-nav { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 2px; }
 .sidebar-nav button { justify-content: flex-start; }
@@ -420,6 +427,8 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 .rec-dot.paused { animation: none; opacity: 0.5; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 /* The meters shrink on narrow windows, so Pause and Stop stay on the row. */
+.mic-toggle { flex-shrink: 0; }
+.mic-toggle.muted { color: var(--record); border-color: var(--record); background: var(--record-soft); }
 .meter { flex: 1 1 110px; min-width: 90px; max-width: 170px; }
 .meter .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meter-bar { height: 5px; background: var(--back); border-radius: 3px; overflow: hidden; margin-top: 4px; }

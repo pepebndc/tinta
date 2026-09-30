@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-type IconName = "home" | "document" | "search" | "export" | "lock" | "trash" | "settings" | "activity" | "import" | "plus" | "mic" | "users" | "close" | "copy" | "check" | "more" | "folder" | "chevron";
+type IconName = "home" | "document" | "search" | "export" | "lock" | "trash" | "settings" | "activity" | "import" | "plus" | "mic" | "mic-off" | "users" | "close" | "copy" | "check" | "more" | "folder" | "chevron";
 
 const PATHS: Record<IconName, string[]> = {
   home: ["M4 11l8-7 8 7", "M6 9.5V20h12V9.5", "M10 20v-5h4v5"],
@@ -14,6 +14,7 @@ const PATHS: Record<IconName, string[]> = {
   import: ["M12 3v12", "m8 11 4 4 4-4", "M5 13v7h14v-7"],
   plus: ["M12 5v14", "M5 12h14"],
   mic: ["M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z", "M6 11a6 6 0 0 0 12 0", "M12 17v4"],
+  "mic-off": ["M15 10V6a3 3 0 0 0-5.7-1.3", "M9 9v2a3 3 0 0 0 4.6 2.5", "M6 11a6 6 0 0 0 9.7 4.7", "M18 11a6 6 0 0 1-.4 2.1", "M12 17v4", "M4 4l16 16"],
   close: ["M6 6l12 12", "M18 6L6 18"],
   copy: ["M9 9h11v11H9z", "M5 15H4V4h11v1"],
   check: ["m5 12 5 5 9-10"],

@@ -33,6 +33,10 @@ pub struct Active {
     pub meeting_code: Option<String>,
     /// The desktop app call of this recording, by the app bundle ID. It is the same as `source`.
     pub app_call: Option<String>,
+    /// True when Tinta does not record the microphone. The last change wins: a change in the call app or a click in Tinta.
+    pub mic_muted: bool,
+    /// True when the user set `mic_muted` in Tinta, false when the call app set it.
+    pub mic_muted_by_user: bool,
 }
 
 /// A call in a desktop meeting app, such as Zoom or Microsoft Teams. The engine detects it from the audio of the app.
@@ -227,10 +231,9 @@ impl AppState {
         }
         let mut params = self.audio_params(id);
         params["source"] = json!(source);
-        params["mic_muted"] = json!(
-            (extension.meeting_code.is_some() && extension.mic_muted == Some(true))
-                || call.as_ref().map(|c| c.mic_muted == Some(true)).unwrap_or(false)
-        );
+        let mic_muted = (extension.meeting_code.is_some() && extension.mic_muted == Some(true))
+            || call.as_ref().map(|c| c.mic_muted == Some(true)).unwrap_or(false);
+        params["mic_muted"] = json!(mic_muted);
         let result = self.engine.call("start", params, Duration::from_secs(60))?;
         let start_wall_ms = result["start_wall_ms"].as_i64().unwrap_or_else(now_ms);
         {
@@ -256,6 +259,8 @@ impl AppState {
             source: source.to_string(),
             meeting_code: extension.meeting_code.clone(),
             app_call,
+            mic_muted,
+            mic_muted_by_user: false,
         };
         *self.active.lock().unwrap() = Some(active.clone());
         self.meeting_changed(id);
@@ -273,6 +278,20 @@ impl AppState {
             current.paused = paused;
             self.emit("recording", json!(current.clone()));
         }
+        Ok(())
+    }
+
+    /// Mutes or unmutes the microphone of the recording from `t`. The user or the call app can change it,
+    /// and the last change wins. The engine reader thread must not call this, because it waits for the engine.
+    pub fn set_mic_muted(&self, muted: bool, t: i64, by_user: bool) -> Result<()> {
+        {
+            let mut active = self.active.lock().unwrap();
+            let Some(current) = active.as_mut() else { bail!("no recording is active") };
+            current.mic_muted = muted;
+            current.mic_muted_by_user = by_user;
+            self.emit("recording", json!(current.clone()));
+        }
+        self.engine.call("mic_muted", json!({"muted": muted, "t": t}), Duration::from_secs(5))?;
         Ok(())
     }
 
@@ -423,7 +442,7 @@ impl AppState {
 
     /// The participants, the active speaker, and the microphone state that the engine reads from the app.
     /// The engine sends the state when it changes, and every few seconds.
-    fn on_call_state(&self, app: &str, event: &Value) {
+    fn on_call_state(self: &Arc<Self>, app: &str, event: &Value) {
         let t = event["t"].as_i64().unwrap_or_else(now_ms);
         let mut participants = parse_participants(&event["participants"]);
         mark_self(&mut participants, &self.self_name());
@@ -452,9 +471,9 @@ impl AppState {
         }
         if let Some(muted) = muted.filter(|m| Some(*m) != muted_before) {
             // This runs on the engine reader thread, which must stay free to read the reply.
-            let engine = self.engine.clone();
+            let state = self.clone();
             std::thread::spawn(move || {
-                let _ = engine.call("mic_muted", json!({"muted": muted, "t": t}), Duration::from_secs(5));
+                let _ = state.set_mic_muted(muted, t, false);
             });
         }
     }
@@ -691,7 +710,7 @@ impl AppState {
         }
         if let Some(active) = active.as_ref().filter(|a| a.meeting_code.is_some() && a.meeting_code == code) {
             if let Some(muted) = mute_change {
-                let _ = self.engine.call("mic_muted", json!({"muted": muted, "t": t}), Duration::from_secs(5));
+                let _ = self.set_mic_muted(muted, t, false);
             }
             if let Some(code) = &ended {
                 let left_at = message["left_at"].as_i64().unwrap_or(t).min(now_ms());

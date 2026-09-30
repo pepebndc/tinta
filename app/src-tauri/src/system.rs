@@ -173,20 +173,62 @@ pub fn trusted_peer(path: &Path) -> bool {
     valid
 }
 
+/// The value of the `call_browser` setting that selects the default browser of macOS.
+pub const DEFAULT_BROWSER: &str = "default";
+
+/// A browser that can open call links.
+#[derive(serde::Serialize)]
+pub struct Browser {
+    /// The bundle ID.
+    pub id: String,
+    pub name: String,
+}
+
+fn browser_at(url: &objc2_foundation::NSURL) -> Option<Browser> {
+    let id = objc2_foundation::NSBundle::bundleWithURL(url)?.bundleIdentifier()?.to_string();
+    let path = PathBuf::from(url.path()?.to_string());
+    let name = path.file_stem()?.to_string_lossy().into_owned();
+    Some(Browser { id, name })
+}
+
+fn https_url() -> objc2::rc::Retained<objc2_foundation::NSURL> {
+    objc2_foundation::NSURL::URLWithString(&objc2_foundation::NSString::from_str("https://")).expect("a valid URL")
+}
+
+/// The default browser of macOS.
+pub fn default_browser() -> Option<Browser> {
+    let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+    let url = workspace.URLForApplicationToOpenURL(&https_url())?;
+    browser_at(&url)
+}
+
+/// The apps on this Mac that open web links, sorted by name.
+pub fn browsers() -> Vec<Browser> {
+    let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+    let mut browsers: Vec<Browser> = Vec::new();
+    for url in workspace.URLsForApplicationsToOpenURL(&https_url()).iter() {
+        if let Some(browser) = browser_at(&url).filter(|b| !browsers.iter().any(|o| o.id == b.id)) {
+            browsers.push(browser);
+        }
+    }
+    browsers.sort_by_key(|b| b.name.to_lowercase());
+    browsers
+}
+
 /// Opens a call link and returns the recording source for the call. Zoom and Microsoft Teams calls open in their
-/// desktop apps when the apps are installed. Other calls open in Chrome, or in the default browser without Chrome.
-pub fn open_call(link: &tinta_core::calendar::Link) -> String {
+/// desktop apps when the apps are installed. Other calls open in `browser`, a bundle ID or [`DEFAULT_BROWSER`].
+/// A browser that is not installed now gives the default browser. A browser call records all system audio,
+/// because some browsers play the call audio in other processes.
+pub fn open_call(link: &tinta_core::calendar::Link, browser: &str) -> String {
     let open = |args: &[&str]| Command::new("/usr/bin/open").args(args).status().map(|s| s.success()).unwrap_or(false);
     if let (Some(url), Some(bundle)) = (link.app_url(), link.app_bundle()) {
         if open(&["-b", bundle, &url]) {
             return bundle.to_string();
         }
     }
-    if open(&["-b", "com.google.Chrome", &link.url]) {
-        return "com.google.Chrome".to_string();
+    if browser == DEFAULT_BROWSER || !open(&["-b", browser, &link.url]) {
+        let _ = open(&[&link.url]);
     }
-    let _ = open(&[&link.url]);
-    // The default browser is not known, so the recording takes all system audio.
     "all".to_string()
 }
 

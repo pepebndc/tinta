@@ -1,4 +1,6 @@
-import { CalendarEvent, CalendarState, Meeting, PLATFORM_NAMES } from "./api";
+import { useEffect, useState } from "react";
+import { Active, CalendarEvent, CalendarState, ExtensionState, Meeting, PLATFORM_NAMES } from "./api";
+import { CloseButton } from "./Brand";
 
 /** The number of events that the card shows. */
 const SHOWN = 8;
@@ -127,5 +129,77 @@ export function NextMeetings({ calendar, meetings, now, busy, onJoin, onNotes, o
       ))}
       {more > 0 && <p className="small muted">{more === 1 ? "1 more meeting" : `${more} more meetings`} in the next 7 days.</p>}
     </section>
+  );
+}
+
+type NoticeProps = {
+  calendar: CalendarState;
+  meetings: Meeting[];
+  active: Active | null;
+  extension: ExtensionState | null;
+  /** True when the speech models are installed. */
+  ready: boolean;
+  /** A new meeting or a recording is starting. */
+  busy: boolean;
+  /** Opens the meeting of the event. With `join`, Tinta also joins the call and records it. */
+  onOpenEvent: (eventId: string, join: boolean) => void;
+  /** Records the Meet call that the user is in. */
+  onRecord: (eventId: string) => void;
+};
+
+/**
+ * A notice above the meeting list for a meeting with a call link that starts soon or runs now.
+ * A meeting that the user records gets no notice. In the Meet call of the meeting, the notice offers only to record.
+ * During the recording of a Meet call, the notice of that call does not show.
+ */
+export function CallNotice({ calendar, meetings, active, extension, ready, busy, onOpenEvent, onRecord }: NoticeProps) {
+  const [now, setNow] = useState(Date.now());
+  const [closed, setClosed] = useState<string[]>([]);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const event = calendar.events.find(
+    (e) =>
+      e.link &&
+      e.start - now <= JOIN_BEFORE_MS &&
+      e.end > now &&
+      !closed.includes(e.id) &&
+      !recorded(e, meetings) &&
+      !(active && active.meeting_id === e.meeting_id),
+  );
+  if (!event?.link) return null;
+  const live = !!extension?.last_seen && now - extension.last_seen < 30_000;
+  const inCall = live && !!event.link.code && extension?.meeting_code === event.link.code;
+  // The user is in the call and Tinta records it.
+  if (inCall && active) return null;
+  const action = inCall
+    ? { label: "Record", run: () => onRecord(event.id) }
+    : active
+      ? { label: "Join", run: () => onOpenEvent(event.id, true) }
+      : { label: "Join and record", run: () => onOpenEvent(event.id, true) };
+
+  return (
+    <div className={`call-notice ${event.start <= now ? "now" : ""}`} role="status">
+      <div className="call-notice-head">
+        <span className="eyebrow">
+          {startsIn(event, now)} · {PLATFORM_NAMES[event.link.platform]}
+        </span>
+        <CloseButton onClick={() => setClosed([...closed, event.id])} />
+      </div>
+      <button className="quiet call-notice-title" onClick={() => onOpenEvent(event.id, false)} disabled={busy} title="Open the notes of this meeting">
+        {event.title || "Untitled meeting"}
+      </button>
+      <div className="small muted">{inCall ? "You are in the call." : timeRange(event)}</div>
+      <button
+        className="primary"
+        disabled={!ready || busy}
+        onClick={action.run}
+        title={ready ? "Tell everyone that you record the call." : "Install the speech models first"}
+      >
+        {busy ? "Starting…" : action.label}
+      </button>
+    </div>
   );
 }

@@ -90,6 +90,10 @@ export type Active = {
   source: string;
   meeting_code: string | null;
   app_call: string | null;
+  /** True when Tinta does not record the microphone. */
+  mic_muted: boolean;
+  /** True when the user muted or unmuted in Tinta, false when the call app did. */
+  mic_muted_by_user: boolean;
 };
 
 /**
@@ -153,6 +157,8 @@ export type Bootstrap = {
   call_reading: boolean;
   /** Show a reminder when a meeting with a call link starts. */
   meeting_reminders: boolean;
+  /** The bundle ID of the browser for call links, or "default" for the default browser of macOS. */
+  call_browser: string;
   accessibility: boolean;
   summaries: { available: boolean; reason?: string };
   filevault: boolean;
@@ -171,6 +177,8 @@ export type Bootstrap = {
 /** The first line of the summary and the other people of a meeting, for the cards on Home. */
 export type Preview = { summary: string | null; people: string[] };
 
+/** An app on this Mac that opens web links. The ID is the bundle ID. */
+export type Browser = { id: string; name: string };
 export type Source = { id: string; name: string; playing: boolean };
 export type SearchHit = { meeting_id: string; title: string; kind: string; snippet: string };
 export type Revision = {
@@ -206,6 +214,7 @@ export const api = {
   setCalendarHidden: (calendarId: string, hidden: boolean) => invoke<void>("set_calendar_hidden", { calendarId, hidden }),
   /** Opens the meeting of a calendar event and returns its ID. With `join`, Tinta also joins the call and records it. */
   openEvent: (id: string, join: boolean) => invoke<string>("open_event", { id, join }),
+  listBrowsers: () => invoke<{ browsers: Browser[]; default: Browser | null }>("list_browsers"),
   saveCallReport: (app: string, path: string) => invoke<void>("save_call_report", { app, path }),
   listSources: () => invoke<{ sources: Source[]; default_input: string; route: "speakers" | "headphones" }>("list_sources"),
   /** All meetings that are not in the trash, archived meetings too. */
@@ -222,6 +231,8 @@ export const api = {
   setArchived: (id: string, archived: boolean) => invoke<void>("set_archived", { id, archived }),
   startRecording: (id: string, source: string) => invoke<Active>("start_recording", { id, source }),
   pauseRecording: (paused: boolean) => invoke<void>("pause_recording", { paused }),
+  /** Mutes or unmutes the microphone of the recording, until the next mute change in the call app. */
+  setMicMuted: (muted: boolean) => invoke<void>("set_mic_muted", { muted }),
   stopRecording: () => invoke<string>("stop_recording"),
   runFinalPass: (id: string, language: string | null) => invoke<void>("run_final_pass", { id, language }),
   importRecording: (path: string) => invoke<Meeting>("import_recording", { path }),

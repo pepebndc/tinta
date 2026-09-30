@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Access, McpTool, allowMicrophone, api, AppCall, Bootstrap, bytes, CalendarState, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
+import { Access, McpTool, allowMicrophone, api, AppCall, Bootstrap, Browser, bytes, CalendarState, dateTime, Meeting, on, RETENTION_DAYS, Revision, StorageUsage } from "./api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { setTheme, ThemeChoice } from "./theme";
@@ -31,6 +31,11 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
   const [moving, setMoving] = useState(false);
   const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [browsers, setBrowsers] = useState<{ browsers: Browser[]; default: Browser | null } | null>(null);
+
+  useEffect(() => {
+    api.listBrowsers().then(setBrowsers).catch((e) => onError(String(e)));
+  }, []);
 
   // The version comes from the app bundle. The design preview has no bundle, so it shows the package version.
   useEffect(() => {
@@ -218,7 +223,10 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
 
       <section className="panel">
         <h3>Google Meet extension</h3>
-        <p className="small muted">When you mute your microphone in Meet, Tinta does not record it.</p>
+        <p className="small muted">
+          When you mute your microphone in Meet, Tinta does not record it. To change this during a recording, click the microphone
+          button.
+        </p>
         {boot.extension.connected_at ? (
           <p>The extension is connected.</p>
         ) : (
@@ -257,8 +265,32 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
             Remind me 1 minute before a meeting with a call link starts
           </label>
           <p className="small muted">
-            Click the reminder to join the call. Tinta opens Google Meet in Chrome, and Zoom and Microsoft Teams in their apps. It
-            starts the recording and opens your notes. Tinta must be open to show reminders.
+            Click the reminder to join the call. Tinta opens Zoom and Microsoft Teams in their apps, and other calls in the browser
+            below. It starts the recording and opens your notes. Tinta must be open to show reminders.
+          </p>
+        </section>
+      )}
+
+      {calendar.access === "granted" && (
+        <section className="panel">
+          <h3>Browser for calls</h3>
+          <label>
+            Open Google Meet and Webex calls in{" "}
+            <select value={boot.call_browser} onChange={(e) => set("call_browser", e.target.value)} aria-label="Browser for calls">
+              <option value="default">{browsers?.default ? `The default browser (${browsers.default.name})` : "The default browser"}</option>
+              {browsers?.browsers.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+              {browsers && boot.call_browser !== "default" && !browsers.browsers.some((b) => b.id === boot.call_browser) && (
+                <option value={boot.call_browser}>{boot.call_browser} (not installed)</option>
+              )}
+            </select>
+          </label>
+          <p className="small muted">
+            Tinta uses this browser when you join from a reminder or from the list of meetings. Speaker names from Google Meet
+            need the Meet extension, which works in Google Chrome.
           </p>
         </section>
       )}

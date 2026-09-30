@@ -106,7 +106,7 @@ impl AppState {
             self.withdraw_reminder(&event.id);
         }
         if let Some(link) = event.link.as_ref().filter(|_| join) {
-            let source = system::open_call(link);
+            let source = system::open_call(link, &self.setting("call_browser", system::DEFAULT_BROWSER));
             let idle = self.active.lock().unwrap().is_none();
             if meeting.started_at.is_none() && idle {
                 match self.start_recording(&meeting.id, &source) {

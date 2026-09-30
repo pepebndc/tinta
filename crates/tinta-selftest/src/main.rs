@@ -110,6 +110,8 @@ fn desktop_call(state: &std::sync::Arc<tinta_app::AppState>, failures: &mut Vec<
         source: ZOOM.into(),
         meeting_code: None,
         app_call: Some(ZOOM.into()),
+        mic_muted: false,
+        mic_muted_by_user: false,
     });
     let participants = json!([
         {"id": "Test User", "name": "Test User", "is_self": false},

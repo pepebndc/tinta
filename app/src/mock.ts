@@ -98,13 +98,13 @@ const boot: Bootstrap = {
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
   data_dir: "~/Library/Application Support/Tinta",
   models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
-  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null } : null,
+  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null, mic_muted: true, mic_muted_by_user: false } : null,
   extension: {
     connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now,
     meeting_code: hash() === "zoom" ? null : "abc-defg-hij", title: hash() === "zoom" ? null : "Design review", self_name: "Sam Rivera",
     participants: hash() === "zoom" ? [] : detail().participants, speaking: [], mic_muted: hash() === "recording" ? true : false,
   },
-  call_reading: hash() === "zoom", accessibility: hash() === "zoom", meeting_reminders: true, calendar,
+  call_reading: hash() === "zoom", accessibility: hash() === "zoom", meeting_reminders: true, call_browser: "default", calendar,
   calls: hash() === "zoom"
     ? [{
         app: "us.zoom.xos", name: "Zoom", since: now - 30_000, speaking: ["Priya Shah"], mic_muted: false,
@@ -159,6 +159,14 @@ export async function mockInvoke<T>(command: string): Promise<T> {
         { name: "add_tags", description: "Add tags to a meeting.", read_only: false },
         { name: "delete_meeting", description: "Move a meeting to the trash. The app deletes it permanently after 7 days.", read_only: false },
       ],
+    },
+    list_browsers: {
+      browsers: [
+        { id: "company.thebrowser.Browser", name: "Arc" },
+        { id: "com.google.Chrome", name: "Google Chrome" },
+        { id: "com.apple.Safari", name: "Safari" },
+      ],
+      default: { id: "com.apple.Safari", name: "Safari" },
     },
     refresh_calendar: calendar,
     request_calendar: calendar,

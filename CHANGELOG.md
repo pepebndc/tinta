@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 (2026-09-30)
+
+### Added
+- A notice above the meeting list when a meeting with a call link starts soon or runs now. Click **Join and record** to join the call and start the recording. In the Meet call already, click **Record**. Close the notice to hide it.
+- Settings, Calendar, **Browser for calls**: select the browser that opens Google Meet and Webex calls.
+- A microphone button in the recording controls. Click it to stop or start the recording of your microphone. It overrides the mute state of Meet, Zoom, or Microsoft Teams until you mute or unmute in the call again.
+
+### Changed
+- Calls from a reminder open in the default browser of macOS, not in Google Chrome. Tinta records all system audio for these calls.
+
 ## 0.7.3 (2026-09-30)
 
 ### Fixed
