@@ -137,6 +137,7 @@ input, select, textarea {
   color: var(--ink);
   transform: rotate(-2deg);
 }
+.overview-back { position: absolute; bottom: 24px; }
 .eyebrow { font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }

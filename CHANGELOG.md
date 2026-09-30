@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 (2026-09-30)
+
+### Fixed
+- If the Tinta logo stays in the window after Mission Control, click **Back to Tinta** or press Escape to see the app again.
+
 ## 0.7.2 (2026-09-29)
 
 ### Fixed
