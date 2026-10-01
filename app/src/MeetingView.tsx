@@ -7,10 +7,12 @@ import {
   bytes,
   clock,
   dateTime,
+  EngineEvent,
   ExtensionState,
   LANGUAGES,
   languageName,
   MeetingDetail,
+  NO_SPEECH_ERROR,
   on,
   RETENTION_DAYS,
   Source,
@@ -37,7 +39,6 @@ type Props = {
   onDiscarded: () => void;
 };
 
-type EngineEvent = { event: string; id?: string; [key: string]: unknown };
 
 const NAME_STATE: Record<string, string> = { user: "Confirmed", platform: "Automatic (call app)", self: "Automatic (microphone)" };
 
@@ -374,8 +375,27 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
         </section>
       )}
       {m.state === "failed" && (
-        <section className="panel warn row">
-          <span>Processing failed: {m.error}</span>
+        <section className="panel warn row failure-panel">
+          {m.error === NO_SPEECH_ERROR ? (
+            <div className="grow">
+              <strong>No speech in this recording</strong>
+              <p className="small">
+                Tinta heard no one speak, so there is no transcript. Make sure that your microphone works and that the meeting
+                audio plays on this Mac. Your notes stay in the meeting.
+              </p>
+            </div>
+          ) : (
+            <div className="grow">
+              <strong>Tinta could not make the transcript</strong>
+              <p className="small">The recording is safe. Click Process again to try one more time.</p>
+              {m.error && (
+                <details className="small">
+                  <summary>Details</summary>
+                  {m.error}
+                </details>
+              )}
+            </div>
+          )}
           <button onClick={() => api.runFinalPass(id, null).then(load).catch((e) => onError(String(e)))}>Process again</button>
         </section>
       )}

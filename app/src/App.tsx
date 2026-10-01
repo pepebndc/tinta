@@ -6,10 +6,16 @@ import { MeetingList, Notice, pressable, tagList } from "./MeetingList";
 import { Mcp, Settings, Trash } from "./Settings";
 import { CloseButton, CopyButton, Icon, Lockup } from "./Brand";
 import { Home } from "./Home";
-import { CallNotice } from "./NextMeetings";
+import { CallNotice, SidebarNext } from "./NextMeetings";
+import { resizeWindow } from "./windowFrame";
 import { GranolaImport } from "./GranolaImport";
 import { Onboarding } from "./Onboarding";
 import { setTheme } from "./theme";
+
+/** Below this window width, the window shows only the sidebar. */
+const COMPACT_WIDTH = 640;
+/** The expand band gives the window this ratio of width to height. */
+const WINDOW_RATIO = 1280 / 820;
 
 type View = { kind: "meeting"; id: string } | { kind: "settings" } | { kind: "trash" } | { kind: "mcp" } | { kind: "granola" } | { kind: "home" };
 
@@ -39,6 +45,29 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
+  const [compact, setCompact] = useState(() => window.innerWidth < COMPACT_WIDTH);
+
+  useEffect(() => {
+    const resize = () => setCompact(window.innerWidth < COMPACT_WIDTH);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  /** Gives a compact window its full size again. */
+  const expand = useCallback(() => {
+    if (window.innerWidth >= COMPACT_WIDTH) return;
+    const height = Math.max(window.innerHeight, 600);
+    void resizeWindow(Math.round(height * WINDOW_RATIO), height, false).catch((e) => setError(String(e)));
+  }, []);
+
+  /** Shows a view. A compact window gets its full size, so the view is visible. */
+  const show = useCallback(
+    (next: View) => {
+      setView(next);
+      expand();
+    },
+    [expand],
+  );
 
   useEffect(() => {
     api.granolaDefaultPath().then(setGranolaExport).catch(() => undefined);
@@ -96,7 +125,7 @@ export function App() {
       on<CalendarState>("calendar", setCalendar),
       on<{ id: string }>("open_meeting", (p) => {
         void refreshList();
-        setView({ kind: "meeting", id: p.id });
+        show({ kind: "meeting", id: p.id });
       }),
       on("meeting_changed", () => void refreshList()),
       on<ExtensionState>("extension", setExtension),
@@ -115,7 +144,7 @@ export function App() {
       }),
     ];
     return () => subs.forEach((p) => p.then((u) => u()));
-  }, [refreshList]);
+  }, [refreshList, show]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -176,7 +205,7 @@ export function App() {
       // A new meeting from an open folder goes into that folder.
       if (filter.startsWith("folder:")) await api.setFolder(m.id, filter.slice(7));
       await refreshList();
-      setView({ kind: "meeting", id: m.id });
+      show({ kind: "meeting", id: m.id });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -190,7 +219,7 @@ export function App() {
     try {
       const m = await api.importRecording(path);
       await refreshList();
-      setView({ kind: "meeting", id: m.id });
+      show({ kind: "meeting", id: m.id });
     } catch (e) {
       setError(String(e));
     }
@@ -228,7 +257,9 @@ export function App() {
     try {
       const id = await api.openEvent(eventId, join);
       await refreshList();
-      setView({ kind: "meeting", id });
+      // A join opens the call. A compact window stays small next to the call.
+      if (join) setView({ kind: "meeting", id });
+      else show({ kind: "meeting", id });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -277,13 +308,10 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app ${compact ? "compact" : ""}`}>
       <aside className="sidebar">
-        <button className="sidebar-brand" onClick={() => setView({ kind: "home" })} aria-label="Home">
+        <button className="sidebar-brand" onClick={() => show({ kind: "home" })} aria-label="Home" title="Home">
           <Lockup />
-        </button>
-        <button className={`quiet home-link ${view.kind === "home" ? "current" : ""}`} onClick={() => setView({ kind: "home" })}>
-          <Icon name="home" size={15} /> Home
         </button>
         <div className="sidebar-actions">
           {searchOpen ? (
@@ -318,7 +346,7 @@ export function App() {
           <ul className="list">
             {hits.length === 0 && <li className="empty-list">No meetings found.</li>}
             {hits.map((h, i) => (
-              <li key={i} className="item" {...pressable(() => setView({ kind: "meeting", id: h.meeting_id }))}>
+              <li key={i} className="item" {...pressable(() => show({ kind: "meeting", id: h.meeting_id }))}>
                 <Icon name="document" />
                 <div>
                   <strong>{h.title}</strong>
@@ -339,6 +367,7 @@ export function App() {
               onOpenEvent={openEvent}
               onRecord={(eventId) => void recordCall("com.google.Chrome", eventId)}
             />
+            <SidebarNext calendar={calendar} busy={creating} onOpen={(id) => void openEvent(id, false)} onConnect={connectCalendar} />
             <MeetingList
               meetings={meetings}
               loaded={loaded}
@@ -346,7 +375,7 @@ export function App() {
               selectedId={view.kind === "meeting" ? view.id : null}
               activeId={active?.meeting_id ?? null}
               onFilter={setFilter}
-              onOpen={(id) => setView({ kind: "meeting", id })}
+              onOpen={(id) => show({ kind: "meeting", id })}
               onError={setError}
               onNotice={setNotice}
             />
@@ -354,13 +383,13 @@ export function App() {
         )}
         <nav className="sidebar-nav">
           <ExtensionStatus extension={extension} />
-          <button className={`quiet ${view.kind === "mcp" ? "current" : ""}`} onClick={() => setView({ kind: "mcp" })}>
+          <button className={`quiet ${view.kind === "mcp" ? "current" : ""}`} onClick={() => show({ kind: "mcp" })}>
             <Icon name="activity" size={15} /> MCP
           </button>
-          <button className={`quiet ${view.kind === "trash" ? "current" : ""}`} onClick={() => setView({ kind: "trash" })}>
+          <button className={`quiet ${view.kind === "trash" ? "current" : ""}`} onClick={() => show({ kind: "trash" })}>
             <Icon name="trash" size={15} /> Trash
           </button>
-          <button className={`quiet ${view.kind === "settings" ? "current" : ""}`} onClick={() => setView({ kind: "settings" })}>
+          <button className={`quiet ${view.kind === "settings" ? "current" : ""}`} onClick={() => show({ kind: "settings" })}>
             <Icon name="settings" size={15} /> Settings
           </button>
         </nav>
@@ -368,6 +397,11 @@ export function App() {
           <Icon name="lock" size={11} /> Encrypted and stored on this Mac
         </footer>
       </aside>
+      {compact && (
+        <button className="expand-band" onClick={expand} aria-label="Expand the window" title="Expand the window">
+          <Icon name="chevron" size={14} />
+        </button>
+      )}
       <main className="main">
         {error && (
           <div className="bar error-bar" role="alert">

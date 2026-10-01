@@ -11,6 +11,14 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return tauriInvoke<T>(command, args);
 }
 
+/** The processing error of a recording without speech. The app sets this text. */
+export const NO_SPEECH_ERROR = "Tinta heard no speech in this recording.";
+
+/** A short text for the state of a meeting that failed, for the lists. */
+export function failureLabel(m: Meeting): string {
+  return m.error === NO_SPEECH_ERROR ? "no speech" : "processing failed";
+}
+
 export type Meeting = {
   id: string;
   title: string;
@@ -42,6 +50,9 @@ export type Speaker = {
   suggestion: string | null;
   suggestion_score: number | null;
 };
+
+/** An event from the engine, such as the audio levels or the progress of processing. */
+export type EngineEvent = { event: string; id?: string; [key: string]: unknown };
 
 export type Turn = {
   id: number;
@@ -233,6 +244,8 @@ export const api = {
   pauseRecording: (paused: boolean) => invoke<void>("pause_recording", { paused }),
   /** Mutes or unmutes the microphone of the recording, until the next mute change in the call app. */
   setMicMuted: (muted: boolean) => invoke<void>("set_mic_muted", { muted }),
+  /** Shows the main window with the meeting, for a click in the bubble. */
+  showMeeting: (id: string) => invoke<void>("show_meeting", { id }),
   stopRecording: () => invoke<string>("stop_recording"),
   runFinalPass: (id: string, language: string | null) => invoke<void>("run_final_pass", { id, language }),
   importRecording: (path: string) => invoke<Meeting>("import_recording", { path }),

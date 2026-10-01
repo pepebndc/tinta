@@ -282,6 +282,14 @@ async fn set_mic_muted(muted: bool) -> CommandResult<()> {
     blocking(move || state().set_mic_muted(muted, tinta_core::now_ms(), true).map_err(err)).await
 }
 
+/// Shows the main window with a meeting, for a click in the bubble.
+#[tauri::command]
+async fn show_meeting(app: tauri::AppHandle, id: String) -> CommandResult<()> {
+    state().emit("open_meeting", json!({"id": id}));
+    crate::bubble::show_main(&app);
+    Ok(())
+}
+
 #[tauri::command]
 async fn stop_recording() -> CommandResult<String> {
     blocking(|| state().stop_recording().map_err(err)).await
@@ -622,6 +630,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         open_event,
         list_browsers,
         set_mic_muted,
+        show_meeting,
         save_call_report,
         list_sources,
         list_meetings,

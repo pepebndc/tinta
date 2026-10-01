@@ -1,3 +1,4 @@
+mod bubble;
 mod calendar;
 mod commands;
 mod engine;
@@ -142,6 +143,9 @@ pub struct AppState {
     engine_restart: Mutex<(Option<Instant>, Duration)>,
 }
 
+/// The processing error of a recording without speech. The window shows its own text for this error.
+pub const NO_SPEECH: &str = "Tinta heard no speech in this recording.";
+
 /// The time between leaving a call and the automatic stop. A rejoin in this time cancels the stop.
 const CALL_END_GRACE_MS: i64 = 3000;
 
@@ -181,6 +185,10 @@ impl AppState {
 
     pub fn emit(&self, event: &str, payload: Value) {
         if let Some(app) = &self.app {
+            // The bubble follows the recording state.
+            if event == "recording" {
+                bubble::sync(app, !payload.is_null());
+            }
             let _ = app.emit(event, payload);
         }
     }
@@ -549,6 +557,9 @@ impl AppState {
         }
         let value = self.engine.call("finalize", params, Duration::from_secs(60 * 60))?;
         let result: FinalResult = serde_json::from_value(value)?;
+        if result.tracks.values().all(|t| t.words.is_empty()) {
+            bail!(NO_SPEECH);
+        }
         let built = transcript::build(&result, &self.self_name(), &participants, &events, start_wall_ms);
         let detected = result.language.clone();
         self.db.lock().unwrap().replace_with_final(
@@ -970,6 +981,12 @@ pub fn run() {
             }
             overview::watch();
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Focused(_)) {
+                let recording = STATE.get().is_some_and(|s| s.active.lock().unwrap().is_some());
+                bubble::sync(tauri::Manager::app_handle(window), recording);
+            }
         })
         .invoke_handler(commands::handler())
         .build(context)

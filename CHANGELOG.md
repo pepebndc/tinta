@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.0 (2026-10-01)
+
+### Added
+- A recording bubble that floats above other apps while Tinta records and its window is not in front. Each recording starts with the bubble at the top right of your main display, the display with the menu bar. It shows the recording time and waves for your microphone and the meeting audio. Drag it to move it. Click it to see the live transcript, mute your microphone, or open the meeting in Tinta.
+- **Next meetings** in the sidebar, above the past meetings. It shows up to 3 meetings of today. Click **more** to see all the meetings of the next 7 days. Click a meeting to open its notes.
+- Make the window narrow to show only the sidebar. Click the band at the right to give the window its full size again.
+
+### Changed
+- The sidebar shows **Past meetings** under **Next meetings**. The Home button is gone. Click the Tinta logo to go to Home.
+- When processing fails, the meeting tells you what happened in plain words. The technical details are under **Details**.
+
+### Fixed
+- A recording without speech no longer shows a technical error. The meeting says "No speech in this recording" and tells you what to check.
+
 ## 0.8.0 (2026-09-30)
 
 ### Added

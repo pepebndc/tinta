@@ -98,7 +98,7 @@ const boot: Bootstrap = {
   mcp_config: { mcpServers: { tinta: { command: "/Applications/Tinta.app/Contents/MacOS/tinta-mcp" } } },
   data_dir: "~/Library/Application Support/Tinta",
   models_installed: hash() !== "setup" && !hash().startsWith("onboarding"),
-  active: hash() === "recording" ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null, mic_muted: true, mic_muted_by_user: false } : null,
+  active: hash() === "recording" || hash().startsWith("bubble") ? { meeting_id: "m1", start_wall_ms: now - 754_000, paused: false, source: "com.google.Chrome", meeting_code: "abc-defg-hij", app_call: null, mic_muted: true, mic_muted_by_user: false } : null,
   extension: {
     connected_at: hash() === "setup" || hash().startsWith("onboarding") ? null : now, last_seen: hash() === "setup" ? null : now,
     meeting_code: hash() === "zoom" ? null : "abc-defg-hij", title: hash() === "zoom" ? null : "Design review", self_name: "Sam Rivera",

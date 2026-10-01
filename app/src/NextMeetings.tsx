@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Active, CalendarEvent, CalendarState, ExtensionState, Meeting, PLATFORM_NAMES } from "./api";
 import { CloseButton } from "./Brand";
+import { pressable } from "./MeetingList";
 
 /** The number of events that the card shows. */
 const SHOWN = 8;
@@ -201,5 +202,95 @@ export function CallNotice({ calendar, meetings, active, extension, ready, busy,
         {busy ? "Starting…" : action.label}
       </button>
     </div>
+  );
+}
+
+/** The number of meetings of today that the sidebar shows before the user expands the list. */
+const SIDEBAR_TODAY = 3;
+
+type SidebarProps = {
+  calendar: CalendarState;
+  busy: boolean;
+  /** Opens the notes of the event. */
+  onOpen: (eventId: string) => void;
+  onConnect: () => void;
+};
+
+/** The next meetings in the sidebar: at most 3 of today, and all the meetings of the next 7 days when expanded. */
+export function SidebarNext({ calendar, busy, onOpen, onConnect }: SidebarProps) {
+  const [now, setNow] = useState(Date.now());
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (calendar.access !== "granted") {
+    return (
+      <section className="side-section">
+        <div className="side-label-row">
+          <span className="side-label">Next meetings</span>
+        </div>
+        <div className="empty-list">
+          {calendar.access === "denied" ? "macOS does not allow calendar access for Tinta." : "See your next meetings here."}{" "}
+          <button className="quiet link-button" onClick={onConnect}>
+            {calendar.access === "denied" ? "Open Calendar settings" : "Connect calendar"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const colors = new Map(calendar.calendars.map((c) => [c.id, c.color]));
+  const endOfToday = new Date(now).setHours(24, 0, 0, 0);
+  const today = calendar.events.filter((e) => e.start < endOfToday);
+  const shown = expanded ? calendar.events : today.slice(0, SIDEBAR_TODAY);
+  const hidden = calendar.events.length - shown.length;
+  const days: { label: string; events: CalendarEvent[] }[] = [];
+  for (const event of shown) {
+    const label = dayLabel(event.start, now);
+    if (days[days.length - 1]?.label !== label) days.push({ label, events: [] });
+    days[days.length - 1].events.push(event);
+  }
+
+  return (
+    <section className={`side-section next-section ${expanded ? "expanded" : ""}`}>
+      <div className="side-label-row">
+        <span className="side-label">Next meetings</span>
+        {(hidden > 0 || expanded) && (
+          <button className="quiet link-button" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Show less" : `${hidden} more`}
+          </button>
+        )}
+      </div>
+      <ul className="list next-list">
+        {today.length === 0 && !expanded && <li className="empty-list">No more meetings today.</li>}
+        {days.map((day) => (
+          <li key={day.label}>
+            {(expanded || day.label !== "Today") && <div className="eyebrow next-day">{day.label}</div>}
+            <ul className="list">
+              {day.events.map((e) => (
+                <li
+                  key={e.id}
+                  className={`item next-item ${e.start <= now ? "now" : ""}`}
+                  title={e.meeting_id ? "Open the notes of this meeting" : "Write notes for this meeting"}
+                  aria-disabled={busy}
+                  {...pressable(() => !busy && onOpen(e.id))}
+                >
+                  <span className="event-color" style={{ background: colors.get(e.calendar_id) || "var(--accent)" }} />
+                  <div>
+                    <strong>{e.title || "Untitled meeting"}</strong>
+                    <span>
+                      {e.start - now <= 60 * 60_000 ? startsIn(e, now) : timeRange(e)}
+                      {e.link && ` · ${PLATFORM_NAMES[e.link.platform]}`}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

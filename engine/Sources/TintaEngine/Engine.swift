@@ -15,7 +15,7 @@ struct Engine {
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.8.0"])
+        Output.shared.event("ready", ["version": "0.9.0"])
         Controller.calls.start()
         Controller.calendar.start()
         Task.detached { await controller.prewarm() }
@@ -219,7 +219,8 @@ actor Controller {
             }
             allText += words.map(\.text).joined(separator: " ") + " "
             var entry: [String: Any] = ["words": words.map(\.json)]
-            if track == .remote {
+            // Silent audio has no speakers, and the diarizer can fail on it.
+            if track == .remote && !words.isEmpty {
                 entry["diarization"] = try await speech.diarize(samples, maxSpeakers: params["max_speakers"] as? Int)
             }
             tracks[track.rawValue] = entry

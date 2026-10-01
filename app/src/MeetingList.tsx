@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, Meeting, relativeDate } from "./api";
+import { api, failureLabel, Meeting, relativeDate } from "./api";
 import { Icon } from "./Brand";
 import { Menu } from "./Menu";
 import { prefetchMeeting } from "./MeetingView";
@@ -159,7 +159,7 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
         </div>
       ) : (
         <div className="side-label-row">
-          <span className="side-label">Your meetings</span>
+          <span className="side-label">Past meetings</span>
           <select className="filter" value={filter} onChange={(e) => onFilter(e.target.value)} aria-label="Filter meetings">
             <option value="all">All</option>
             {tags.map((t) => (
@@ -209,7 +209,7 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
                 {relativeDate(m.started_at ?? m.created_at)}
                 {!folder && m.folder && <> · {m.folder}</>}
                 {(m.state === "processing" || m.state === "failed") && (
-                  <em className={`state state-${m.state}`}> · {m.state === "failed" ? "processing failed" : "processing"}</em>
+                  <em className={`state state-${m.state}`}> · {m.state === "failed" ? failureLabel(m) : "processing"}</em>
                 )}
               </span>
             </div>

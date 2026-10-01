@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Active, AppCall, Bootstrap, CalendarState, clock, dateTime, ExtensionState, Meeting, PLATFORM_NAMES, Preview, relativeDate } from "./api";
+import { Active, AppCall, Bootstrap, CalendarState, clock, dateTime, ExtensionState, Meeting, NO_SPEECH_ERROR, PLATFORM_NAMES, Preview, relativeDate } from "./api";
 import { Icon, InkMark, Name } from "./Brand";
 import { pressable } from "./MeetingList";
 import { JOIN_BEFORE_MS, NextMeetings, recorded, startsIn, timeRange } from "./NextMeetings";
@@ -188,7 +188,7 @@ export function Home({
                   <div className="card-top">
                     <Icon name="document" />
                     {(m.state === "processing" || m.state === "failed") && (
-                      <span className={`badge ${m.state}`}>{m.state === "failed" ? "Processing failed" : "Processing"}</span>
+                      <span className={`badge ${m.state}`}>{m.state === "failed" ? (m.error === NO_SPEECH_ERROR ? "No speech" : "Processing failed") : "Processing"}</span>
                     )}
                   </div>
                   <strong>{m.title}</strong>
@@ -279,7 +279,7 @@ export function Home({
                     {m.title}
                   </button>
                   <div className="small muted">
-                    {m.state === "failed" && "Processing failed."}
+                    {m.state === "failed" && (m.error === NO_SPEECH_ERROR ? "Tinta heard no speech in the recording." : "Processing failed.")}
                     {m.state === "ready" && m.audio_until && `The audio is deleted ${dateTime(m.audio_until)}.`}
                   </div>
                   {m.state === "failed" && (
