@@ -56,9 +56,6 @@ struct Word {
 actor Speech {
     private var asr: AsrManager?
     private var vad: VadManager?
-    private var diarizer: OfflineDiarizerManager?
-    /// Diarizers with a speaker limit, by the limit.
-    private var limitedDiarizers: [Int: OfflineDiarizerManager] = [:]
     /// The model load in progress. Concurrent callers wait for this task and do not load the models again.
     private var loading: Task<Void, Error>?
 
@@ -108,7 +105,6 @@ actor Speech {
         try await manager.loadModels(asrModels)
         asr = manager
         vad = vadManager
-        diarizer = diarizerManager
         Output.shared.event("install_progress", ["component": "all", "state": "done"])
     }
 
@@ -136,13 +132,18 @@ actor Speech {
         }
     }
 
-    private func loadDiarizerIfNeeded() async throws {
-        guard diarizer == nil else { return }
+    /// The diarizer models use GPU memory in proportion to the audio length, and Core ML keeps it
+    /// while the models exist. Each final pass loads a new diarizer and releases it at the end.
+    private func makeDiarizer(maxSpeakers: Int?) async throws -> OfflineDiarizerManager {
         ModelPins.setOnline(false)
         try verify()
-        let manager = OfflineDiarizerManager()
+        var config = OfflineDiarizerConfig.default
+        if let maxSpeakers, maxSpeakers > 0 {
+            config = config.withSpeakers(min: nil, max: maxSpeakers)
+        }
+        let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels()
-        diarizer = manager
+        return manager
     }
 
     func warmUp() async throws {
@@ -206,20 +207,9 @@ actor Speech {
     /// `maxSpeakers` comes from the Meet participant count when it is known.
     func diarize(_ samples: [Float], maxSpeakers: Int?) async throws -> [[String: Any]] {
         guard samples.count > ChunkFormat.sampleRate * 2 else { return [] }
-        try await loadDiarizerIfNeeded()
-        guard var active = diarizer else { return [] }
-        if let maxSpeakers, maxSpeakers > 0 {
-            if let cached = limitedDiarizers[maxSpeakers] {
-                active = cached
-            } else {
-                let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig.default.withSpeakers(min: nil, max: maxSpeakers))
-                try await manager.prepareModels()
-                limitedDiarizers[maxSpeakers] = manager
-                active = manager
-            }
-        }
+        let diarizer = try await makeDiarizer(maxSpeakers: maxSpeakers)
         Output.shared.event("finalize_progress", ["stage": "diarization", "fraction": 0.0])
-        let result = try await active.process(audio: samples)
+        let result = try await diarizer.process(audio: samples)
         Output.shared.event("finalize_progress", ["stage": "diarization", "fraction": 1.0])
         return result.segments.map {
             ["speaker": $0.speakerId, "s": Double($0.startTimeSeconds), "e": Double($0.endTimeSeconds)]

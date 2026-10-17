@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 (2026-10-17)
+
+### Fixed
+- Tinta no longer uses more memory after each meeting. You do not have to restart Tinta to make the memory free.
+
 ## 0.9.0 (2026-10-01)
 
 ### Added
