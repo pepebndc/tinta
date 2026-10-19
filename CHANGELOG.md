@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2 (2026-10-19)
+
+### Fixed
+- Tinta no longer uses more memory each minute while it records the meeting audio.
+
 ## 0.9.1 (2026-10-17)
 
 ### Fixed

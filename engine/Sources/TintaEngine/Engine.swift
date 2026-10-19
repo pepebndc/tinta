@@ -15,13 +15,14 @@ struct Engine {
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.9.1"])
+        Output.shared.event("ready", ["version": "0.9.2"])
         Controller.calls.start()
         Controller.calendar.start()
         Task.detached { await controller.prewarm() }
         let reader = Thread {
+            // This thread has no autorelease pool of its own.
             while let line = readLine(strippingNewline: true) {
-                handle(line: line, controller: controller)
+                autoreleasepool { handle(line: line, controller: controller) }
             }
             Task.detached {
                 await controller.shutdown()

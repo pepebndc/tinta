@@ -91,17 +91,23 @@ final class RemoteTap: @unchecked Sendable {
             "warning", ["message": "The meeting audio capture stopped. Stop and start the recording again."])
     }
 
+    /// Reads with `read(2)` into byte arrays that keep their capacity. `FileHandle.availableData`
+    /// returns autoreleased data, and this thread has no autorelease pool, so that data stays in
+    /// memory until the recording ends. `Data.removeFirst` keeps the removed bytes in storage too.
     private func read(_ reader: FileHandle) {
-        var buffer = Data()
+        let fd = reader.fileDescriptor
+        var buffer: [UInt8] = []
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         func take(_ count: Int) -> Data? {
             while buffer.count < count {
-                let chunk = reader.availableData
-                if chunk.isEmpty { return nil }
-                buffer.append(chunk)
+                let n = chunk.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+                if n < 0 && errno == EINTR { continue }
+                if n <= 0 { return nil }
+                buffer.append(contentsOf: chunk[0..<n])
             }
-            let head = buffer.prefix(count)
+            let head = Data(buffer[0..<count])
             buffer.removeFirst(count)
-            return Data(head)
+            return head
         }
         while let kind = take(1)?.first {
             if kind == 0 {
