@@ -215,7 +215,10 @@ fn classify(url: &str) -> Option<Link> {
     let link = |platform, code| Some(Link { url: url.to_string(), platform, code });
     let under = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
     if host == "meet.google.com" {
-        let code = path.trim_start_matches('/').split('/').next().unwrap_or_default().to_lowercase();
+        // Meet links have the code at /abc-defg-hij or at /meet/abc-defg-hij.
+        let path = path.trim_start_matches('/');
+        let path = path.strip_prefix("meet/").unwrap_or(path);
+        let code = path.split('/').next().unwrap_or_default().to_lowercase();
         return is_meet_code(&code).then(|| link(Platform::Meet, Some(code))).flatten();
     }
     if under("zoom.us") || under("zoomgov.com") {
@@ -257,6 +260,9 @@ mod tests {
     fn ignores_meet_pages_that_are_not_calls() {
         assert!(find_link(["https://meet.google.com/", "https://meet.google.com/landing"]).is_none());
         assert!(find_link(["<https://meet.google.com/abc-defg-hij?hs=224>."]).unwrap().code.is_some());
+        let link = find_link(["https://meet.google.com/meet/abc-defg-hij?authuser=0"]).unwrap();
+        assert_eq!(link.code.as_deref(), Some("abc-defg-hij"));
+        assert!(find_link(["https://meet.google.com/meet/"]).is_none());
     }
 
     #[test]

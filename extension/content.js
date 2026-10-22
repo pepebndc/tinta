@@ -5,7 +5,8 @@
   "use strict";
 
   const CONFIG = {
-    meetingCodePattern: /^\/([a-z]{3}-[a-z]{4}-[a-z]{3})(?:\/|$)/,
+    // Meet shows a call at /abc-defg-hij or at /meet/abc-defg-hij.
+    meetingCodePattern: /^\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})(?:\/|$)/,
     titlePrefixPattern: /^Meet\s*[-\u2013\u2014:]\s*/,
     titleSelectors: ["[data-meeting-title]"],
     participantSelector: "[data-participant-id]",

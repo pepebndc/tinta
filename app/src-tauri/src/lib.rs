@@ -118,6 +118,9 @@ pub struct ExtensionState {
     pub speaking: Vec<String>,
     /// The microphone state in Meet. `None` when the page does not show it.
     pub mic_muted: Option<bool>,
+    /// The time of the last message from a Meet call.
+    #[serde(skip)]
+    pub call_seen: Option<i64>,
 }
 
 pub struct AppState {
@@ -148,6 +151,13 @@ pub const NO_SPEECH: &str = "Tinta heard no speech in this recording.";
 
 /// The time between leaving a call and the automatic stop. A rejoin in this time cancels the stop.
 const CALL_END_GRACE_MS: i64 = 3000;
+
+/// The extension state is current for this time after the last extension message. The window uses the same limit.
+const EXTENSION_LIVE_MS: i64 = 30_000;
+
+/// The time that the app waits for a Meet call message after the native host disconnects.
+/// The extension connects again at its next message, and a call sends its state every 10 seconds.
+const EXTENSION_RECONNECT_MS: i64 = 15_000;
 
 /// The default of the `mcp_enabled` setting. The user turns MCP access on.
 pub const MCP_ENABLED_DEFAULT: &str = "false";
@@ -234,7 +244,9 @@ impl AppState {
         let app_call = call.as_ref().map(|c| c.app.clone());
         let mut extension = self.extension.lock().unwrap().clone();
         // A Meet call in Chrome does not belong to a recording of a desktop app call.
-        if app_call.is_some() {
+        // An extension without recent messages has no current call, for example when the end message did not arrive.
+        let stale = extension.last_seen.map_or(true, |t| now_ms() - t > EXTENSION_LIVE_MS);
+        if app_call.is_some() || stale {
             extension = ExtensionState::default();
         }
         let mut params = self.audio_params(id);
@@ -652,6 +664,9 @@ impl AppState {
                 ext.connected_at = Some(now_ms());
             }
             ext.last_seen = Some(now_ms());
+            if code.is_some() && kind != "meeting_ended" {
+                ext.call_seen = ext.last_seen;
+            }
             match kind {
                 "meet_state" => {
                     ext.meeting_code = code.clone();
@@ -763,16 +778,26 @@ impl AppState {
         self.extension_connection.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    /// Chrome closed or the native host stopped. An active Meet call counts as ended.
+    /// Chrome closed or the native host stopped. The Meet call counts as ended at the time of the
+    /// disconnection when no message from the call arrives in `EXTENSION_RECONNECT_MS`.
     /// A disconnection of an older connection does not change the call.
     pub fn on_extension_disconnected(&self, connection: u64) {
         if self.extension_connection.load(Ordering::SeqCst) != connection {
             return;
         }
-        let code = self.extension.lock().unwrap().meeting_code.clone();
-        if let Some(code) = code {
-            self.on_extension_message(&json!({"type": "meeting_ended", "meeting_code": code}));
-        }
+        let Some(code) = self.extension.lock().unwrap().meeting_code.clone() else { return };
+        let left_at = now_ms();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(EXTENSION_RECONNECT_MS as u64));
+            let state = state();
+            let silent = {
+                let ext = state.extension.lock().unwrap();
+                ext.meeting_code.as_deref() == Some(code.as_str()) && ext.call_seen.map_or(true, |t| t <= left_at)
+            };
+            if silent {
+                state.on_extension_message(&json!({"type": "meeting_ended", "meeting_code": code, "left_at": left_at}));
+            }
+        });
     }
 
     // MARK: Library location

@@ -7,12 +7,18 @@ const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
 // While Tinta records, the service worker asks for the state, so that the badge shows an automatic stop.
 const RECORDING_PING_MS = 5000;
+// The maximum number of messages that wait for the host. The oldest message goes first when the queue is full.
+const PENDING_MAX = 200;
 
 let port = null;
 let retryMs = RETRY_MIN_MS;
 let retryTimer = null;
 let nextAttemptAt = 0;
 let pingTimer = null;
+// Messages wait here until the host answers them. The host answers each message with one status, in order.
+// The first `sent` messages are on the current port. After a disconnection, they go again on the next port.
+const pending = [];
+let sent = 0;
 
 // What the popup shows. "host" is "connecting", "connected", or "missing".
 // "error" is the error text from the app, or null.
@@ -56,11 +62,19 @@ function connect() {
   port = p;
   status.host = "connected";
   const connectedAt = Date.now();
-  p.postMessage({ type: "hello", version: chrome.runtime.getManifest().version, t: connectedAt });
+  sent = 0;
+  pending.unshift({ type: "hello", version: chrome.runtime.getManifest().version, t: connectedAt });
+  flush();
 
   p.onMessage.addListener((msg) => {
     retryMs = RETRY_MIN_MS;
     if (!msg || msg.type !== "status") return;
+    // The host answered the oldest message on this port. Without the app, the message has no receiver,
+    // and the next start of the app gets the current call state from the next messages.
+    if (sent > 0) {
+      pending.shift();
+      sent -= 1;
+    }
     status.app = msg.app !== false;
     status.appKnown = true;
     status.error = typeof msg.error === "string" ? msg.error : null;
@@ -78,6 +92,7 @@ function connect() {
     // A port that forward() dropped can disconnect after a new port connects.
     if (port !== p) return;
     port = null;
+    sent = 0;
     status.app = false;
     status.appKnown = false;
     status.error = null;
@@ -96,14 +111,30 @@ function connect() {
   });
 }
 
+// Sends a message to the host. A message waits for the next connection when the host does not answer it,
+// because the app misses a call end that the extension sends only once.
 function forward(msg) {
+  // A ping is only useful now.
+  if (msg.type === "ping" && !port) return;
+  pending.push(msg);
+  if (pending.length > PENDING_MAX) {
+    pending.shift();
+    if (sent > 0) sent -= 1;
+  }
   if (!port && Date.now() >= nextAttemptAt) connect();
-  if (!port) return;
-  try {
-    port.postMessage(msg);
-  } catch (e) {
-    port = null;
-    scheduleRetry(retryMs);
+  flush();
+}
+
+function flush() {
+  while (port && sent < pending.length) {
+    try {
+      port.postMessage(pending[sent]);
+      sent += 1;
+    } catch (e) {
+      port = null;
+      sent = 0;
+      scheduleRetry(retryMs);
+    }
   }
 }
 

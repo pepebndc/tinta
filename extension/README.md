@@ -9,7 +9,7 @@ The extension sends the metadata through Chrome Native Messaging to the host `co
 The extension runs only on `https://meet.google.com/*`.
 It reads these items:
 
-- The meeting code from the URL path, for example `abc-defg-hij`.
+- The meeting code from the URL path, for example `abc-defg-hij` in `/abc-defg-hij` or `/meet/abc-defg-hij`.
 - The meeting title on the page. If the page does not show a title, it uses `document.title` without the `Meet - ` prefix.
 - The participant list: the participant ID, the display name, and a flag for the local user.
 - The set of participants that speak.
@@ -167,6 +167,14 @@ If the host is not installed, the delay is 30 seconds, and the popup shows that 
 Chrome stops an idle MV3 service worker, and the retry timer stops with it.
 When the service worker gets the next message from a Meet tab after the retry time, it tries again.
 When Chrome starts the service worker again, it connects at once.
+
+The service worker keeps each message in a queue until the native host answers it with a status. The native host answers each message once, in order.
+When the connection closes, the messages without an answer go again on the next connection, after `hello`.
+A message from a Meet tab that arrives while the host is not connected also waits in the queue. The queue keeps at most 200 messages and drops the oldest first.
+A `ping` does not wait, because only the current state is useful.
+
+When the native host disconnects during a Meet call, the app waits 15 seconds for a message from the call. If no message arrives, the call counts as ended at the time of the disconnection.
+At the start of a recording, the app uses the Meet call from the extension only when the extension sent a message in the last 30 seconds.
 
 ## Tests
 

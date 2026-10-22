@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.3 (2026-10-21)
+
+### Fixed
+- Tinta finds Google Meet calls at the new Meet address, `meet.google.com/meet/...`. The participants, the speaker names, and the automatic stop at the end of the call work with these calls. Restart Chrome to load the new extension.
+- A new recording no longer uses a Meet call that ended earlier. The recording stops automatically at the end of the new call, and it does not get the participants of the earlier call.
+- The end of a Meet call is no longer lost when the extension connects to Tinta again at that time. The recording stops automatically. Restart Chrome to load the new extension.
+- A short break in the connection to the Meet extension no longer ends the call in Tinta. Tinta waits 15 seconds for the call to send again.
+
 ## 0.9.2 (2026-10-19)
 
 ### Fixed
