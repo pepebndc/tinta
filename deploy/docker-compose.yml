@@ -4,7 +4,7 @@ name: tinta
 
 services:
   web:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     restart: unless-stopped
     volumes:
       # Directory mounts, so a git pull shows up without a restart.
