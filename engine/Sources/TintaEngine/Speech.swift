@@ -16,9 +16,12 @@ enum ModelPins {
     static let offlineRegistry = "http://127.0.0.1:9"
     static let onlineRegistry = "https://huggingface.co"
 
+    /// The engine starts offline, and only `install_models` goes online. In offline mode, FluidAudio
+    /// does not delete a model folder and download it again when a model fails to load.
     static func setOnline(_ online: Bool) {
         ModelRegistry.baseURL = online ? onlineRegistry : offlineRegistry
         ModelRegistry.revisionOverrides = revisions
+        ModelHub.offlineMode = !online
     }
 
     static var modelsRoot: URL { MLModelConfigurationUtils.defaultModelsDirectory() }
@@ -90,6 +93,8 @@ actor Speech {
     }
 
     func install() async throws {
+        // The downloads replace model files, so the last hash check does not apply to them.
+        verified = false
         ModelPins.setOnline(true)
         defer { ModelPins.setOnline(false) }
         Output.shared.event("install_progress", ["component": "transcription", "state": "downloading"])
@@ -99,7 +104,6 @@ actor Speech {
         Output.shared.event("install_progress", ["component": "diarization", "state": "downloading"])
         let diarizerManager = OfflineDiarizerManager()
         try await diarizerManager.prepareModels()
-        verified = false
         try verify()
         let manager = AsrManager()
         try await manager.loadModels(asrModels)
@@ -119,7 +123,6 @@ actor Speech {
 
     private func load() async throws {
         guard modelsInstalled() else { throw EngineError("models are not installed") }
-        ModelPins.setOnline(false)
         try verify()
         if asr == nil {
             let models = try await AsrModels.load(from: AsrModels.defaultCacheDirectory(for: .v3), version: .v3)
@@ -135,7 +138,6 @@ actor Speech {
     /// The diarizer models use GPU memory in proportion to the audio length, and Core ML keeps it
     /// while the models exist. Each final pass loads a new diarizer and releases it at the end.
     private func makeDiarizer(maxSpeakers: Int?) async throws -> OfflineDiarizerManager {
-        ModelPins.setOnline(false)
         try verify()
         var config = OfflineDiarizerConfig.default
         if let maxSpeakers, maxSpeakers > 0 {

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
@@ -34,7 +34,8 @@ impl Keys {
 
     /// Loads the master key from the Keychain, or creates it on first use.
     /// The item is a generic password that iCloud Keychain does not synchronize.
-    pub fn load_or_create() -> Result<Self> {
+    /// When the library exists and the key does not, a new key cannot open the library, so this is an error.
+    pub fn load_or_create(library_exists: bool) -> Result<Self> {
         use security_framework::passwords::set_generic_password;
         // Debug builds can use a fixed key, so that automated tests do not wait for Keychain prompts.
         #[cfg(debug_assertions)]
@@ -53,6 +54,13 @@ impl Keys {
                     value
                 }
                 None => {
+                    if library_exists {
+                        bail!(
+                            "The key of the library is not in the Keychain, so Tinta cannot open the library. \
+                             Restore the Keychain item \"{SERVICE}\" from a backup. To start with an empty library, \
+                             move the library folder away and open Tinta again."
+                        );
+                    }
                     let mut key = [0u8; 32];
                     rand::thread_rng().fill_bytes(&mut key);
                     let value = hex::encode(key).into_bytes();

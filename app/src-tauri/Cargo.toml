@@ -19,6 +19,7 @@ uuid.workspace = true
 tinta-core = { path = "../../crates/tinta-core" }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
+rfd = { version = "0.16", default-features = false }
 libc = "0.2"
 base64 = "0.22"
 block2 = "0.6"

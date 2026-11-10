@@ -154,7 +154,7 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
   return (
     <div className="onboarding">
       <header className="onboarding-top">
-        <div className="onboarding-dots" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
+        <div className="onboarding-dots" role="group" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
           {STEPS.map((s, i) => (
             <button
               key={s}
@@ -234,7 +234,7 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
               ) : progress ? (
                 <div className="step-progress">
                   <span className="small">{progress}</span>
-                  <div className="meter-bar wide indeterminate">
+                  <div className="meter-bar wide indeterminate" role="progressbar" aria-label="Download of the speech models">
                     <div />
                   </div>
                   <span className="small muted">You can continue. The download goes on in the background.</span>

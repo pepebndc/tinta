@@ -13,6 +13,9 @@ concurrency:
   group: deploy-website
   cancel-in-progress: false
 
+# The job uses only its SSH key, so the workflow token gets no access.
+permissions: {}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

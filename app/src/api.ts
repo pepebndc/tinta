@@ -78,6 +78,8 @@ export type MeetingDetail = {
   names: Record<string, string>;
   participants: Participant[];
   has_edits: boolean;
+  /** True when a speaker has a name, a merge, or a turn that the user or an MCP client set. */
+  has_speaker_changes: boolean;
   audio_bytes: number;
   summary: { content: string; written_by: string; updated_at: number } | null;
   summarizing: boolean;
@@ -194,6 +196,8 @@ export type Source = { id: string; name: string; playing: boolean };
 export type SearchHit = { meeting_id: string; title: string; kind: string; snippet: string };
 export type Revision = {
   id: number;
+  /** The changes of one request have the same batch. Undo restores all of them. */
+  batch: string;
   meeting_id: string;
   entity: string;
   field: string;
@@ -256,6 +260,8 @@ export const api = {
   speakerSample: (speakerId: string) => invoke<string>("speaker_sample", { speakerId }),
   turnAudio: (turnId: number) => invoke<string>("turn_audio", { turnId }),
   trashMeeting: (id: string) => invoke<void>("trash_meeting", { id }),
+  /** Deletes a new meeting that has no recording, no notes, and no tags. Returns true when Tinta deleted it. */
+  discardDraft: (id: string) => invoke<boolean>("discard_draft", { id }),
   deleteMeeting: (id: string) => invoke<void>("delete_meeting", { id }),
   deleteAudio: (id: string) => invoke<void>("delete_audio", { id }),
   setAudioRetention: (id: string, days: number) => invoke<number>("set_audio_retention", { id, days }),

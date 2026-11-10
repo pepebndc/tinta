@@ -91,7 +91,14 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
           <h2>Summary</h2>
         </div>
         <p className="small muted">Writing the summary from your notes and the transcript…</p>
-        <div className={`meter-bar wide ${fraction === null ? "indeterminate" : ""}`}>
+        <div
+          className={`meter-bar wide ${fraction === null ? "indeterminate" : ""}`}
+          role="progressbar"
+          aria-label="Writing the summary"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}
+        >
           <div style={fraction === null ? undefined : { transform: `scaleX(${Math.max(0.02, fraction)})` }} />
         </div>
       </section>

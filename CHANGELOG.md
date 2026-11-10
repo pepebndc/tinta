@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.10.0 (2026-11-10)
+
+### Changed
+- A close of the main window hides the window, and Tinta continues. Reminders, call detection, and a recording stay active. Click the Tinta icon in the Dock to show the window again. Press Command+Q to quit.
+- A meeting whose processing failed keeps its audio for the audio period of Settings (7 days by default), and then Tinta deletes the audio. Before, this audio had no end date.
+- "Process again" asks first when you set speaker names, merged speakers, or moved a turn to another speaker, because a new pass removes these changes.
+- Undo on the MCP screen no longer removes later work. When you changed the same text or value after the MCP client, Tinta refuses the undo and tells you which part changed. Undo the newest change first.
+- An MCP client can no longer set an audio period that ends in less than 7 days, because that deletes the audio without the trash. The client uses `delete_audio`, which moves the audio to the trash. The `move_to_folder` tool needs the `folder` argument: a name, or null to remove the folder.
+- "Merge into…" asks before it merges two speakers.
+- You cannot rename, merge, or edit speakers and transcript text while Tinta processes that meeting. Tinta tells you to wait, and the change is not lost.
+- When "Process again" fails on a meeting that was ready, the meeting stays ready with its transcript. Tinta shows the reason.
+- A reminder click during a recording of another meeting tells you that Tinta does not record the new call.
+- The MCP screen shows the meeting name as a link, the field in words, and the values before and after each change.
+- Command+comma opens Settings. "Install the speech models" opens Settings at the models panel.
+- The open meeting and the current page are visible in the sidebar in the light appearance. Text, error, and focus colors have a higher contrast.
+- Menus work with the arrow keys and give the focus back to their button. Confirm rows focus Cancel first, and Escape cancels.
+- The Meet extension is version 0.5.0. Its popup and its description state that the extension reads the meeting code and the meeting title. Restart Chrome to load the new extension.
+- To build Tinta, you need Rust 1.89 or later.
+
+### Fixed
+- A recording that starts from a reminder no longer takes the names of another Meet call that is open, and it no longer stops when you leave that other call.
+- A second Meet tab no longer changes the mute state, the names, or the speakers of the recording. A Meet call that is open in two tabs ends when you leave the last tab.
+- A recording no longer stops when Meet shows only a presentation.
+- A short movement in a Meet tile, such as the pointer over it, no longer marks that person as the speaker. A person whose tile goes away no longer stays marked as the speaker.
+- When a recording does not start in time, for example because a macOS permission request stays open, Tinta cancels it. Before, the recording could continue with no sign in Tinta.
+- A meeting that you record some days after you created it now follows the audio period. Before, Tinta kept that audio with no end date and showed it as deleted. Tinta corrects these meetings at the first start, and then deletes audio that is past its period.
+- A meeting with only a title or a folder is no longer deleted when you open it again.
+- Notes no longer go back to older text after a slow reload. Tinta saves the last words when the window goes to the background or you click out of the notes, and it saves a title that you type when you open another view. A notes save that fails runs again.
+- A damaged audio file no longer stops the processing of the whole meeting. Tinta processes the rest of the audio and tells you that the transcript can have gaps.
+- Audio on the second channel of a stereo file or a stereo source now reaches the transcript.
+- A speech model that fails to load one time no longer makes Tinta delete the speech models.
+- When Tinta cannot save the audio of a recording, for example on a full disk, it stops the recording and tells you.
+- When the app closes during a recording, the engine saves the last seconds of audio.
+- Search finds words with an apostrophe, a hyphen, a period, or an at sign, such as "don't", "e-mail", and an email address. Search also finds the live transcript of a meeting whose processing failed.
+- When Tinta cannot find a library that you moved, or the key of the library is not in the Keychain, it shows a message and does not create an empty library. A start that fails shows the reason in a dialog.
+- A second copy of Tinta no longer starts on the same library.
+- An audio file that Tinta cannot import no longer leaves an empty meeting in the library. "Or import an audio file" shows "Importing the audio file…" and cannot start two imports.
+- Errors and notices show in the compact window, and they stay visible when a page scrolls.
+- A meeting that an MCP client moves to the trash shows a bar with Restore, and its notes and title are read-only.
+- Undo of a transcript correction by an MCP client lets you process the meeting again.
+- The Markdown export says "written by an MCP client" for a summary that an MCP client wrote. Text with an empty line no longer breaks an SRT or VTT export.
+- Folder names match in any case for all letters, so "Ámbito" and "ámbito" are one folder.
+- A calendar link with a misleading address no longer shows as a Zoom, Teams, or Webex call.
+- A Granola export with a time zone in its dates imports with the correct time.
+- After Tinta starts again, the first request of an MCP client works. A request that is too large gets a clear error.
+- The record panel tells you when macOS blocks the microphone, with a button to the Microphone settings.
+- A click on a speaker name closes its popover, and the popover fits in a narrow column. A text selection in a transcript turn no longer opens the editor.
+- The audio period of a meeting shows a period that is not in the usual list.
+- The keyboard shortcuts do not work during setup, and Control+Command+F is full screen again.
+- A live turn no longer shows twice or goes missing. The level meters stop while the recording is paused.
+- A closed call notice stays closed after a search, and the Undo notice goes away after an undo.
+- Search results mark the words that match, and a search error shows as an error.
+- The Granola import shows its progress when you come back to the page.
+- Home, the meeting view, and the sidebar no longer break in small windows. Long titles, names, and tags no longer break the layout.
+- Summary errors on macOS 27 show a clear message, and a very long meeting gives an error instead of a summary that does not end.
+- The extension popup shows "Tinta is not installed" when Chrome cannot start the connection, and it finds Tinta in about 2 seconds after you open it. It shows the call of the tab at once after Chrome restarts the extension.
+- The extension folder updates when a file of the extension changes, also when its version number is the same.
+- Deleted meetings and deleted text leave no content in the free space of the library file.
+- The library uses a SQLite version without the security problem CVE-2026-119375.
+
 ## 0.9.3 (2026-10-21)
 
 ### Fixed

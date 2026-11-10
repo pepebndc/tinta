@@ -142,6 +142,9 @@ type NoticeProps = {
   ready: boolean;
   /** A new meeting or a recording is starting. */
   busy: boolean;
+  /** The events whose notice the user closed. */
+  closed: string[];
+  onClose: (eventId: string) => void;
   /** Opens the meeting of the event. With `join`, Tinta also joins the call and records it. */
   onOpenEvent: (eventId: string, join: boolean) => void;
   /** Records the Meet call that the user is in. */
@@ -153,9 +156,8 @@ type NoticeProps = {
  * A meeting that the user records gets no notice. In the Meet call of the meeting, the notice offers only to record.
  * During the recording of a Meet call, the notice of that call does not show.
  */
-export function CallNotice({ calendar, meetings, active, extension, ready, busy, onOpenEvent, onRecord }: NoticeProps) {
+export function CallNotice({ calendar, meetings, active, extension, ready, busy, closed, onClose, onOpenEvent, onRecord }: NoticeProps) {
   const [now, setNow] = useState(Date.now());
-  const [closed, setClosed] = useState<string[]>([]);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(t);
@@ -182,12 +184,12 @@ export function CallNotice({ calendar, meetings, active, extension, ready, busy,
       : { label: "Join and record", run: () => onOpenEvent(event.id, true) };
 
   return (
-    <div className={`call-notice ${event.start <= now ? "now" : ""}`} role="status">
+    <div className={`call-notice ${event.start <= now ? "now" : ""}`}>
       <div className="call-notice-head">
         <span className="eyebrow">
           {startsIn(event, now)} · {PLATFORM_NAMES[event.link.platform]}
         </span>
-        <CloseButton onClick={() => setClosed([...closed, event.id])} />
+        <CloseButton onClick={() => onClose(event.id)} />
       </div>
       <button className="quiet call-notice-title" onClick={() => onOpenEvent(event.id, false)} disabled={busy} title="Open the notes of this meeting">
         {event.title || "Untitled meeting"}

@@ -32,7 +32,7 @@
     maxNameLength: 80,
     maxStringLength: 200,
     maxParticipants: 100,
-    speaking: { windowMs: 400, minMutationsPerWindow: 3, startWindows: 2, endQuietMs: 800 },
+    speaking: { windowMs: 400, minMutationsPerWindow: 3, startMs: 600, endQuietMs: 800 },
     tickMs: 200,
     rescanDelayMs: 250,
     rescanIntervalMs: 2000,
@@ -194,6 +194,8 @@
   const tracker = new globalThis.TintaSpeaking.SpeakingTracker(CONFIG.speaking);
   const tiles = new Map();
   let participants = new Map();
+  // True when the page shows a tile or a People panel item. A presentation tile counts.
+  let callVisible = false;
 
   function participantId(el) {
     return clean(el.getAttribute(CONFIG.participantIdAttribute));
@@ -312,7 +314,9 @@
       });
     }
 
-    for (const item of queryAll(CONFIG.peoplePanelItemSelector)) {
+    const panelItems = queryAll(CONFIG.peoplePanelItemSelector);
+    callVisible = tiles.size > 0 || panelItems.length > 0;
+    for (const item of panelItems) {
       const id = participantId(item);
       if (!id) continue;
       const d = describe(item, true);
@@ -330,8 +334,9 @@
       if (!next.has(id)) tracker.remove(id);
     }
 
-    // The picture-in-picture window shows only some tiles. The other participants are still in the call.
-    if (pip) {
+    // The picture-in-picture window shows only some tiles, and a layout can show only the presentation.
+    // The other participants are still in the call.
+    if (pip || (next.size === 0 && presentationIds.size > 0)) {
       for (const [id, p] of participants) {
         const cur = next.get(id);
         if (!cur) next.set(id, p);
@@ -462,9 +467,13 @@
   }
 
   function tick() {
+    // A participant can have more than one tile. A participant without a tile has no hint.
+    const hints = new Map();
     for (const [tile, info] of tiles) {
-      if (!info.presentation) tracker.setHint(info.id, hasSpeakingHint(tile));
+      if (!info.presentation) hints.set(info.id, hints.get(info.id) === true || hasSpeakingHint(tile));
     }
+    for (const [id, hint] of hints) tracker.setHint(id, hint);
+    for (const id of participants.keys()) if (!hints.has(id)) tracker.clearHint(id);
     tracker.tick(performance.now());
     sendSpeakers(false);
     // The observer reports a mute at once. This check also catches a change that the observer misses.
@@ -503,13 +512,15 @@
   function updateCallState() {
     const c = meetingCode();
     const now = Date.now();
-    if (participants.size > 0) lastTileSeenAt = now;
+    // The call continues while the page shows a participant, or only a presentation.
+    const present = participants.size > 0 || callVisible;
+    if (present) lastTileSeenAt = now;
     if (inCall && c !== code) endCall();
     if (!inCall) {
       if (c && participants.size > 0) startCall(c);
       return;
     }
-    if (participants.size === 0 && now - lastTileSeenAt >= CONFIG.leaveGraceMs) {
+    if (!present && now - lastTileSeenAt >= CONFIG.leaveGraceMs) {
       endCall(lastTileSeenAt);
       return;
     }
@@ -616,11 +627,29 @@
 
   setDebug(debug);
 
-  // The popup turns the outline on and off. Only this extension can send these messages.
+  // The call of this tab, for the popup.
+  function popupCall() {
+    if (!inCall) return null;
+    const state = stateMessage();
+    return {
+      meeting_code: state.meeting_code,
+      title: state.title,
+      participants: state.participants,
+      speaking: currentSpeakers(),
+      mic_muted: state.mic_muted,
+    };
+  }
+
+  // The popup reads the call of this tab, and turns the outline on and off.
+  // Only this extension can send these messages.
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-    if (sender.id !== chrome.runtime.id || sender.tab || !msg || msg.type !== "tinta_debug") return;
-    if (typeof msg.on === "boolean") setDebug(msg.on);
-    reply({ debug });
+    if (sender.id !== chrome.runtime.id || sender.tab || !msg || stopped) return;
+    if (msg.type === "tinta_debug") {
+      if (typeof msg.on === "boolean") setDebug(msg.on);
+      reply({ debug });
+    } else if (msg.type === "tinta_state") {
+      reply({ debug, call: popupCall() });
+    }
   });
 
   // Start and stop.

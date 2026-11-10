@@ -34,14 +34,14 @@ pub fn definitions() -> Value {
         tool("set_title", "Change the title of a meeting.", json!({"meeting_id": id, "title": {"type": "string"}}), &["meeting_id", "title"]),
         tool("add_tags", "Add tags to a meeting.", json!({"meeting_id": id, "tags": {"type": "array", "items": {"type": "string"}}}), &["meeting_id", "tags"]),
         tool("remove_tags", "Remove tags from a meeting.", json!({"meeting_id": id, "tags": {"type": "array", "items": {"type": "string"}}}), &["meeting_id", "tags"]),
-        tool("move_to_folder", "Move a meeting to a folder. Use null to remove it from its folder.", json!({"meeting_id": id, "folder": {"type": ["string", "null"]}}), &["meeting_id"]),
+        tool("move_to_folder", "Move a meeting to a folder. Use null to remove it from its folder.", json!({"meeting_id": id, "folder": {"type": ["string", "null"]}}), &["meeting_id", "folder"]),
         tool("rename_speaker", "Set the name of a speaker in one meeting. The name becomes confirmed.", json!({"meeting_id": id, "speaker_id": {"type": "string"}, "name": {"type": "string"}}), &["meeting_id", "speaker_id", "name"]),
         tool("merge_speakers", "Move all turns of one speaker to another speaker of the same meeting.", json!({"meeting_id": id, "from_speaker_id": {"type": "string"}, "into_speaker_id": {"type": "string"}}), &["meeting_id", "from_speaker_id", "into_speaker_id"]),
         tool("fix_transcript_text", "Replace the text of one transcript turn.", json!({"meeting_id": id, "turn_id": {"type": "integer"}, "text": {"type": "string"}}), &["meeting_id", "turn_id", "text"]),
         tool("edit_notes", "Replace the manual notes of a meeting. The user can undo the change.", json!({"meeting_id": id, "content": {"type": "string"}}), &["meeting_id", "content"]),
         tool("delete_meeting", "Move a meeting to the trash. The app deletes it permanently after 7 days.", json!({"meeting_id": id}), &["meeting_id"]),
         tool("delete_audio", "Move the audio of a meeting to the trash. The app deletes it permanently after 7 days.", json!({"meeting_id": id}), &["meeting_id"]),
-        tool("set_audio_retention", "Keep the audio of a meeting for 0 to 30 days after the meeting ends.", json!({"meeting_id": id, "days": {"type": "integer"}}), &["meeting_id", "days"]),
+        tool("set_audio_retention", "Keep the audio of a meeting for 0 to 30 days after the meeting ends. The new period must end 7 days or more from now. To delete the audio earlier, use delete_audio.", json!({"meeting_id": id, "days": {"type": "integer"}}), &["meeting_id", "days"]),
     ])
 }
 
@@ -97,8 +97,7 @@ pub fn resolve(db: &Db, id: &str) -> Result<String> {
         }
     }
     if id.len() >= 8 {
-        let matches: Vec<String> = db.meetings(true)?.into_iter().map(|m| m.id).filter(|m| m.starts_with(id)).collect();
-        match matches.as_slice() {
+        match db.ids_with_prefix(id)?.as_slice() {
             [one] => return Ok(one.clone()),
             [] => {}
             _ => bail!("more than one meeting has an ID that starts with {id}. Use the full ID."),
@@ -113,7 +112,7 @@ fn overview(db: &Db, m: &crate::db::Meeting) -> Result<Value> {
         "id": m.id, "title": m.title, "created_at": m.created_at, "started_at": m.started_at,
         "duration_seconds": m.duration, "state": m.state, "folder": m.folder, "tags": m.tags,
         "language": m.language, "has_audio": !m.audio_deleted && m.audio_trashed_at.is_none(),
-        "has_summary": db.summary(&m.id)?.is_some(),
+        "has_summary": db.has_summary(&m.id)?,
     }))
 }
 
@@ -178,7 +177,7 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
             let turns: Vec<Value> = doc
                 .turns
                 .iter()
-                .skip((page - 1) * size)
+                .skip((page - 1).saturating_mul(size))
                 .take(size)
                 .map(|t| {
                     json!({
@@ -222,7 +221,8 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
         }
         "add_tags" | "remove_tags" => {
             let mut tags = db.tags(&id()?)?;
-            let change: Vec<String> = arg_list(args, "tags")?.iter().map(|t| t.trim().to_lowercase()).collect();
+            let change: Vec<String> =
+                arg_list(args, "tags")?.iter().map(|t| t.trim().trim_start_matches('#').to_lowercase()).collect();
             if name == "add_tags" {
                 tags.extend(change);
             } else {
@@ -232,7 +232,14 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
             json!({"ok": true, "tags": db.tags(&id()?)?})
         }
         "move_to_folder" => {
-            db.set_folder(&id()?, args.get("folder").and_then(Value::as_str), Origin::Mcp)?;
+            // Only an explicit null removes the folder, so a call without the argument changes nothing.
+            let folder = match args.get("folder") {
+                Some(Value::Null) => None,
+                Some(Value::String(name)) => Some(name.as_str()),
+                Some(_) => bail!("the folder must be a string or null"),
+                None => bail!("missing argument: folder"),
+            };
+            db.set_folder(&id()?, folder, Origin::Mcp)?;
             json!({"ok": true})
         }
         "rename_speaker" => {
@@ -272,7 +279,20 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
             json!({"ok": true, "trash_days": crate::TRASH_DAYS})
         }
         "set_audio_retention" => {
-            let until = db.set_audio_retention(&id()?, arg_i64(args, "days", None)?, Origin::Mcp)?;
+            // A deletion through MCP goes to the trash for `TRASH_DAYS`. A period that ends earlier
+            // deletes the audio permanently before the user can undo the change.
+            let id = id()?;
+            let days = arg_i64(args, "days", None)?;
+            let meeting = db.meeting(&id)?;
+            let base = meeting.ended_at.unwrap_or(meeting.created_at);
+            let earliest = crate::now_ms() + crate::TRASH_DAYS * crate::DAY_MS;
+            if base.saturating_add(days.saturating_mul(crate::DAY_MS)) < earliest {
+                bail!(
+                    "this period ends less than {} days from now. To delete the audio, use delete_audio: it moves the audio to the trash.",
+                    crate::TRASH_DAYS
+                );
+            }
+            let until = db.set_audio_retention(&id, days, Origin::Mcp)?;
             json!({"ok": true, "audio_until": until})
         }
         other => bail!("unknown tool: {other}"),
@@ -317,5 +337,45 @@ mod tests {
         assert_eq!(db.trash().unwrap().len(), 1);
         db.restore(&m.id).unwrap();
         assert_eq!(db.meetings(true).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_tools_check_their_arguments() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly sync", None).unwrap();
+        let other = db.create_meeting("Other", None).unwrap();
+        let arg = |extra: Value| {
+            let mut args = json!({"meeting_id": m.id});
+            args.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            args
+        };
+
+        // A unique prefix of 8 characters finds the meeting. A shorter prefix does not.
+        assert_eq!(resolve(&db, &m.id[..8]).unwrap(), m.id);
+        assert!(resolve(&db, &m.id[..7]).is_err());
+        assert!(resolve(&db, "").is_err());
+        db.trash_meeting(&other.id, Origin::User).unwrap();
+        assert!(resolve(&db, &other.id[..8]).is_err());
+
+        call(&db, "add_tags", &arg(json!({"tags": ["audit", "q3"]}))).unwrap();
+        call(&db, "remove_tags", &arg(json!({"tags": ["#Audit"]}))).unwrap();
+        assert_eq!(db.tags(&m.id).unwrap(), vec!["q3"]);
+
+        call(&db, "move_to_folder", &arg(json!({"folder": "Clients"}))).unwrap();
+        assert!(call(&db, "move_to_folder", &arg(json!({}))).is_err());
+        assert!(call(&db, "move_to_folder", &arg(json!({"folder": 3}))).is_err());
+        assert_eq!(db.meeting(&m.id).unwrap().folder.as_deref(), Some("Clients"));
+        call(&db, "move_to_folder", &arg(json!({"folder": null}))).unwrap();
+        assert_eq!(db.meeting(&m.id).unwrap().folder, None);
+
+        let (page, _) = call(&db, "get_transcript", &arg(json!({"page": i64::MAX}))).unwrap();
+        assert!(page["turns"].as_array().unwrap().is_empty());
+
+        // A short period deletes the audio permanently, so MCP refuses it. A long period is accepted.
+        assert!(call(&db, "set_audio_retention", &arg(json!({"days": 0}))).is_err());
+        assert!(call(&db, "set_audio_retention", &arg(json!({"days": 6}))).is_err());
+        assert_eq!(db.meeting(&m.id).unwrap().audio_until, None);
+        call(&db, "set_audio_retention", &arg(json!({"days": 30}))).unwrap();
+        assert!(db.meeting(&m.id).unwrap().audio_until.is_some());
     }
 }

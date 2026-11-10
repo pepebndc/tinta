@@ -8,7 +8,7 @@ use crate::db::{Db, NewSpeaker, NewTurn, Participant};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 pub const SOURCE: &str = "granola";
@@ -157,6 +157,10 @@ fn transcript_entries(markdown: &str) -> Vec<(String, String)> {
 }
 
 pub fn parse(dir: &Path, folder: &str, captured_by_me: bool, include_summary: bool) -> Result<Imported> {
+    // The folder comes from the manifest. It must stay inside the export folder.
+    if !Path::new(folder).components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
+        return Err(anyhow!("the folder of the meeting is outside the export: {folder}"));
+    }
     let path = dir.join(folder);
     let read = |name: &str| std::fs::read_to_string(path.join(name)).with_context(|| format!("{name} is missing"));
     let meta: Value = serde_json::from_str(&read("meta.json")?)?;
@@ -236,16 +240,39 @@ pub fn parse(dir: &Path, folder: &str, captured_by_me: bool, include_summary: bo
     })
 }
 
-/// Parses "2026-03-24T11:06:36.463Z" to epoch milliseconds.
+/// Parses "2026-03-24T11:06:36.463Z" or "2026-03-24T12:06:36+01:00" to epoch milliseconds.
+/// A time without a zone is UTC.
 fn parse_utc(s: &str) -> Option<i64> {
     let s = s.trim().trim_end_matches('Z');
     let (date, time) = s.split_once('T')?;
+    let (time, offset_minutes) = match time.rfind(['+', '-']) {
+        Some(at) => {
+            let digits: String = time[at + 1..].chars().filter(|c| *c != ':').collect();
+            if !matches!(digits.len(), 2 | 4) || !digits.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            let hours: i64 = digits[..2].parse().ok()?;
+            let minutes: i64 = digits[2..].parse().unwrap_or(0);
+            let sign = if time[at..].starts_with('-') { -1 } else { 1 };
+            (&time[..at], sign * (hours * 60 + minutes))
+        }
+        None => (time, 0),
+    };
     let mut d = date.split('-').map(|p| p.parse::<i64>());
     let (y, m, day) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
     let mut t = time.split(':');
     let h: i64 = t.next()?.parse().ok()?;
     let min: i64 = t.next()?.parse().ok()?;
     let sec: f64 = t.next().unwrap_or("0").parse().ok()?;
+    let valid = (1970..=9999).contains(&y)
+        && (1..=12).contains(&m)
+        && (1..=31).contains(&day)
+        && (0..24).contains(&h)
+        && (0..60).contains(&min)
+        && (0.0..61.0).contains(&sec);
+    if !valid {
+        return None;
+    }
     // Days from civil date (Howard Hinnant's algorithm).
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
@@ -254,7 +281,7 @@ fn parse_utc(s: &str) -> Option<i64> {
     let doy = (153 * mp + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
-    Some(days * 86_400_000 + h * 3_600_000 + min * 60_000 + (sec * 1000.0) as i64)
+    Some(days * 86_400_000 + h * 3_600_000 + (min - offset_minutes) * 60_000 + (sec * 1000.0) as i64)
 }
 
 /// Imports every meeting that is not in the library yet. `progress` receives (done, total).
@@ -365,6 +392,29 @@ mod tests {
         println!("meetings {} turns {} named speakers {} unnamed speakers {} meetings with notes {}", meetings.len(), turns, named, unnamed, with_notes);
         let again = import(&db, &dir, false, |_, _| {}).unwrap();
         println!("second import: imported {} skipped {}", again.imported, again.skipped);
+    }
+
+    #[test]
+    fn parses_times_with_a_zone_and_refuses_impossible_dates() {
+        let utc = parse_utc("2026-03-24T11:06:36.463Z");
+        assert_eq!(utc, Some(1_774_350_396_463));
+        assert_eq!(parse_utc("2026-03-24T12:06:36.463+01:00"), utc);
+        assert_eq!(parse_utc("2026-03-24T06:06:36.463-0500"), utc);
+        assert_eq!(parse_utc("2026-03-24T11:06:36.463"), utc);
+        for bad in ["2026-13-24T11:06:36Z", "2026-03-32T11:06:36Z", "2026-03-24T25:06:36Z", "99999999999999999-03-24T11:06:36Z", "2026-03-24", "2026-03-24T11:06:36+1"] {
+            assert_eq!(parse_utc(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_meeting_folder_outside_the_export() {
+        let dir = tempfile::tempdir().unwrap();
+        export(dir.path());
+        let inside = dir.path().join("export");
+        std::fs::create_dir_all(&inside).unwrap();
+        assert!(parse(&inside, "../my-meetings/2026/03/2026-03-24_1200 - Weekly sync", true, false).is_err());
+        let absolute = dir.path().join("my-meetings/2026/03/2026-03-24_1200 - Weekly sync");
+        assert!(parse(&inside, absolute.to_str().unwrap(), true, false).is_err());
     }
 
     #[test]

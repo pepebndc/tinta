@@ -56,6 +56,7 @@ function detail(): MeetingDetail {
       { participant_id: "p3", name: "Sam Carter", is_self: false },
     ],
     has_edits: false,
+    has_speaker_changes: false,
     audio_bytes: 61_400_000,
     summary: {
       content: "The team reviewed the first screen of the app. They agreed to keep it calm, with speaker names and timestamps, and to give the notes their own space.\n\n### Key points\n\n- The first screen should feel calm.\n- Speaker names and timestamps help people find a part of the conversation.\n- Notes stay on this Mac.\n\n### Action items\n\n- **Sam Carter**: Review the icon at small sizes tomorrow morning.\n",
@@ -142,6 +143,7 @@ export async function mockInvoke<T>(command: string): Promise<T> {
       route: "speakers",
     },
     search: [],
+    discard_draft: false,
     granola_default_path: "/Users/sam/granola-export",
     granola_preview: { path: "/Users/sam/granola-export", total: 128, mine: 120, shared: 8, already_imported: 0 },
     trash: [],
@@ -149,8 +151,16 @@ export async function mockInvoke<T>(command: string): Promise<T> {
     export_file: "/Users/sam/Downloads/Design review.md",
     prepare_extension: "/Users/sam/Library/Application Support/Tinta/Chrome extension",
     mcp_activity: {
-      revisions: [],
-      access: [],
+      revisions: [
+        { id: 4, batch: "b4", meeting_id: "m2", entity: "meeting", field: "tags", old_value: '["weekly"]', new_value: '["audit","weekly"]', ts: now - 5 * minute, undone: false },
+        { id: 3, batch: "b3", meeting_id: "m1", entity: "notes", field: "content", old_value: "Make the first screen feel calm.", new_value: "Make the first screen feel calm.\n\nAction: review the icon at small sizes.", ts: now - 12 * minute, undone: false },
+        { id: 2, batch: "b2", meeting_id: "m3", entity: "meeting", field: "title", old_value: "Meeting 2026-11-07 09:06 UTC", new_value: "Product catch-up", ts: now - 300 * minute, undone: true },
+        { id: 1, batch: "b1", meeting_id: "gone", entity: "meeting", field: "deleted_at", old_value: null, new_value: String(now - 400 * minute), ts: now - 400 * minute, undone: false },
+      ],
+      access: [
+        { id: 2, ts: now - 5 * minute, session: "s1", tool: "add_tags", meeting_ids: ["m2"], result: "ok" },
+        { id: 1, ts: now - 6 * minute, session: "s1", tool: "list_meetings", meeting_ids: ["m1", "m2", "m3"], result: "ok" },
+      ],
       tools: [
         { name: "list_meetings", description: "List meetings, newest first. Filter by folder, tag, or date range (epoch milliseconds).", read_only: true },
         { name: "search_meetings", description: "Full-text search over titles, tags, notes, summaries, speaker names, and transcripts.", read_only: true },

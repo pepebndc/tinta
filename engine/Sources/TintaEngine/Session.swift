@@ -145,8 +145,11 @@ final class RecordingSession: @unchecked Sendable {
         if micMuted { muteChanges = [(0, true)] }
         var writers: [Track: ChunkWriter] = [:]
         var segmenters: [Track: LiveSegmenter] = [:]
+        let failure = WriteFailure()
         for track in Track.allCases {
-            writers[track] = try ChunkWriter(directory: directory, key: key, track: track)
+            let writer = try ChunkWriter(directory: directory, key: key, track: track)
+            writer.onFailure = { failure.report() }
+            writers[track] = writer
         }
         segmenters[.remote] = LiveSegmenter(track: .remote, speech: speech)
         let box = WeakBox()
@@ -304,6 +307,23 @@ final class RecordingSession: @unchecked Sendable {
 
     private final class WeakBox: @unchecked Sendable {
         weak var session: RecordingSession?
+    }
+
+    /// Tells the app one time that the recording cannot save its audio.
+    private final class WriteFailure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var reported = false
+
+        func report() {
+            lock.lock()
+            let first = !reported
+            reported = true
+            lock.unlock()
+            guard first else { return }
+            Output.shared.event(
+                "recording_failed",
+                ["message": "Tinta cannot save the audio of this recording. Make sure that the disk has free space."])
+        }
     }
 
     func setPaused(_ value: Bool) {

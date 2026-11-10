@@ -44,6 +44,29 @@ enum Summarizer {
             return ["summary": summary, "model": modelName]
         } catch let error as LanguageModelSession.GenerationError {
             throw EngineError(message(error))
+        } catch {
+            guard let text = message(caseOf: error) else { throw error }
+            throw EngineError(text)
+        }
+    }
+
+    /// The message for an error of the type `LanguageModelError`, which the model throws on macOS 27 and later.
+    /// The type is not in the macOS 26 SDK, so the code reads the name of the type and of its case.
+    private static func message(caseOf error: Error) -> String? {
+        guard String(describing: type(of: error)) == "LanguageModelError" else { return nil }
+        switch Mirror(reflecting: error).children.first?.label {
+        case "guardrailViolation", "refusal":
+            return "The on-device model refused to summarize this content."
+        case "unsupportedLanguageOrLocale":
+            return "The on-device model does not support the language of this meeting."
+        case "contextSizeExceeded":
+            return "A part of the meeting is too long for the on-device model."
+        case "rateLimited":
+            return "The on-device model is busy. Try again later."
+        case "timeout":
+            return "The on-device model did not answer in time. Try again."
+        default:
+            return "The on-device model could not write the summary: \(error.localizedDescription)"
         }
     }
 
@@ -127,11 +150,15 @@ private struct Writer {
 
     private var options: GenerationOptions { GenerationOptions(temperature: 0.2) }
 
+    /// The most times that `condense` runs on its own notes before it stops with an error.
+    private static let condenseLevels = 4
+
     func summary(title: String, notes: String, lines: [String]) async throws -> String {
         var digest = Summarizer.groups(lines, limit: Summarizer.partCharacters)
         let total = max(1, digest.count)
-        if digest.count > 1 || (digest.first?.count ?? 0) > Summarizer.finalCharacters {
-            digest = try await condense(digest, total: total)
+        let condensed = digest.count > 1 || (digest.first?.count ?? 0) > Summarizer.finalCharacters
+        if condensed {
+            digest = try await condense(digest, total: total, level: 1)
         }
         Output.shared.event("summary_progress", ["fraction": 0.9])
         let userNotes = String(notes.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Summarizer.userNotesCharacters))
@@ -141,8 +168,8 @@ private struct Writer {
             The notes that the user wrote during the meeting. They show what the user thinks is important:
             \(userNotes.isEmpty ? "No notes." : userNotes)
 
-            \(lines.count == digest.count ? "The transcript" : "Notes about each part of the transcript"):
-            \(digest.joined(separator: "\n\n"))
+            \(condensed ? "Notes about each part of the transcript" : "The transcript"):
+            \(digest.isEmpty ? "No transcript." : digest.joined(separator: "\n\n"))
             """
         let session = LanguageModelSession(instructions: rules)
         let result = try await session.respond(to: prompt, schema: try SummarySchema.make(), options: options)
@@ -150,7 +177,8 @@ private struct Writer {
     }
 
     /// Turns transcript parts into short notes until they fit in one request.
-    private func condense(_ parts: [String], total: Int) async throws -> [String] {
+    /// The notes of a part can be as long as the part, so the number of levels has a limit.
+    private func condense(_ parts: [String], total: Int, level: Int) async throws -> [String] {
         var notes: [String] = []
         for (index, part) in parts.enumerated() {
             let session = LanguageModelSession(instructions: rules)
@@ -165,7 +193,10 @@ private struct Writer {
         }
         let joined = notes.joined(separator: "\n\n")
         if joined.count <= Summarizer.finalCharacters { return notes }
-        return try await condense(Summarizer.groups(notes, limit: Summarizer.partCharacters), total: total)
+        if level >= Self.condenseLevels {
+            throw EngineError("The meeting is too long for the on-device model.")
+        }
+        return try await condense(Summarizer.groups(notes, limit: Summarizer.partCharacters), total: total, level: level + 1)
     }
 
     private func render(_ content: GeneratedContent) throws -> String {

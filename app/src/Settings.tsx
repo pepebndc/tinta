@@ -14,8 +14,16 @@ const GROUPS = [
   ["settings-import", "Import"],
 ] as const;
 
+/** Scrolls to a part of Settings. The scroll has no motion when the user turned on "Reduce motion". */
+function scrollToPart(id: string) {
+  const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  document.getElementById(id)?.scrollIntoView({ behavior, block: "start" });
+}
+
 type Props = {
   boot: Bootstrap;
+  /** The panel that Settings shows first: "models" or "extension". */
+  section?: string;
   calls: AppCall[];
   calendar: CalendarState;
   onConnectCalendar: () => void;
@@ -24,7 +32,7 @@ type Props = {
   onError: (e: string) => void;
 };
 
-export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, onChanged, onError }: Props) {
+export function Settings({ boot, section, calls, calendar, onConnectCalendar, onGranola, onChanged, onError }: Props) {
   const [name, setName] = useState(boot.self_name);
   const { progress, install } = useModelInstall(onChanged, onError);
 
@@ -36,6 +44,10 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
   useEffect(() => {
     api.listBrowsers().then(setBrowsers).catch((e) => onError(String(e)));
   }, []);
+
+  useEffect(() => {
+    if (section) document.getElementById(`settings-${section}`)?.scrollIntoView({ block: "start" });
+  }, [section]);
 
   // The version comes from the app bundle. The design preview has no bundle, so it shows the package version.
   useEffect(() => {
@@ -96,7 +108,7 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
       </div>
       <nav className="settings-nav" aria-label="Settings groups">
         {GROUPS.map(([gid, label]) => (
-          <button key={gid} className="quiet" onClick={() => document.getElementById(gid)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          <button key={gid} className="quiet" onClick={() => scrollToPart(gid)}>
             {label}
           </button>
         ))}
@@ -221,7 +233,7 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel settings-target" id="settings-extension">
         <h3>Google Meet extension</h3>
         <p className="small muted">
           When you mute your microphone in Meet, Tinta does not record it. To change this during a recording, click the microphone
@@ -360,7 +372,7 @@ export function Settings({ boot, calls, calendar, onConnectCalendar, onGranola, 
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel settings-target" id="settings-models">
         <h3>Speech models</h3>
         {boot.models_installed ? (
           <p>The models are installed. Tinta checks them against their pinned hashes when it loads them.</p>
@@ -431,10 +443,71 @@ export function Trash({ onError, onChanged }: { onError: (e: string) => void; on
   );
 }
 
-type McpProps = { boot: Bootstrap | null; onChanged: () => void; onError: (e: string) => void };
+const short = (text: string | null) => {
+  const line = (text ?? "").replace(/\s+/g, " ").trim();
+  return line.length > 80 ? `${line.slice(0, 80)}…` : line;
+};
+
+/** The value of a JSON text, or null when the text is not JSON. */
+function parsed(text: string | null): unknown {
+  try {
+    return text === null ? null : JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** A change by an MCP client in words: the field, and the values before and after the change. */
+function describe(r: Revision): { what: string; before?: string; after?: string } {
+  const date = (value: string | null) => (value ? dateTime(Number(value)) : "");
+  const tags = (value: string | null) => ((parsed(value) as string[] | null) ?? []).join(", ") || "no tags";
+  const name = (value: string | null) => (parsed(value) as { name?: string | null } | null)?.name || "no name";
+  switch (`${r.entity}.${r.field}`) {
+    case "meeting.title":
+      return { what: "Title", before: short(r.old_value), after: short(r.new_value) };
+    case "meeting.folder":
+      return { what: "Folder", before: r.old_value ?? "no folder", after: r.new_value ?? "no folder" };
+    case "meeting.tags":
+      return { what: "Tags", before: tags(r.old_value), after: tags(r.new_value) };
+    case "meeting.audio_until":
+      return { what: "Audio period", before: date(r.old_value) || "the default period", after: date(r.new_value) };
+    case "meeting.deleted_at":
+      return { what: "Moved to the trash" };
+    case "meeting.audio_trashed_at":
+      return { what: "Audio moved to the trash" };
+    case "notes.content":
+      return { what: "Notes", before: short(r.old_value) || "no notes", after: short(r.new_value) || "no notes" };
+    case "summary.content":
+      return {
+        what: "Summary",
+        before: short((parsed(r.old_value) as { content?: string } | null)?.content ?? null) || "no summary",
+        after: short(r.new_value),
+      };
+    case "speaker.name":
+      return { what: "Speaker name", before: name(r.old_value), after: name(r.new_value) };
+    case "speaker.merged_into":
+      return { what: "Speakers merged" };
+    case "turn.speaker_id":
+      return { what: "Speaker of a turn" };
+    case "turn.text":
+      return { what: "Transcript text", before: short(r.old_value), after: short(r.new_value) };
+    default:
+      return { what: `${r.entity} ${r.field}` };
+  }
+}
+
+type McpProps = {
+  boot: Bootstrap | null;
+  meetings: Meeting[];
+  onOpen: (id: string) => void;
+  onChanged: () => void;
+  /** An undo changed a meeting. */
+  onUndone: () => void;
+  onError: (e: string) => void;
+};
 
 /** MCP access, the client configuration, the changes by MCP clients, and the access log. */
-export function Mcp({ boot, onChanged, onError }: McpProps) {
+export function Mcp({ boot, meetings, onOpen, onChanged, onUndone, onError }: McpProps) {
   const [data, setData] = useState<{ revisions: Revision[]; access: Access[]; tools: McpTool[] }>({ revisions: [], access: [], tools: [] });
   const load = () => api.mcpActivity().then(setData).catch((e) => onError(String(e)));
   useEffect(() => {
@@ -442,6 +515,18 @@ export function Mcp({ boot, onChanged, onError }: McpProps) {
     const sub = on("mcp_access", () => void load());
     return () => void sub.then((u) => u());
   }, []);
+  const titles = new Map(meetings.map((m) => [m.id, m.title]));
+  // The changes of one request undo together, so they show as one row: the newest change of the request.
+  const changes = data.revisions.filter((r, i, all) => all.findIndex((o) => o.batch === r.batch) === i);
+  /** A meeting by its name, as a link. A meeting that is not in the list shows as `missing`, without a link. */
+  const meeting = (id: string, missing: string) =>
+    titles.has(id) ? (
+      <button className="quiet link-button" onClick={() => onOpen(id)} title="Open the meeting">
+        {titles.get(id)}
+      </button>
+    ) : (
+      <span className="muted">{missing}</span>
+    );
   return (
     <div className="settings mcp-page">
       <h1>MCP</h1>
@@ -476,21 +561,31 @@ export function Mcp({ boot, onChanged, onError }: McpProps) {
       )}
       <section className="panel">
         <h2>Changes by MCP clients</h2>
-        {data.revisions.length === 0 && <p className="muted">No changes.</p>}
-        {data.revisions.map((r) => (
-          <div key={r.id} className="row small">
-            <span>{dateTime(r.ts)}</span>
-            <span>
-              {r.entity}.{r.field}
-            </span>
-            <span className="muted ellipsis">{(r.new_value ?? "").slice(0, 80)}</span>
-            {r.undone ? (
-              <span className="tag">undone</span>
-            ) : (
-              <button onClick={() => api.undo(r.id).then(load).catch((e) => onError(String(e)))}>Undo</button>
-            )}
-          </div>
-        ))}
+        {changes.length === 0 && <p className="muted">No changes.</p>}
+        {changes.map((r) => {
+          const change = describe(r);
+          return (
+            <div key={r.id} className="change-row small">
+              <div className="grow">
+                <div className="change-head">
+                  <strong>{change.what}</strong>
+                  {meeting(r.meeting_id, "A meeting in the trash")}
+                  <span className="muted">{dateTime(r.ts)}</span>
+                </div>
+                {change.after !== undefined && (
+                  <div className="muted change-values">
+                    <span title={r.old_value ?? ""}>{change.before}</span> → <span title={r.new_value ?? ""}>{change.after}</span>
+                  </div>
+                )}
+              </div>
+              {r.undone ? (
+                <span className="tag">undone</span>
+              ) : (
+                <button onClick={() => api.undo(r.id).then(load).then(onUndone).catch((e) => onError(String(e)))}>Undo</button>
+              )}
+            </div>
+          );
+        })}
       </section>
       <section className="panel">
         <h2>Access log</h2>
@@ -499,7 +594,7 @@ export function Mcp({ boot, onChanged, onError }: McpProps) {
           <div key={a.id} className="row small">
             <span>{dateTime(a.ts)}</span>
             <span>{a.tool}</span>
-            <span className="muted">{a.meeting_ids.length === 1 ? "1 meeting" : `${a.meeting_ids.length} meetings`}</span>
+            {a.meeting_ids.length === 1 ? meeting(a.meeting_ids[0], "1 meeting") : <span className="muted">{a.meeting_ids.length} meetings</span>}
             <span className={a.result === "ok" ? "muted" : "warn"}>{a.result}</span>
           </div>
         ))}

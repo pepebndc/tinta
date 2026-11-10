@@ -70,7 +70,9 @@ export function Bubble() {
       on<Active | null>("recording", setActive),
       on<AppCall[]>("calls", setCalls),
       on<ExtensionState>("extension", setExtension),
-      on<Turn>("live_turn", (t) => setDetail((d) => (d && d.meeting.id === t.meeting_id ? { ...d, turns: [...d.turns, t] } : d))),
+      on<Turn>("live_turn", (t) =>
+        setDetail((d) => (d && d.meeting.id === t.meeting_id && !d.turns.some((o) => o.id === t.id) ? { ...d, turns: [...d.turns, t] } : d)),
+      ),
       on<EngineEvent>("engine", (e) => {
         if (e.event !== "levels") return;
         setMic((m) => push(m, Number(e.mic)));

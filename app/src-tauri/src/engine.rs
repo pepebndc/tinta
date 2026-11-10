@@ -24,18 +24,21 @@ struct Process {
 pub struct Engine {
     path: PathBuf,
     process: Mutex<Option<Process>>,
+    /// The number of the newest engine process.
+    generation: Arc<AtomicU64>,
     next_id: AtomicU64,
     on_event: EventHandler,
     stopped: AtomicBool,
 }
 
-/// The engine binary: next to the app executable in the bundle, or the SwiftPM build in development.
+/// The engine binary: next to the app executable in the bundle. A development build without that file
+/// uses the SwiftPM build.
 pub fn engine_path() -> PathBuf {
-    let bundled = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("tinta-engine")))
-        .filter(|p| p.exists());
-    bundled.unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engine/.build/release/tinta-engine"))
+    let bundled = crate::system::helper_path("tinta-engine");
+    if cfg!(debug_assertions) && !bundled.exists() {
+        return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engine/.build/release/tinta-engine");
+    }
+    bundled
 }
 
 impl Engine {
@@ -43,6 +46,7 @@ impl Engine {
         Arc::new(Self {
             path: engine_path(),
             process: Mutex::new(None),
+            generation: Arc::new(AtomicU64::new(0)),
             next_id: AtomicU64::new(1),
             on_event,
             stopped: AtomicBool::new(false),
@@ -69,6 +73,8 @@ impl Engine {
         let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
         let reader_pending = pending.clone();
         let on_event = self.on_event.clone();
+        let generation = self.generation.clone();
+        let number = generation.fetch_add(1, Ordering::SeqCst) + 1;
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
@@ -91,7 +97,8 @@ impl Engine {
             for (_, sender) in waiting {
                 let _ = sender.send(Err("the engine stopped".into()));
             }
-            on_event(json!({"event": "engine_exit"}));
+            // `current` is false when a newer engine process runs. The exit of an old process does not end its work.
+            on_event(json!({"event": "engine_exit", "current": generation.load(Ordering::SeqCst) == number}));
         });
         *slot = Some(Process { child, stdin, pending });
         Ok(())

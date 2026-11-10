@@ -9,13 +9,13 @@ final class Output: @unchecked Sendable {
         guard JSONSerialization.isValidJSONObject(object),
             let data = try? JSONSerialization.data(withJSONObject: object, options: [])
         else {
-            FileHandle.standardError.write(Data("invalid JSON output\n".utf8))
+            log("invalid JSON output")
             return
         }
         lock.lock()
         defer { lock.unlock() }
-        FileHandle.standardOutput.write(data)
-        FileHandle.standardOutput.write(Data("\n".utf8))
+        // A write to a closed stream gives an error. The engine continues, so it can save the last audio.
+        try? FileHandle.standardOutput.write(contentsOf: data + Data("\n".utf8))
     }
 
     func event(_ name: String, _ fields: [String: Any] = [:]) {
@@ -33,7 +33,7 @@ final class Output: @unchecked Sendable {
     }
 
     func log(_ message: String) {
-        FileHandle.standardError.write(Data("[tinta-engine] \(message)\n".utf8))
+        try? FileHandle.standardError.write(contentsOf: Data("[tinta-engine] \(message)\n".utf8))
     }
 }
 

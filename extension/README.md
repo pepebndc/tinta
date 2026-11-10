@@ -33,6 +33,8 @@ It reads these items:
 The extension treats the Meet page as untrusted input.
 It removes control characters from each string and cuts each string to 200 characters.
 It sends a maximum of 100 participants.
+The service worker builds each message for the native host from the known fields only, with the same limits. It drops a message of the wrong shape.
+The native host discards a message longer than 256 KiB and answers with an error.
 
 ## How the detection works
 
@@ -44,14 +46,17 @@ It marks the local user from the `(You)` marker and similar markers, or from `da
 Meet animates the voice-level indicator only while a participant speaks.
 The content script counts `class` and `style` changes in each tile, except in `video` and `canvas` elements.
 A tile with 3 or more changes in 400 ms is above the threshold.
-Speaking starts after 2 consecutive windows above the threshold.
+Speaking starts when a tile stays above the threshold for 600 ms. One short burst of changes, for example when the pointer moves over a tile, does not start it.
 Speaking ends after 800 ms below the threshold.
-A speaking `aria-label` or tooltip in the tile also counts as a window above the threshold.
+A speaking `aria-label` or tooltip in the tile also counts as activity above the threshold.
 The `CONFIG` object at the top of `content.js` contains all selectors and thresholds.
 
-The content script ignores tiles that show "Presentation" or "presenting".
-Detection runs only when the URL has a meeting code and the page shows at least one tile.
+A tile that shows "Presentation" or "presenting" is not a participant.
+Detection starts when the URL has a meeting code and the page shows at least one participant.
+When a layout shows only the presentation, the call continues, and the content script keeps the participants.
 The call ends when no tile is present for 3 seconds, when the meeting code changes, or when the page or the tab closes.
+When the same call is open in two tabs, the call ends when the last tab leaves it.
+A tab that crashes sends no end message. The service worker ends the call of a tab that sends no message for 20 seconds.
 Meet can move the call into a picture-in-picture window when you switch tabs.
 While that window is open, the content script reads the tiles and detects speakers in the document of that window.
 The window shows only some tiles, so the content script keeps the other participants of the call.
@@ -84,9 +89,9 @@ The private key is in `keys/extension-key.pem` at the root of the repository, ou
 
 Click the Tinta icon in the Chrome toolbar. The popup shows:
 
-- The connection to the Tinta app: connected, not running, or not installed.
+- The connection to the Tinta app: connected, not running, not installed, or not accepted. "Tinta does not accept the connection" shows when the native host stops at once 3 times, for example when it belongs to another copy of the app.
 - The recording state and its time, when Tinta records.
-- The Meet call in the current tab: the title, the number of people, and the participant list. The people that the extension detects as speaking are at the top, with a lavender highlight.
+- The Meet call in the current tab, from the content script of that tab: the title, the number of people, and the participant list. The people that the extension detects as speaking are at the top, with a lavender highlight.
 - The mute state of your microphone in Meet.
 - A switch that highlights the detected speakers on the Meet page. Use it to check the detection during a call.
 
@@ -106,7 +111,7 @@ To turn off debug mode, run `localStorage.removeItem("tinta-debug")` and reload 
 ## Message formats
 
 The content script sends JSON messages to the service worker.
-The service worker sends them to the native host without changes.
+The service worker sends the fields below to the native host. It does not send other fields.
 The `t` value is the `Date.now()` time in epoch milliseconds from the content script.
 
 `meet_state`: the extension sends this message when the user joins, when the participant list or title changes, and every 10 seconds.
@@ -131,7 +136,7 @@ The `speaking` array can be empty.
 ```
 
 `meeting_ended`: the extension sends this message when the user leaves the call, or when the page or the tab closes.
-`left_at` is the time the user left. When the tiles disappear, it is the time of the last tile, 3 seconds before the message.
+`left_at` is the time the user left. When the tiles disappear, it is the time of the last tile, 3 seconds before the message. For a tab that stops sending messages, it is the time of its last message.
 
 ```json
 {"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625203000,"left_at":1758625200000}
@@ -140,7 +145,7 @@ The `speaking` array can be empty.
 `hello`: the service worker sends this message each time that it connects to the native host. `version` is the version of the extension.
 
 ```json
-{"type":"hello","version":"0.4.0","t":1758625200000}
+{"type":"hello","version":"0.5.0","t":1758625200000}
 ```
 
 `ping`: the service worker sends this message only when the native host is connected. It sends it every second while the popup is open, and every 5 seconds while Tinta records or pauses a recording. The answer updates the popup and the action badge.
@@ -163,13 +168,14 @@ When the bundled extension has a new version, the app also updates the files in 
 
 The service worker connects to the native host when it starts.
 If the connection fails, the service worker sets a retry time. The delay increases after each fast failure, to a maximum of 30 seconds.
-If the host is not installed, the delay is 30 seconds, and the popup shows that Tinta is not installed.
+If the host is not installed, or Chrome cannot start it, the delay is 30 seconds, and the popup shows that Tinta is not installed.
+While the popup is open, the service worker tries again every 2 seconds.
 Chrome stops an idle MV3 service worker, and the retry timer stops with it.
 When the service worker gets the next message from a Meet tab after the retry time, it tries again.
 When Chrome starts the service worker again, it connects at once.
 
 The service worker keeps each message in a queue until the native host answers it with a status. The native host answers each message once, in order.
-When the connection closes, the messages without an answer go again on the next connection, after `hello`.
+When the connection closes, the messages without an answer go again on the next connection, after one new `hello`.
 A message from a Meet tab that arrives while the host is not connected also waits in the queue. The queue keeps at most 200 messages and drops the oldest first.
 A `ping` does not wait, because only the current state is useful.
 
@@ -178,8 +184,8 @@ At the start of a recording, the app uses the Meet call from the extension only 
 
 ## Tests
 
-Run the tests for the speaking logic in `speaking.js`:
+Run the tests for the speaking logic in `speaking.js` and for the service worker in `background.js` from the root of the repository:
 
 ```sh
-node --test test/speaking.test.mjs
+node --test extension/test/*.mjs
 ```

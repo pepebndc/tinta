@@ -13,7 +13,7 @@
 
     <section class="row">
       <span class="dot" id="app-dot"></span>
-      <div>
+      <div role="status">
         <strong id="app-title">Connecting to Tinta…</strong>
         <div class="muted" id="app-detail"></div>
       </div>
@@ -21,7 +21,7 @@
 
     <section class="row" id="rec-row" hidden>
       <span class="dot rec" id="rec-dot"></span>
-      <div>
+      <div role="status">
         <strong id="rec-title">Recording in Tinta</strong>
         <div class="muted" id="rec-detail"></div>
       </div>
@@ -40,7 +40,7 @@
       <label><input type="checkbox" id="outline" /> Highlight who speaks on the page</label>
     </section>
 
-    <footer>Reads only participant names, who speaks, and your mute state. No audio, captions, or chat.</footer>
+    <footer>Reads only the meeting code and title, participant names, who speaks, and your mute state. No audio, captions, or chat.</footer>
     <script src="popup.js"></script>
   </body>
 </html>

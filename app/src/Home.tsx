@@ -21,7 +21,8 @@ type Props = {
   onOpenEvent: (eventId: string, join: boolean) => void;
   onConnectCalendar: () => void;
   onInternetAccounts: () => void;
-  onSettings: () => void;
+  /** Opens Settings at a panel: "models" or "extension". */
+  onSettings: (section: string) => void;
   onAllowMicrophone: () => void;
   onRetry: (id: string) => void;
   /** A new meeting or a recording is starting. */
@@ -61,11 +62,11 @@ export function Home({
 
   const setup = boot
     ? [
-        { done: boot.models_installed, label: "Install the speech models", detail: "About 500 MB, once. This is the only download.", action: onSettings },
+        { done: boot.models_installed, label: "Install the speech models", detail: "About 500 MB, once. This is the only download.", action: () => onSettings("models") },
         boot.microphone === "denied"
           ? { done: false, label: "Allow the microphone", detail: "macOS blocks it. Turn on Tinta in the Microphone settings.", action: onAllowMicrophone }
           : { done: boot.microphone === "granted", label: "Allow the microphone", detail: "macOS asks you one time.", action: onAllowMicrophone },
-        { done: everConnected, label: "Connect the Meet extension", detail: "Remote speakers get names on Google Meet in Chrome.", action: onSettings },
+        { done: everConnected, label: "Connect the Meet extension", detail: "Remote speakers get names on Google Meet in Chrome.", action: () => onSettings("extension") },
         { done: boot.filevault, label: "Turn on FileVault", detail: "System Settings, Privacy and Security.", action: undefined },
       ]
     : [];

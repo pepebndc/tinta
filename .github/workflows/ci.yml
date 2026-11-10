@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "deploy/**"
+      - "marketing/**"
+      - "explorations/**"
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update Rust
+        run: rustup update stable && rustup default stable
+      # The app crate needs the engine and the built interface, so these tests cover the other crates.
+      - name: Test the core, the MCP server, and the native host
+        run: cargo test --locked -p tinta-core -p tinta-mcp -p tinta-native-host
+
+  extension:
+    name: Extension tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test the service worker and the speaking logic
+        run: node --test extension/test/*.mjs
+
+  interface:
+    name: Interface type check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@10 --activate
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check the types and build the interface
+        run: pnpm build
+
+  engine:
+    name: Engine build
+    # The engine imports FoundationModels, which is in the macOS 26 SDK.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the engine
+        working-directory: engine
+        run: swift build

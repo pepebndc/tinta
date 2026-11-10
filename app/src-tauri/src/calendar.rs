@@ -107,15 +107,21 @@ impl AppState {
         }
         if let Some(link) = event.link.as_ref().filter(|_| join) {
             let source = system::open_call(link, &self.setting("call_browser", system::DEFAULT_BROWSER));
-            let idle = self.active.lock().unwrap().is_none();
-            if meeting.started_at.is_none() && idle {
-                match self.start_recording(&meeting.id, &source) {
-                    Ok(active) => self.emit("recording", json!(active)),
-                    Err(error) => self.emit(
-                        "engine",
-                        json!({"event": "warning", "message": format!("Tinta did not start the recording: {error}")}),
-                    ),
+            let recording = self.active.lock().unwrap().as_ref().map(|a| a.meeting_id.clone());
+            let warn = |message: String| self.emit("engine", json!({"event": "warning", "message": message}));
+            match recording {
+                Some(id) if id != meeting.id => {
+                    warn("Tinta records another meeting, so it does not record this call. To record this call, stop that recording, and then click Start recording in this meeting.".into())
                 }
+                Some(_) => {}
+                None if meeting.started_at.is_none() => {
+                    // A Meet link has the code of its call. The recording belongs to that call, not to a call that is open now.
+                    match self.start_recording(&meeting.id, &source, link.code.as_deref()) {
+                        Ok(active) => self.emit("recording", json!(active)),
+                        Err(error) => warn(format!("Tinta did not start the recording: {error}")),
+                    }
+                }
+                None => {}
             }
         }
         self.meeting_changed(&meeting.id);

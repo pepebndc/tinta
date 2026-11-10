@@ -25,7 +25,17 @@ impl std::fmt::Display for AppError {
 
 impl std::error::Error for AppError {}
 
-fn read_message(input: &mut impl Read) -> Result<Option<Value>> {
+/// A message from the extension.
+#[derive(Debug, PartialEq)]
+enum Incoming {
+    Message(Value),
+    /// A message longer than `MAX_MESSAGE`. The host read its body and did not keep it.
+    TooLarge,
+}
+
+/// Reads one message. Returns `None` at the end of the input. The host reads the body of a message
+/// that is too large and discards it, so the next message starts at the correct position.
+fn read_message(input: &mut impl Read) -> Result<Option<Incoming>> {
     let mut length = [0u8; 4];
     match input.read_exact(&mut length) {
         Ok(()) => {}
@@ -34,11 +44,15 @@ fn read_message(input: &mut impl Read) -> Result<Option<Value>> {
     }
     let length = u32::from_ne_bytes(length) as usize;
     if length > MAX_MESSAGE {
-        bail!("message too large");
+        let discarded = std::io::copy(&mut input.take(length as u64), &mut std::io::sink())?;
+        if discarded < length as u64 {
+            bail!("the input ended inside a message");
+        }
+        return Ok(Some(Incoming::TooLarge));
     }
     let mut body = vec![0u8; length];
     input.read_exact(&mut body)?;
-    Ok(Some(serde_json::from_slice(&body)?))
+    Ok(Some(Incoming::Message(serde_json::from_slice(&body)?)))
 }
 
 fn write_message(output: &mut impl Write, value: &Value) -> Result<()> {
@@ -139,7 +153,16 @@ fn main() -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
     let mut link = AppLink { socket: tinta_core::paths::socket_path(), stream: None, next_id: 0 };
-    while let Some(message) = read_message(&mut input)? {
+    while let Some(incoming) = read_message(&mut input)? {
+        let message = match incoming {
+            Incoming::Message(message) => message,
+            Incoming::TooLarge => {
+                // The extension expects one answer for each message.
+                eprintln!("tinta-native-host: a message is larger than {MAX_MESSAGE} bytes");
+                write_message(&mut output, &json!({"type": "status", "app": true, "error": "the message is too large"}))?;
+                continue;
+            }
+        };
         match link.send("extension_message", message) {
             Ok(result) => {
                 let status = json!({
@@ -180,8 +203,8 @@ mod tests {
         path
     }
 
-    fn link(socket: &PathBuf) -> AppLink {
-        AppLink { socket: socket.clone(), stream: None, next_id: 0 }
+    fn link(socket: &std::path::Path) -> AppLink {
+        AppLink { socket: socket.to_path_buf(), stream: None, next_id: 0 }
     }
 
     /// Answers `count` requests on one connection, then closes it.
@@ -195,6 +218,59 @@ mod tests {
             let request: Value = serde_json::from_str(&line).unwrap();
             writeln!(writer, "{}", json!({"id": request["id"], "result": {"recording": false}})).unwrap();
         }
+    }
+
+    fn framed(body: &[u8]) -> Vec<u8> {
+        let mut bytes = (body.len() as u32).to_ne_bytes().to_vec();
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    #[test]
+    fn reads_the_messages_that_it_writes() {
+        let mut bytes = Vec::new();
+        let first = json!({"type": "meet_state", "meeting_code": "abc-defg-hij", "title": "Reunión"});
+        let second = json!({"type": "ping", "t": 1});
+        write_message(&mut bytes, &first).unwrap();
+        write_message(&mut bytes, &second).unwrap();
+        let length = u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize;
+        assert_eq!(length, serde_json::to_vec(&first).unwrap().len());
+        let mut input = bytes.as_slice();
+        assert_eq!(read_message(&mut input).unwrap(), Some(Incoming::Message(first)));
+        assert_eq!(read_message(&mut input).unwrap(), Some(Incoming::Message(second)));
+        assert_eq!(read_message(&mut input).unwrap(), None);
+    }
+
+    #[test]
+    fn discards_a_message_that_is_too_large_and_reads_the_next_message() {
+        let large = format!("{{\"extra\":\"{}\"}}", "x".repeat(MAX_MESSAGE));
+        let mut bytes = framed(large.as_bytes());
+        bytes.extend(framed(br#"{"type":"ping"}"#));
+        let mut input = bytes.as_slice();
+        assert_eq!(read_message(&mut input).unwrap(), Some(Incoming::TooLarge));
+        assert_eq!(read_message(&mut input).unwrap(), Some(Incoming::Message(json!({"type": "ping"}))));
+        assert_eq!(read_message(&mut input).unwrap(), None);
+
+        let limit = format!("\"{}\"", "x".repeat(MAX_MESSAGE - 2));
+        let at_limit = framed(limit.as_bytes());
+        assert!(matches!(read_message(&mut at_limit.as_slice()).unwrap(), Some(Incoming::Message(_))));
+    }
+
+    #[test]
+    fn an_input_that_ends_inside_a_message_is_an_error() {
+        let whole = framed(br#"{"type":"ping"}"#);
+        assert!(read_message(&mut &whole[..whole.len() - 1]).is_err());
+        // The end of the input inside the length is the end of the input.
+        assert_eq!(read_message(&mut &whole[..2]).unwrap(), None);
+        let mut large = ((MAX_MESSAGE + 10) as u32).to_ne_bytes().to_vec();
+        large.extend_from_slice(b"short");
+        assert!(read_message(&mut large.as_slice()).is_err());
+    }
+
+    #[test]
+    fn a_message_without_a_body_is_an_error() {
+        assert!(read_message(&mut framed(b"").as_slice()).is_err());
+        assert!(read_message(&mut framed(b"not json").as_slice()).is_err());
     }
 
     #[test]

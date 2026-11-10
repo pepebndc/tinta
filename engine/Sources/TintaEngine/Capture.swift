@@ -30,6 +30,8 @@ final class Resampler {
         if sourceFormat != buffer.format {
             sourceFormat = buffer.format
             converter = AVAudioConverter(from: buffer.format, to: target)
+            // Without this, the converter keeps only the first channel, and a voice on the second channel is lost.
+            if buffer.format.channelCount == 2 { converter?.downmix = true }
         }
         guard let converter else { return [] }
         let ratio = target.sampleRate / buffer.format.sampleRate

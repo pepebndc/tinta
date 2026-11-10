@@ -10,6 +10,8 @@ enum ChunkFormat {
     static let sampleRate = 16_000
     static let magic = Data("TNTC".utf8)
     static let chunkSamples = 5 * sampleRate
+    /// The longest track that the reader accepts: 24 hours.
+    static let maxTrackSamples = Int64(24 * 60 * 60 * sampleRate)
 }
 
 enum Track: String, CaseIterable {
@@ -26,27 +28,40 @@ final class ChunkWriter: @unchecked Sendable {
     private var bufferStart: Int64 = 0
     private var nextIndex: Int64 = -1
     private var fileCounter = 0
+    private var failedWrites = 0
+    /// Receives a call when 2 chunk writes in sequence fail, for example on a full disk.
+    var onFailure: (() -> Void)?
 
     init(directory: URL, key: SymmetricKey, track: Track) throws {
         self.directory = directory.appendingPathComponent("audio/\(track.rawValue)", isDirectory: true)
         self.key = key
         self.track = track
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        // A new file gets an index after the highest index in the folder, so its name is always free.
         let existing = (try? FileManager.default.contentsOfDirectory(atPath: self.directory.path)) ?? []
-        fileCounter = existing.count
+        let highest = existing.compactMap { $0.hasSuffix(".tntc") ? Int($0.dropLast(5)) : nil }.max()
+        fileCounter = (highest ?? -1) + 1
     }
 
     /// Appends samples that start at `startIndex` on the meeting clock.
     /// A jump of more than 100 ms starts a new chunk and leaves a gap.
+    /// Samples that are early by 100 ms to 1 second come from a device clock that is faster than the
+    /// meeting clock. The writer drops the early part, so the track stays on the meeting clock.
     func append(_ samples: [Float], startIndex: Int64) {
         lock.lock()
         defer { lock.unlock() }
+        var samples = samples[...]
         var start = startIndex
         if nextIndex >= 0 {
             let drift = start - nextIndex
-            if drift > Int64(ChunkFormat.sampleRate / 10) {
+            let limit = Int64(ChunkFormat.sampleRate / 10)
+            if drift > limit {
                 flushLocked()
             } else {
+                if drift < -limit && drift >= -Int64(ChunkFormat.sampleRate) {
+                    samples = samples.dropFirst(Int(-drift))
+                    if samples.isEmpty { return }
+                }
                 start = nextIndex
             }
         }
@@ -86,8 +101,11 @@ final class ChunkWriter: @unchecked Sendable {
             try file.write(to: tmp, options: [.atomic])
             try FileManager.default.moveItem(at: tmp, to: url)
             fileCounter += 1
+            failedWrites = 0
         } catch {
             Output.shared.event("error", ["message": "chunk write failed for \(track.rawValue): \(error)"])
+            failedWrites += 1
+            if failedWrites == 2 { onFailure?() }
         }
         buffer.removeAll(keepingCapacity: true)
     }
@@ -99,33 +117,51 @@ enum ChunkReader {
         let samples: [Int16]
     }
 
-    static func chunks(directory: URL, key: SymmetricKey, track: Track) throws -> [Chunk] {
+    /// Reads the chunks of a track. A chunk that is damaged, for example after a power loss, does not
+    /// stop the read: the result has the other chunks and the number of chunks that the reader skipped.
+    /// The read fails only when no chunk of the track is readable.
+    static func chunks(directory: URL, key: SymmetricKey, track: Track) throws -> (chunks: [Chunk], skipped: Int) {
         let trackDir = directory.appendingPathComponent("audio/\(track.rawValue)", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: trackDir.path) else { return [] }
+        guard FileManager.default.fileExists(atPath: trackDir.path) else { return ([], 0) }
         let names = try FileManager.default.contentsOfDirectory(atPath: trackDir.path)
             .filter { $0.hasSuffix(".tntc") }
             .sorted()
         var result: [Chunk] = []
+        var skipped = 0
         for name in names {
-            let data = try Data(contentsOf: trackDir.appendingPathComponent(name))
-            guard data.count > 16, data.prefix(4) == ChunkFormat.magic else {
-                throw EngineError("invalid chunk \(name)")
+            guard let chunk = read(trackDir.appendingPathComponent(name), key: key) else {
+                Output.shared.log("skipped the unreadable chunk \(track.rawValue)/\(name)")
+                skipped += 1
+                continue
             }
-            let start = data.subdata(in: 4..<12).withUnsafeBytes { Int64(littleEndian: $0.loadUnaligned(as: Int64.self)) }
-            let box = try AES.GCM.SealedBox(combined: data.subdata(in: 16..<data.count))
-            let pcm = try AES.GCM.open(box, using: key)
-            let samples = pcm.withUnsafeBytes { raw in
-                Array(raw.bindMemory(to: Int16.self))
-            }
-            result.append(Chunk(start: start, samples: samples))
+            result.append(chunk)
         }
-        return result
+        if result.isEmpty && skipped > 0 {
+            throw EngineError("Tinta cannot read the \(track.rawValue) audio of this meeting.")
+        }
+        return (result, skipped)
     }
 
-    /// Returns the full track on the meeting clock. Gaps contain silence.
-    static func track(directory: URL, key: SymmetricKey, track: Track) throws -> [Float] {
-        let chunks = try chunks(directory: directory, key: key, track: track)
-        guard let end = chunks.map({ $0.start + Int64($0.samples.count) }).max() else { return [] }
+    /// Reads one chunk file. Returns nil for a file that is not a complete chunk on the meeting clock.
+    private static func read(_ url: URL, key: SymmetricKey) -> Chunk? {
+        guard let data = try? Data(contentsOf: url), data.count > 16, data.prefix(4) == ChunkFormat.magic,
+            let box = try? AES.GCM.SealedBox(combined: data.subdata(in: 16..<data.count)),
+            let pcm = try? AES.GCM.open(box, using: key)
+        else { return nil }
+        let start = data.subdata(in: 4..<12).withUnsafeBytes { Int64(littleEndian: $0.loadUnaligned(as: Int64.self)) }
+        let samples = pcm.withUnsafeBytes { raw in
+            Array(raw.bindMemory(to: Int16.self))
+        }
+        // The start index is not encrypted. A damaged value must not move the chunk outside the track.
+        guard start >= 0, start <= ChunkFormat.maxTrackSamples - Int64(samples.count) else { return nil }
+        return Chunk(start: start, samples: samples)
+    }
+
+    /// Returns the full track on the meeting clock, and the number of chunks that the reader skipped.
+    /// Gaps contain silence.
+    static func track(directory: URL, key: SymmetricKey, track: Track) throws -> (samples: [Float], skipped: Int) {
+        let (chunks, skipped) = try chunks(directory: directory, key: key, track: track)
+        guard let end = chunks.map({ $0.start + Int64($0.samples.count) }).max() else { return ([], skipped) }
         var output = [Float](repeating: 0, count: Int(end))
         let scale = 1 / Float(Int16.max)
         for chunk in chunks {
@@ -134,7 +170,7 @@ enum ChunkReader {
                 output[offset + index] = Float(sample) * scale
             }
         }
-        return output
+        return (output, skipped)
     }
 
     static func wav(samples: [Float]) -> Data {

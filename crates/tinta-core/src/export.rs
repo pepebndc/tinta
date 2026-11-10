@@ -1,6 +1,6 @@
 //! Export formats: Markdown, JSON, SRT, and VTT.
 
-use crate::db::{Db, Meeting, Speaker, Turn};
+use crate::db::{Db, Meeting, Speaker, Turn, MCP_AUTHOR};
 use anyhow::{bail, Result};
 use serde_json::json;
 use std::collections::HashMap;
@@ -9,13 +9,23 @@ pub struct Document {
     pub meeting: Meeting,
     pub notes: String,
     pub summary: Option<String>,
+    /// The local model that wrote the summary, or `MCP_AUTHOR`.
+    pub summary_written_by: Option<String>,
     pub speakers: Vec<Speaker>,
     pub turns: Vec<Turn>,
 }
 
 impl Document {
     pub fn load(db: &Db, id: &str) -> Result<Self> {
-        Ok(Self { meeting: db.meeting(id)?, notes: db.notes(id)?, summary: db.summary(id)?.map(|s| s.content), speakers: db.all_speakers(id)?, turns: db.turns(id)? })
+        let (summary, summary_written_by) = db.summary(id)?.map(|s| (s.content, s.written_by)).unzip();
+        Ok(Self {
+            meeting: db.meeting(id)?,
+            notes: db.notes(id)?,
+            summary,
+            summary_written_by,
+            speakers: db.all_speakers(id)?,
+            turns: db.turns(id)?,
+        })
     }
 
     /// Display name for each speaker ID. Merged speakers show the name of their target.
@@ -87,7 +97,8 @@ pub fn markdown(doc: &Document) -> String {
     out.push_str("\n## Notes\n\n");
     out.push_str(if doc.notes.trim().is_empty() { "No notes.\n" } else { doc.notes.trim_end() });
     if let Some(summary) = &doc.summary {
-        out.push_str("\n\n## Summary (written by a local model)\n\n");
+        let author = if doc.summary_written_by.as_deref() == Some(MCP_AUTHOR) { "an MCP client" } else { "a local model" };
+        out.push_str(&format!("\n\n## Summary (written by {author})\n\n"));
         out.push_str(summary.trim_end());
     }
     out.push_str("\n\n## Transcript\n\n");
@@ -153,12 +164,14 @@ pub fn subtitles(doc: &Document, vtt: bool) -> String {
         if !vtt {
             out.push_str(&format!("{}\n", index + 1));
         }
+        // An empty line ends a cue, so the text of a turn stays on one line.
+        let text = turn.text.split_whitespace().collect::<Vec<_>>().join(" ");
         out.push_str(&format!(
             "{} --> {}\n{}: {}\n\n",
             timestamp(turn.start, separator, true),
             timestamp(turn.end.max(turn.start + 0.5), separator, true),
             doc.speaker_name(&names, turn),
-            turn.text
+            text
         ));
     }
     out
@@ -202,5 +215,35 @@ mod tests {
         assert_eq!(timestamp(65.0, '.', false), "01:05");
         assert_eq!(format_date(0), "1970-01-01 00:00 UTC");
         assert_eq!(format_date(1_790_000_000_000), "2026-09-21 14:13 UTC");
+    }
+
+    #[test]
+    fn exports_name_the_summary_author_and_keep_one_cue_for_each_turn() {
+        use crate::db::{NewSpeaker, NewTurn, Origin};
+        let mut db = Db::open_in_memory(&crate::keys::Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        let speaker = NewSpeaker {
+            label: "S1".into(),
+            track: "remote".into(),
+            name: Some("Bo Chen".into()),
+            name_source: Some("platform".into()),
+            suggestion: None,
+            suggestion_score: None,
+        };
+        let turn = NewTurn { track: "remote".into(), speaker_label: "S1".into(), start: 1.0, end: 2.0, text: "Hello.".into() };
+        db.replace_with_final(&m.id, &[speaker], &[turn.clone(), NewTurn { start: 3.0, end: 4.0, ..turn }], 4.0, None).unwrap();
+        let first = db.turns(&m.id).unwrap()[0].id;
+        db.edit_turn_text(first, "Hello.\n\nSecond paragraph.", Origin::User).unwrap();
+
+        db.set_summary(&m.id, "Local text.", "model", Origin::User).unwrap();
+        assert!(markdown(&Document::load(&db, &m.id).unwrap()).contains("## Summary (written by a local model)"));
+        db.set_summary(&m.id, "Client text.", MCP_AUTHOR, Origin::Mcp).unwrap();
+        let doc = Document::load(&db, &m.id).unwrap();
+        assert!(markdown(&doc).contains("## Summary (written by an MCP client)"));
+
+        let srt = render(&doc, "srt").unwrap();
+        assert_eq!(srt, "1\n00:00:01,000 --> 00:00:02,000\nBo Chen: Hello. Second paragraph.\n\n2\n00:00:03,000 --> 00:00:04,000\nBo Chen: Hello.\n\n");
+        assert!(render(&doc, "vtt").unwrap().starts_with("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBo Chen: Hello. Second paragraph.\n\n"));
+        assert!(render(&doc, "docx").is_err());
     }
 }

@@ -10,7 +10,7 @@ for folder, (repo, rev) in repos.items():
     url = f"https://huggingface.co/api/models/{repo}/tree/{rev}?recursive=true"
     remote = {}
     import subprocess
-    for f in json.loads(subprocess.check_output(["curl","-s",url])):
+    for f in json.loads(subprocess.check_output(["curl","-sf",url])):
         if f["type"] != "file": continue
         remote[f["path"]] = ("sha256", f["lfs"]["oid"]) if f.get("lfs") else ("gitsha1", f["oid"])
     base = os.path.join(root, folder)
@@ -18,11 +18,15 @@ for folder, (repo, rev) in repos.items():
         for name in files:
             full = os.path.join(dirpath, name); rel = os.path.relpath(full, base)
             data = open(full, "rb").read()
+            # FluidAudio writes this marker. It is not a model file.
+            if rel == ".fluidaudio-revision": continue
             if rel not in remote:
-                print("LOCAL ONLY", folder, rel); continue
+                print("LOCAL ONLY", folder, rel); problems += 1; continue
             kind, oid = remote[rel]
             got = hashlib.sha256(data).hexdigest() if kind == "sha256" else hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
             if got != oid: print("MISMATCH", folder, rel); problems += 1
             manifest[f"{folder}/{rel}"] = hashlib.sha256(data).hexdigest()
 print("files", len(manifest), "problems", problems)
+# A manifest with a wrong hash, or with a file that the pinned revision does not have, must not exist.
+if problems: sys.exit(1)
 json.dump(manifest, open("model-manifest.json","w"), indent=1, sort_keys=True)

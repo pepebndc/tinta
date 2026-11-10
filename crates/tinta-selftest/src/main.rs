@@ -112,6 +112,7 @@ fn desktop_call(state: &std::sync::Arc<tinta_app::AppState>, failures: &mut Vec<
         app_call: Some(ZOOM.into()),
         mic_muted: false,
         mic_muted_by_user: false,
+        call_mic_muted: None,
     });
     let participants = json!([
         {"id": "Test User", "name": "Test User", "is_self": false},
@@ -173,7 +174,7 @@ fn main() -> Result<()> {
             ],
         )?;
         for (participant, start, end) in &spans {
-            db.add_speaker_event(&m.id, t0 + ((start + 0.6) * 1000.0) as i64, &[participant.clone()])?;
+            db.add_speaker_event(&m.id, t0 + ((start + 0.6) * 1000.0) as i64, std::slice::from_ref(participant))?;
             db.add_speaker_event(&m.id, t0 + ((end + 0.6) * 1000.0) as i64, &[])?;
         }
         m.id

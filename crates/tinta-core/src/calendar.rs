@@ -199,11 +199,19 @@ fn urls(text: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-/// The lowercase host, the path, and the query of a URL.
+/// The lowercase host without the port, the path, and the query of a URL. A host with a character that a browser
+/// reads in another way, such as `\` or `@`, gives no result, so the host that Tinta shows is the host that opens.
 fn split_url(url: &str) -> Option<(String, &str, &str)> {
     let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
     let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let host = rest[..host_end].to_lowercase();
+    let host = match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => name.to_string(),
+        _ => host,
+    };
+    if host.is_empty() || !host.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-')) {
+        return None;
+    }
     let after = &rest[host_end..];
     let after = after.split('#').next().unwrap_or_default();
     let (path, query) = after.split_once('?').unwrap_or((after, ""));
@@ -287,6 +295,19 @@ mod tests {
             link.app_url().as_deref(),
             Some("msteams:/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%7d")
         );
+    }
+
+    #[test]
+    fn ignores_links_with_a_misleading_host() {
+        for url in [
+            "https://evil.example\\.zoom.us/j/123456789",
+            "https://evil.example\\@acme.zoom.us/j/123456789",
+            "https://zoom.us@evil.example/j/123456789",
+            "https://evil.example%2f.webex.com/meet/sam",
+        ] {
+            assert!(find_link([url]).is_none(), "{url}");
+        }
+        assert_eq!(find_link(["https://acme.zoom.us:443/j/123456789"]).unwrap().platform, Platform::Zoom);
     }
 
     #[test]

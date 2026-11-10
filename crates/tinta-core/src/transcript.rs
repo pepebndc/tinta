@@ -70,7 +70,9 @@ fn label_for(word: &Word, segments: &[Segment]) -> Option<String> {
     let mut best: Option<(&str, f64)> = None;
     for segment in segments {
         let o = word.e.min(segment.e) - word.s.max(segment.s);
-        let score = if o > 0.0 { o } else { -(segment.s - word.e).abs().min((word.s - segment.e).abs()) };
+        // A word with no length inside a segment belongs to that segment.
+        let inside = word.s >= segment.s && word.e <= segment.e;
+        let score = if o > 0.0 || inside { o.max(0.0) } else { -(segment.s - word.e).abs().min((word.s - segment.e).abs()) };
         if best.map(|b| score > b.1).unwrap_or(true) {
             best = Some((&segment.speaker, score));
         }

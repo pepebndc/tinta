@@ -36,9 +36,9 @@ Tinta has no chat and no cloud AI. The transcription, the speaker separation, an
 | **Processing** | Transcription and speaker separation run on your Mac. Tinta has no server and no cloud service. |
 | **Network** | Tinta downloads the speech models once, when you click Install. After that, it makes no network requests: no analytics, no crash reports, and no update checks. |
 | **Storage** | SQLCipher encrypts the library, and AES-GCM encrypts the audio. The key is in your macOS Keychain. Time Machine does not back up the library. |
-| **Audio** | By default, Tinta deletes the audio 7 days after a meeting. In Settings, under Storage, you can change this default from 0 to 30 days. You can also change the period of one meeting, or delete its audio at once. |
+| **Audio** | By default, Tinta deletes the audio 7 days after a meeting, also when the processing of the meeting failed. In Settings, under Storage, you can change this default from 0 to 30 days. You can also change the period of one meeting, or delete its audio at once. |
 | **Summaries** | The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server. A summary can contain mistakes, so check it against the transcript. |
-| **Browser** | The Meet extension reads only participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
+| **Browser** | The Meet extension reads only the meeting code, the meeting title, the participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
 | **Zoom and Teams** | Tinta detects a call from the use of the microphone. It does not read the audio of the app to detect the call. When you turn on names from Zoom and Teams (beta), Tinta reads the participant names, who speaks, and whether your microphone is muted from the call window. This needs Accessibility access. Tinta does not keep other text of the window. |
 | **MCP** | MCP access is local. An AI client that reads your meetings sends that content to its own model provider. Tinta records every MCP change, so you can undo it. |
 
@@ -70,7 +70,7 @@ Tinta is a pilot. Processing, the library, the Granola import, and MCP work in t
 
 Tinta has no signed download yet. Build it from source:
 
-1. Install the Xcode Command Line Tools, Rust, Node.js 20 or later, and pnpm.
+1. Install the Xcode Command Line Tools, Rust 1.89 or later, Node.js 20 or later, and pnpm. To update Rust, run `rustup update stable`.
 2. Clone this repository.
 3. Optional: make a code signing certificate with the name "Tinta Local". Without it, macOS asks again for the microphone, the meeting audio, the calendars, and the Keychain after each update.
    1. Open Keychain Access. Click **Keychain Access > Certificate Assistant > Create a Certificate…**.
@@ -111,6 +111,8 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 **While you record.** You can open other meetings, Home, or Settings. The recording, the live transcript, and processing continue.
 
+**Close the window.** When you close the window, Tinta hides it and continues. Reminders, call detection, and a recording stay active. Click the Tinta icon in the Dock to show the window again. To quit Tinta, press Command+Q.
+
 **Notes and transcript.** The notes and the transcript fill the window. On a tall or narrow window, the notes show above the transcript. Drag the divider between them to change their size. Double-click the divider to reset it.
 
 **After the call.** Tinta processes the recording on your Mac. Processing improves the text and matches speaker names. To name a speaker, click the speaker name in the transcript. Click the text of a turn to edit it. Under Speakers, play a sample of each speaker and merge speakers. Your notes stay separate from the transcript.
@@ -141,7 +143,7 @@ For Claude Code, run `claude mcp add tinta /Applications/Tinta.app/Contents/MacO
 
 Tinta must be open. The tools can list, search, and read meetings, including notes, transcripts, and summaries. They can also change titles, tags, folders, notes, summaries, speaker names, and transcript text.
 
-Each meeting has an ID. To give a meeting to an AI client, click **…** on the meeting, then **Copy the meeting ID**, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to the trash. The **MCP** screen lists every request and lets you undo each change.
+Each meeting has an ID. To give a meeting to an AI client, click **…** on the meeting, then **Copy the meeting ID**, and paste the ID in the client. The first 8 characters of the ID are enough when they are unique. Deletions through MCP go to the trash. A client cannot set an audio period that ends in less than 7 days, so it cannot delete audio without the trash. The **MCP** screen lists every request and lets you undo each change. Tinta refuses an undo when you changed the same text or value after the client, so an undo does not remove your later work.
 
 Meeting text can contain instructions from other people. Do not let an AI client act on them.
 
@@ -184,7 +186,7 @@ This repository does not include the models. Tinta downloads them at pinned revi
 | Task | Command |
 |---|---|
 | Unit tests | `cargo test --workspace` |
-| Extension tests | `node --test extension/test/speaking.test.mjs` |
+| Extension tests | `node --test extension/test/*.mjs` |
 | End-to-end self-test | `TINTA_DATA_DIR=$(mktemp -d) cargo run -p tinta-selftest` |
 | Interface preview with sample data | `cd app && pnpm preview:mock && python3 -m http.server -d dist-mock 8765`, then open `http://localhost:8765/index.html` |
 | App bundle | `./scripts/build.sh` |

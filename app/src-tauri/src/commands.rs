@@ -192,10 +192,16 @@ async fn create_meeting(title: Option<String>) -> CommandResult<Value> {
 async fn get_meeting(id: String) -> CommandResult<Value> {
     blocking(move || {
         let s = state();
-        let (doc, participants, has_edits, summary) = {
+        let (doc, participants, has_edits, has_speaker_changes, summary) = {
             let db = s.db.lock().unwrap();
             let doc = Document::load(&db, &id).map_err(err)?;
-            (doc, db.participants(&id).map_err(err)?, db.has_edits(&id).map_err(err)?, db.summary(&id).map_err(err)?)
+            (
+                doc,
+                db.participants(&id).map_err(err)?,
+                db.has_edits(&id).map_err(err)?,
+                db.has_speaker_changes(&id).map_err(err)?,
+                db.summary(&id).map_err(err)?,
+            )
         };
         Ok(json!({
             "names": doc.names(),
@@ -205,6 +211,7 @@ async fn get_meeting(id: String) -> CommandResult<Value> {
             "turns": doc.turns,
             "participants": participants,
             "has_edits": has_edits,
+            "has_speaker_changes": has_speaker_changes,
             "audio_bytes": dir_size(&paths::audio_dir(&id)),
             "summary": summary,
             "summarizing": s.summarizing.lock().unwrap().contains(&id),
@@ -268,7 +275,7 @@ async fn set_archived(id: String, archived: bool) -> CommandResult<()> {
 
 #[tauri::command]
 async fn start_recording(id: String, source: String) -> CommandResult<Value> {
-    blocking(move || Ok(json!(state().start_recording(&id, &source).map_err(err)?))).await
+    blocking(move || Ok(json!(state().start_recording(&id, &source, None).map_err(err)?))).await
 }
 
 #[tauri::command]
@@ -328,38 +335,67 @@ async fn import_recording(path: String) -> CommandResult<Value> {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Imported recording".into());
         let meeting = s.db.lock().unwrap().create_meeting(&name, Some("import")).map_err(err)?;
+        // The meeting is busy from the start of the import, so no other work changes its audio.
+        let guard = s.begin_finalize(&meeting.id).map_err(err)?;
         let params = json!({
             "dir": paths::meeting_dir(&meeting.id).to_string_lossy(),
             "audio_key": s.keys.audio_base64(),
             "path": path,
         });
-        s.engine.call("import_audio", params, Duration::from_secs(600)).map_err(err)?;
-        s.db.lock().unwrap().mark_stopped(&meeting.id).map_err(err)?;
-        let id = meeting.id.clone();
+        let imported = s
+            .engine
+            .call("import_audio", params, Duration::from_secs(600))
+            .and_then(|_| s.db.lock().unwrap().mark_stopped(&meeting.id));
+        if let Err(error) = imported {
+            // The meeting has no audio that Tinta can use, so it does not stay in the library.
+            drop(guard);
+            if s.delete_meeting_files(&meeting.id).is_ok() {
+                let _ = s.db.lock().unwrap().delete_meeting_now(&meeting.id);
+            }
+            return Err(err(error));
+        }
         let worker = s.clone();
-        std::thread::spawn(move || worker.finalize_logged(&id, None));
+        std::thread::spawn(move || worker.run_finalize(guard, None));
         Ok(json!(meeting))
     })
     .await
 }
 
+/// Refuses a change to the speakers or the transcript of a meeting while a final pass runs on it.
+/// The final pass replaces the speakers and the turns, so the change would be lost.
+fn check_speaker_idle(speaker_id: &str) -> CommandResult<()> {
+    let s = state();
+    let meeting_id = s.db.lock().unwrap().speaker(speaker_id).map_err(err)?.meeting_id;
+    s.check_idle(&meeting_id, false).map_err(err)
+}
+
+fn check_turn_idle(turn_id: i64) -> CommandResult<()> {
+    let s = state();
+    let meeting_id = s.db.lock().unwrap().turn(turn_id).map_err(err)?.meeting_id;
+    s.check_idle(&meeting_id, false).map_err(err)
+}
+
 #[tauri::command]
 async fn rename_speaker(speaker_id: String, name: Option<String>) -> CommandResult<()> {
+    check_speaker_idle(&speaker_id)?;
     state().db.lock().unwrap().rename_speaker(&speaker_id, name.as_deref(), Origin::User).map_err(err)
 }
 
 #[tauri::command]
 async fn merge_speakers(from: String, into: String) -> CommandResult<()> {
+    check_speaker_idle(&from)?;
     state().db.lock().unwrap().merge_speakers(&from, &into, Origin::User).map_err(err)
 }
 
 #[tauri::command]
 async fn reassign_turn(turn_id: i64, speaker_id: Option<String>) -> CommandResult<String> {
+    check_turn_idle(turn_id)?;
     state().db.lock().unwrap().reassign_turn(turn_id, speaker_id.as_deref(), Origin::User).map_err(err)
 }
 
 #[tauri::command]
 async fn edit_turn_text(turn_id: i64, text: String) -> CommandResult<()> {
+    check_turn_idle(turn_id)?;
     state().db.lock().unwrap().edit_turn_text(turn_id, &text, Origin::User).map_err(err)
 }
 
@@ -426,9 +462,24 @@ async fn delete_meeting(id: String) -> CommandResult<()> {
     if s.db.lock().unwrap().meeting(&id).map_err(err)?.deleted_at.is_none() {
         return Err("move the meeting to the trash first".into());
     }
-    s.delete_meeting_files(&id);
+    s.delete_meeting_files(&id).map_err(err)?;
     let deleted = s.db.lock().unwrap().delete_meeting_now(&id);
     deleted.map_err(err)
+}
+
+/// Deletes a new meeting that has no input, when the user leaves it. Returns true when Tinta deleted the meeting.
+/// A meeting with a recording, notes, or tags stays, and so does a meeting whose recording starts now.
+#[tauri::command]
+async fn discard_draft(id: String) -> CommandResult<bool> {
+    let s = state();
+    if s.check_idle(&id, true).is_err() {
+        return Ok(false);
+    }
+    let discarded = s.db.lock().unwrap().discard_draft(&id).map_err(err)?;
+    if discarded {
+        let _ = s.delete_meeting_files(&id);
+    }
+    Ok(discarded)
 }
 
 #[tauri::command]
@@ -613,7 +664,10 @@ async fn mcp_activity() -> CommandResult<Value> {
 
 #[tauri::command]
 async fn undo(revision_id: i64) -> CommandResult<()> {
-    state().db.lock().unwrap().undo(revision_id).map_err(err)
+    let s = state();
+    let changed = s.db.lock().unwrap().undo(revision_id).map_err(err)?;
+    changed.iter().for_each(|id| s.meeting_changed(id));
+    Ok(())
 }
 
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
@@ -657,6 +711,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         turn_audio,
         trash_meeting,
         delete_meeting,
+        discard_draft,
         delete_audio,
         set_audio_retention,
         set_audio_retention_days,

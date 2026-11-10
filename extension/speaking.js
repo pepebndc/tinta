@@ -2,10 +2,12 @@
 (function (root) {
   "use strict";
 
+  // Speaking starts when a participant stays above the threshold for `startMs`. `startMs` is longer
+  // than `windowMs`, so one short burst of mutations does not start it at any tick rate.
   const DEFAULTS = {
     windowMs: 400,
     minMutationsPerWindow: 3,
-    startWindows: 2,
+    startMs: 600,
     endQuietMs: 800,
   };
 
@@ -18,7 +20,7 @@
     entry(id) {
       let e = this.entries.get(id);
       if (!e) {
-        e = { events: [], hint: false, aboveCount: 0, lastAboveAt: -Infinity, speaking: false };
+        e = { events: [], hint: false, aboveSince: null, lastAboveAt: -Infinity, speaking: false };
         this.entries.set(id, e);
       }
       return e;
@@ -34,11 +36,17 @@
       this.entry(id).hint = Boolean(active);
     }
 
+    // Clears the secondary signal of a participant that has no tile.
+    clearHint(id) {
+      const e = this.entries.get(id);
+      if (e) e.hint = false;
+    }
+
     remove(id) {
       this.entries.delete(id);
     }
 
-    // Evaluates one window that ends at t. Returns { speaking, changed }.
+    // Evaluates the window that ends at t. Returns { speaking, changed }.
     tick(t) {
       const o = this.options;
       let changed = false;
@@ -51,14 +59,14 @@
         for (const [et, n] of e.events) if (et <= t) count += n;
         const above = e.hint || count >= o.minMutationsPerWindow;
         if (above) {
-          e.aboveCount += 1;
+          if (e.aboveSince === null) e.aboveSince = t;
           e.lastAboveAt = t;
-          if (!e.speaking && e.aboveCount >= o.startWindows) {
+          if (!e.speaking && t - e.aboveSince >= o.startMs) {
             e.speaking = true;
             changed = true;
           }
         } else {
-          e.aboveCount = 0;
+          e.aboveSince = null;
           if (e.speaking && t - e.lastAboveAt >= o.endQuietMs) {
             e.speaking = false;
             changed = true;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Active, allowCalendar, allowMicrophone, api, AppCall, Bootstrap, CalendarState, ExtensionState, Meeting, on, Preview, SearchHit } from "./api";
 import { MeetingView } from "./MeetingView";
@@ -17,7 +17,58 @@ const COMPACT_WIDTH = 640;
 /** The expand band gives the window this ratio of width to height. */
 const WINDOW_RATIO = 1280 / 820;
 
-type View = { kind: "meeting"; id: string } | { kind: "settings" } | { kind: "trash" } | { kind: "mcp" } | { kind: "granola" } | { kind: "home" };
+type View =
+  | { kind: "meeting"; id: string; fresh?: boolean }
+  | { kind: "settings"; section?: string }
+  | { kind: "trash" }
+  | { kind: "mcp" }
+  | { kind: "granola" }
+  | { kind: "home" };
+
+// The extension and the call apps send their state many times each second. The sidebar renders again only for a change that it shows.
+const List = memo(MeetingList);
+const Next = memo(SidebarNext);
+const CallBanner = memo(CallNotice);
+
+const sameNames = (a: { name: string; is_self: boolean }[], b: { name: string; is_self: boolean }[]) =>
+  a.length === b.length && a.every((p, i) => p.name === b[i].name && p.is_self === b[i].is_self);
+
+/** The age of `last_seen` shows whether the extension is connected, so a step of 10 seconds is exact enough. */
+const SEEN_STEP_MS = 10_000;
+
+function sameExtension(a: ExtensionState | null, b: ExtensionState): boolean {
+  return (
+    !!a &&
+    a.meeting_code === b.meeting_code &&
+    a.title === b.title &&
+    a.connected_at === b.connected_at &&
+    a.mic_muted === b.mic_muted &&
+    Math.floor((a.last_seen ?? 0) / SEEN_STEP_MS) === Math.floor((b.last_seen ?? 0) / SEEN_STEP_MS) &&
+    sameNames(a.participants, b.participants)
+  );
+}
+
+function sameCalls(a: AppCall[], b: AppCall[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((c, i) => c.app === b[i].app && c.name === b[i].name && c.since === b[i].since && c.mic_muted === b[i].mic_muted && sameNames(c.participants, b[i].participants))
+  );
+}
+
+/** A search result text. The search puts "[" and "]" around each word that matches. */
+function Snippet({ text, query }: { text: string; query: string }) {
+  const plain = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const terms = plain(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return (
+    <span className="snippet">
+      {text.split(/(\[[^\[\]]+\])/).map((part, i) => {
+        // The text can have its own brackets, such as a timestamp. Only a word that starts with a search term is a match.
+        const word = part.startsWith("[") && part.endsWith("]") ? part.slice(1, -1) : null;
+        return word !== null && terms.some((t) => plain(word).startsWith(t)) ? <mark key={i}>{word}</mark> : <Fragment key={i}>{part}</Fragment>;
+      })}
+    </span>
+  );
+}
 
 export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
@@ -35,6 +86,7 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   // The sidebar filter stays the same after a restart.
   const [filter, setFilter] = useState<string>(() => localStorage.getItem("tinta-filter") ?? "all");
   const [loaded, setLoaded] = useState(false);
@@ -45,6 +97,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [granolaExport, setGranolaExport] = useState<string | null>(null);
+  /** The calendar events whose notice the user closed. */
+  const [closedNotices, setClosedNotices] = useState<string[]>([]);
   const [compact, setCompact] = useState(() => window.innerWidth < COMPACT_WIDTH);
 
   useEffect(() => {
@@ -128,8 +182,8 @@ export function App() {
         show({ kind: "meeting", id: p.id });
       }),
       on("meeting_changed", () => void refreshList()),
-      on<ExtensionState>("extension", setExtension),
-      on<AppCall[]>("calls", setCalls),
+      on<ExtensionState>("extension", (next) => setExtension((before) => (sameExtension(before, next) ? before : next))),
+      on<AppCall[]>("calls", (next) => setCalls((before) => (sameCalls(before, next) ? before : next))),
       on<Active | null>("recording", setActive),
       on<{ id: string; app: string }>("auto_stopped", (p) => {
         setNotice({ text: `The ${p.app} call ended, so Tinta stopped the recording.` });
@@ -140,13 +194,15 @@ export function App() {
         void refreshList();
       }),
       on<{ event: string; message?: string }>("engine", (e) => {
-        if (e.event === "error" || e.event === "warning") setNotice({ text: String(e.message) });
+        if (e.event === "error") setError(String(e.message));
+        if (e.event === "warning") setNotice({ text: String(e.message) });
       }),
     ];
     return () => subs.forEach((p) => p.then((u) => u()));
   }, [refreshList, show]);
 
   useEffect(() => {
+    setSearchError(null);
     if (!query.trim()) {
       setHits(null);
       return;
@@ -157,7 +213,11 @@ export function App() {
         api
           .search(query)
           .then((h) => current && setHits(h))
-          .catch(() => current && setHits([])),
+          .catch((e) => {
+            if (!current) return;
+            setHits([]);
+            setSearchError(String(e));
+          }),
       200,
     );
     return () => {
@@ -176,13 +236,22 @@ export function App() {
   const current = useMemo(() => meetings.filter((m) => !m.archived), [meetings]);
 
   const [creating, setCreating] = useState(false);
-  const shortcuts = useRef({ newMeeting: () => {} });
-  shortcuts.current.newMeeting = () => void newMeeting();
+  const [importing, setImporting] = useState(false);
+  // The handlers of the sidebar and of the shortcuts stay the same functions, and they call the newest code.
+  const latest = useRef({ newMeeting, openEvent, recordCall, connectCalendar, ready: false });
+  latest.current = { newMeeting, openEvent, recordCall, connectCalendar, ready: !!boot?.onboarded };
+  const openMeeting = useCallback((id: string) => show({ kind: "meeting", id }), [show]);
+  const openEventNotes = useCallback((id: string) => void latest.current.openEvent(id, false), []);
+  const openEventFrom = useCallback((id: string, join: boolean) => void latest.current.openEvent(id, join), []);
+  const recordEvent = useCallback((id: string) => void latest.current.recordCall("com.google.Chrome", id), []);
+  const connect = useCallback(() => latest.current.connectCalendar(), []);
+  const closeNotice = useCallback((id: string) => setClosedNotices((closed) => [...closed, id]), []);
 
-  // Command-F opens the search. Command-N creates a meeting.
+  // Command-F opens the search. Command-N creates a meeting. Command-comma opens Settings.
+  // Control-Command-F is the full screen shortcut of macOS. The shortcuts do not work during setup.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.shiftKey || e.altKey) return;
+      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || !latest.current.ready) return;
       const letter = e.key.toLowerCase();
       if (letter === "f") {
         e.preventDefault();
@@ -190,12 +259,15 @@ export function App() {
         searchInput.current?.focus();
       } else if (letter === "n") {
         e.preventDefault();
-        shortcuts.current.newMeeting();
+        void latest.current.newMeeting();
+      } else if (letter === ",") {
+        e.preventDefault();
+        show({ kind: "settings" });
       }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, []);
+  }, [show]);
 
   async function newMeeting() {
     if (creating) return;
@@ -205,7 +277,7 @@ export function App() {
       // A new meeting from an open folder goes into that folder.
       if (filter.startsWith("folder:")) await api.setFolder(m.id, filter.slice(7));
       await refreshList();
-      show({ kind: "meeting", id: m.id });
+      show({ kind: "meeting", id: m.id, fresh: true });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -214,14 +286,18 @@ export function App() {
   }
 
   async function importRecording() {
-    const path = await open({ multiple: false, filters: [{ name: "Audio", extensions: ["wav", "m4a", "mp3", "aiff", "caf"] }] });
-    if (typeof path !== "string") return;
+    if (importing) return;
+    setImporting(true);
     try {
+      const path = await open({ multiple: false, filters: [{ name: "Audio", extensions: ["wav", "m4a", "mp3", "aiff", "caf"] }] });
+      if (typeof path !== "string") return;
       const m = await api.importRecording(path);
       await refreshList();
       show({ kind: "meeting", id: m.id });
     } catch (e) {
       setError(String(e));
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -239,11 +315,7 @@ export function App() {
       setError(String(e));
       // The meeting has no recording, so Tinta does not keep it. The meeting of a calendar event can have notes, so it stays.
       if (id && !eventId) {
-        const failed = id;
-        await api
-          .trashMeeting(failed)
-          .then(() => api.deleteMeeting(failed))
-          .catch(() => undefined);
+        await api.discardDraft(id).catch(() => undefined);
       }
       void refreshList();
     } finally {
@@ -254,12 +326,14 @@ export function App() {
   async function openEvent(eventId: string, join: boolean) {
     if (creating) return;
     setCreating(true);
+    // Tinta creates the meeting of an event when the user opens its notes for the first time.
+    const fresh = !join && !calendar.events.find((e) => e.id === eventId)?.meeting_id;
     try {
       const id = await api.openEvent(eventId, join);
       await refreshList();
       // A join opens the call. A compact window stays small next to the call.
       if (join) setView({ kind: "meeting", id });
-      else show({ kind: "meeting", id });
+      else show({ kind: "meeting", id, fresh });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -307,9 +381,43 @@ export function App() {
     );
   }
 
+  // The errors and the notices. A compact window shows them above the sidebar, because the main area is hidden.
+  const modelsMissing = boot && !boot.models_installed && view.kind !== "settings" && view.kind !== "home";
+  const bars = (error || notice || modelsMissing) && (
+    <div className="bars">
+      {error && (
+        <div className="bar error-bar" role="alert">
+          <span>{error}</span>
+          <CopyButton text={error} label="Copy the error" />
+          <CloseButton onClick={() => setError(null)} />
+        </div>
+      )}
+      {notice && (
+        <div className="bar info-notice" role="status">
+          <span>{notice.text}</span>
+          {notice.undo && (
+            <button className="quiet" onClick={notice.undo}>
+              Undo
+            </button>
+          )}
+          <CloseButton onClick={() => setNotice(null)} />
+        </div>
+      )}
+      {modelsMissing && (
+        <div className="bar warn-bar">
+          <span>Install the speech models before your first meeting.</span>
+          <button className="quiet" onClick={() => show({ kind: "settings", section: "models" })}>
+            Open Settings
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={`app ${compact ? "compact" : ""}`}>
       <aside className="sidebar">
+        {compact && bars}
         <button className="sidebar-brand" onClick={() => show({ kind: "home" })} aria-label="Home" title="Home">
           <Lockup />
         </button>
@@ -344,38 +452,46 @@ export function App() {
         </div>
         {hits ? (
           <ul className="list">
-            {hits.length === 0 && <li className="empty-list">No meetings found.</li>}
+            {searchError ? (
+              <li className="empty-list warn" role="alert">
+                The search failed: {searchError}
+              </li>
+            ) : (
+              hits.length === 0 && <li className="empty-list">No meetings found.</li>
+            )}
             {hits.map((h, i) => (
               <li key={i} className="item" {...pressable(() => show({ kind: "meeting", id: h.meeting_id }))}>
                 <Icon name="document" />
                 <div>
                   <strong>{h.title}</strong>
-                  <span className="snippet">{h.snippet}</span>
+                  <Snippet text={h.snippet} query={query} />
                 </div>
               </li>
             ))}
           </ul>
         ) : (
           <>
-            <CallNotice
+            <CallBanner
               calendar={calendar}
               meetings={meetings}
               active={active}
               extension={extension}
               ready={boot?.models_installed ?? false}
               busy={creating}
-              onOpenEvent={openEvent}
-              onRecord={(eventId) => void recordCall("com.google.Chrome", eventId)}
+              closed={closedNotices}
+              onClose={closeNotice}
+              onOpenEvent={openEventFrom}
+              onRecord={recordEvent}
             />
-            <SidebarNext calendar={calendar} busy={creating} onOpen={(id) => void openEvent(id, false)} onConnect={connectCalendar} />
-            <MeetingList
+            <Next calendar={calendar} busy={creating} onOpen={openEventNotes} onConnect={connect} />
+            <List
               meetings={meetings}
               loaded={loaded}
               filter={filter}
               selectedId={view.kind === "meeting" ? view.id : null}
               activeId={active?.meeting_id ?? null}
               onFilter={setFilter}
-              onOpen={(id) => show({ kind: "meeting", id })}
+              onOpen={openMeeting}
               onError={setError}
               onNotice={setNotice}
             />
@@ -403,32 +519,8 @@ export function App() {
         </button>
       )}
       <main className="main">
-        {error && (
-          <div className="bar error-bar" role="alert">
-            <span>{error}</span>
-            <CopyButton text={error} label="Copy the error" />
-            <CloseButton onClick={() => setError(null)} />
-          </div>
-        )}
-        {notice && (
-          <div className="bar info-notice" role="status">
-            <span>{notice.text}</span>
-            {notice.undo && (
-              <button className="quiet" onClick={notice.undo}>
-                Undo
-              </button>
-            )}
-            <CloseButton onClick={() => setNotice(null)} />
-          </div>
-        )}
-        {boot && !boot.models_installed && view.kind !== "settings" && view.kind !== "home" && (
-          <div className="bar warn-bar">
-            <span>Install the speech models before your first meeting.</span>
-            <button className="quiet" onClick={() => setView({ kind: "settings" })}>
-              Open Settings
-            </button>
-          </div>
-        )}
+        {!compact && bars}
+        <div className="page">
         {view.kind === "meeting" && (
           <MeetingView
             key={view.id}
@@ -439,6 +531,8 @@ export function App() {
             calls={calls}
             folders={folders}
             tags={tags}
+            fresh={view.fresh ?? false}
+            importing={importing}
             onImport={importRecording}
             onActive={setActive}
             onError={setError}
@@ -449,6 +543,7 @@ export function App() {
         {view.kind === "settings" && boot && (
           <Settings
             boot={boot}
+            section={view.section}
             calls={calls}
             calendar={calendar}
             onConnectCalendar={connectCalendar}
@@ -467,7 +562,7 @@ export function App() {
             <GranolaImport onError={setError} onDone={refreshList} />
           </div>
         )}
-        {view.kind === "mcp" && <Mcp boot={boot} onChanged={() => void refreshBoot()} onError={setError} />}
+        {view.kind === "mcp" && <Mcp boot={boot} meetings={meetings} onOpen={openMeeting} onChanged={() => void refreshBoot()} onUndone={() => void refreshList()} onError={setError} />}
         {view.kind === "home" && boot && (
           <Home
             boot={boot}
@@ -484,7 +579,7 @@ export function App() {
             onOpenEvent={openEvent}
             onConnectCalendar={connectCalendar}
             onInternetAccounts={() => api.openPrivacySettings("internet_accounts").catch((e) => setError(String(e)))}
-            onSettings={() => setView({ kind: "settings" })}
+            onSettings={(section) => setView({ kind: "settings", section })}
             onAllowMicrophone={() =>
               boot &&
               allowMicrophone(boot.microphone)
@@ -494,6 +589,7 @@ export function App() {
             onRetry={(id) => api.runFinalPass(id, null).then(refreshList).catch((e) => setError(String(e)))}
           />
         )}
+        </div>
       </main>
     </div>
   );

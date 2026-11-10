@@ -12,10 +12,12 @@ struct Engine {
         if arguments.count >= 3, arguments[1] == "--tap-helper" {
             TapHelper.run(source: arguments[2])
         }
+        // When the app stops, stdout closes. The engine must continue until it saves the last audio.
+        signal(SIGPIPE, SIG_IGN)
         setvbuf(stdout, nil, _IOLBF, 0)
         ModelPins.setOnline(false)
         let controller = Controller()
-        Output.shared.event("ready", ["version": "0.9.3"])
+        Output.shared.event("ready", ["version": "0.10.0"])
         Controller.calls.start()
         Controller.calendar.start()
         Task.detached { await controller.prewarm() }
@@ -210,9 +212,14 @@ actor Controller {
         var allText = ""
         var duration = 0.0
         var trackSamples: [Track: [Float]] = [:]
-        trackSamples[.remote] = try ChunkReader.track(directory: directory, key: key, track: .remote)
+        var skippedChunks = 0
         for track in [Track.remote, Track.mic] {
-            let samples = try trackSamples[track] ?? ChunkReader.track(directory: directory, key: key, track: track)
+            let read = try ChunkReader.track(directory: directory, key: key, track: track)
+            trackSamples[track] = read.samples
+            skippedChunks += read.skipped
+        }
+        for track in [Track.remote, Track.mic] {
+            let samples = trackSamples[track] ?? []
             duration = max(duration, Double(samples.count) / Double(ChunkFormat.sampleRate))
             var words = try await speech.transcribeTrack(samples)
             if track == .mic, let remote = trackSamples[.remote] ?? nil as [Float]? {
@@ -226,7 +233,7 @@ actor Controller {
             }
             tracks[track.rawValue] = entry
         }
-        var result: [String: Any] = ["tracks": tracks, "duration": duration]
+        var result: [String: Any] = ["tracks": tracks, "duration": duration, "skipped_chunks": skippedChunks]
         if let language = Speech.detectLanguage(allText) { result["language"] = language }
         return result
     }
@@ -258,7 +265,7 @@ actor Controller {
         guard let track = Track(rawValue: try params.string("track")) else { throw EngineError("invalid track") }
         let start = try params.double("s")
         let end = try params.double("e")
-        let samples = try ChunkReader.track(directory: directory, key: try Self.key(params), track: track)
+        let samples = try ChunkReader.track(directory: directory, key: try Self.key(params), track: track).samples
         let rate = Double(ChunkFormat.sampleRate)
         let from = max(0, min(samples.count, Int(start * rate)))
         let to = max(from, min(samples.count, Int(end * rate)))

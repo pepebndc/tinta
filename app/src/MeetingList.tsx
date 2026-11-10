@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, failureLabel, Meeting, relativeDate } from "./api";
 import { Icon } from "./Brand";
 import { Menu } from "./Menu";
@@ -18,8 +18,11 @@ type Props = {
   onFilter: (filter: string) => void;
   onOpen: (id: string) => void;
   onError: (e: string) => void;
-  onNotice: (notice: Notice) => void;
+  onNotice: (notice: Notice | null) => void;
 };
+
+/** The time that the pointer stays on a meeting before Tinta loads it. */
+const PREFETCH_MS = 120;
 
 // The drag data type of a meeting in the list.
 const DRAG_TYPE = "application/x-tinta-meeting";
@@ -44,6 +47,7 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
   const folder = filter.startsWith("folder:") ? filter.slice(7) : null;
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const prefetch = useRef<number | undefined>(undefined);
 
   // A filter for a folder or a tag that no longer exists goes back to all meetings.
   // This runs only when the list changes, so a rename can set the new name before the list arrives.
@@ -75,7 +79,11 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
       .then(() =>
         onNotice({
           text: `Moved "${meeting.title}" to ${name}.`,
-          undo: () => void api.setFolder(id, meeting.folder).catch((e) => onError(String(e))),
+          undo: () =>
+            void api
+              .setFolder(id, meeting.folder)
+              .then(() => onNotice(null))
+              .catch((e) => onError(String(e))),
         }),
       )
       .catch((e) => onError(String(e)));
@@ -102,7 +110,10 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
           text: `Removed the folder "${folder}". Its meetings stay in the list.`,
           undo: () =>
             void Promise.all(ids.map((id) => api.setFolder(id, folder)))
-              .then(() => onFilter(`folder:${folder}`))
+              .then(() => {
+                onNotice(null);
+                onFilter(`folder:${folder}`);
+              })
               .catch((e) => onError(String(e))),
         });
       })
@@ -200,9 +211,10 @@ export function MeetingList({ meetings, loaded, filter, selectedId, activeId, on
               e.dataTransfer.effectAllowed = "move";
             }}
             {...pressable(() => onOpen(m.id))}
-            onMouseEnter={() => prefetchMeeting(m.id)}
+            onMouseEnter={() => (prefetch.current = window.setTimeout(() => prefetchMeeting(m.id), PREFETCH_MS))}
+            onMouseLeave={() => window.clearTimeout(prefetch.current)}
           >
-            {activeId === m.id ? <span className="rec-dot" /> : <Icon name="document" />}
+            {activeId === m.id ? <span className="rec-dot" role="img" aria-label="Recording" /> : <Icon name="document" />}
             <div>
               <strong>{m.title}</strong>
               <span>

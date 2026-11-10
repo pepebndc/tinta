@@ -96,27 +96,60 @@ pub fn extension_dir() -> PathBuf {
     tinta_core::paths::base_dir().join("Chrome extension")
 }
 
-/// Replaces the extension folder with the bundled extension.
+/// Replaces the extension folder with the bundled extension. The copy goes to a new folder first,
+/// so a copy that fails leaves the extension that Chrome uses.
 pub fn copy_extension(source: &Path) -> Result<PathBuf> {
     let target = extension_dir();
-    if target.exists() {
-        std::fs::remove_dir_all(&target)?;
+    let staging = target.with_file_name("Chrome extension.new");
+    let previous = target.with_file_name("Chrome extension.old");
+    for dir in [&staging, &previous] {
+        if dir.exists() {
+            std::fs::remove_dir_all(dir)?;
+        }
     }
-    crate::copy_dir(source, &target)?;
+    crate::copy_dir(source, &staging)?;
+    if target.exists() {
+        std::fs::rename(&target, &previous)?;
+    }
+    if let Err(error) = std::fs::rename(&staging, &target) {
+        let _ = std::fs::rename(&previous, &target);
+        return Err(error).context("cannot replace the extension folder");
+    }
+    let _ = std::fs::remove_dir_all(&previous);
     Ok(target)
 }
 
-/// Updates the extension folder when the bundled extension has a different version.
+/// The files of a folder with their content, by their path inside the folder.
+fn files(dir: &Path, prefix: &Path, into: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = prefix.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            files(&entry.path(), &name, into)?;
+        } else {
+            into.insert(name, std::fs::read(entry.path())?);
+        }
+    }
+    Ok(())
+}
+
+/// True when each file of `source` is in `target` with the same content.
+fn has_files_of(target: &Path, source: &Path) -> bool {
+    let read = |dir: &Path| {
+        let mut found = std::collections::BTreeMap::new();
+        files(dir, Path::new(""), &mut found).map(|()| found)
+    };
+    match (read(source), read(target)) {
+        (Ok(source), Ok(target)) => !source.is_empty() && source.iter().all(|(name, bytes)| target.get(name) == Some(bytes)),
+        _ => false,
+    }
+}
+
+/// Updates the extension folder when a file of the bundled extension is different.
 /// Chrome loads the new files the next time that it starts.
 pub fn update_extension(source: &Path) {
-    let version = |dir: &Path| {
-        std::fs::read(dir.join("manifest.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|manifest| manifest["version"].as_str().map(str::to_string))
-    };
     let target = extension_dir();
-    if target.exists() && version(source).is_some() && version(source) != version(&target) {
+    if target.exists() && source.join("manifest.json").exists() && !has_files_of(&target, source) {
         let _ = copy_extension(source);
     }
 }
@@ -146,31 +179,31 @@ pub fn peer_path(fd: i32) -> Option<PathBuf> {
 static SIGNATURES: Mutex<Option<HashMap<PathBuf, bool>>> = Mutex::new(None);
 
 /// Accepts a peer only if it is one of the helper binaries next to this app and its code
-/// signature is valid.
-pub fn trusted_peer(path: &Path) -> bool {
-    let allowed = ["tinta-mcp", "tinta-native-host"].iter().any(|name| {
+/// signature is valid. Returns the role of the helper on the app socket: "mcp" or "native-host".
+pub fn trusted_peer(path: &Path) -> Option<&'static str> {
+    let role = [("tinta-mcp", "mcp"), ("tinta-native-host", "native-host")].into_iter().find_map(|(name, role)| {
         let expected = helper_path(name);
         match (expected.canonicalize(), path.canonicalize()) {
-            (Ok(a), Ok(b)) => a == b,
-            _ => false,
+            (Ok(a), Ok(b)) if a == b => Some(role),
+            _ => None,
         }
-    });
-    if !allowed {
-        return false;
-    }
+    })?;
     let mut cache = SIGNATURES.lock().unwrap();
     let cache = cache.get_or_insert_with(HashMap::new);
-    if let Some(valid) = cache.get(path) {
-        return *valid;
-    }
-    let valid = Command::new("/usr/bin/codesign")
-        .args(["--verify", "--strict"])
-        .arg(path)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    cache.insert(path.to_path_buf(), valid);
-    valid
+    let valid = match cache.get(path) {
+        Some(valid) => *valid,
+        None => {
+            let valid = Command::new("/usr/bin/codesign")
+                .args(["--verify", "--strict"])
+                .arg(path)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            cache.insert(path.to_path_buf(), valid);
+            valid
+        }
+    };
+    valid.then_some(role)
 }
 
 /// The value of the `call_browser` setting that selects the default browser of macOS.

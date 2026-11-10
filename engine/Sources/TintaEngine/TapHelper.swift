@@ -109,21 +109,26 @@ final class RemoteTap: @unchecked Sendable {
             buffer.removeFirst(count)
             return head
         }
-        while let kind = take(1)?.first {
+        /// Reads one frame. Returns false at the end of the stream.
+        func frame() -> Bool {
+            guard let kind = take(1)?.first else { return false }
             if kind == 0 {
-                guard let header = take(12) else { return }
+                guard let header = take(12) else { return false }
                 let host = header.prefix(8).withUnsafeBytes { UInt64(littleEndian: $0.loadUnaligned(as: UInt64.self)) }
                 let count = header.suffix(4).withUnsafeBytes { Int(UInt32(littleEndian: $0.loadUnaligned(as: UInt32.self))) }
-                guard let body = take(count * 4) else { return }
+                guard let body = take(count * 4) else { return false }
                 let samples = body.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
                 handler(samples, host)
             } else {
-                guard let state = take(5) else { return }
+                guard let state = take(5) else { return false }
                 isCapturing = state.first == 1
                 let processes = state.suffix(4).withUnsafeBytes { Int(UInt32(littleEndian: $0.loadUnaligned(as: UInt32.self))) }
                 Output.shared.event("source_state", ["capturing": isCapturing, "processes": processes])
             }
+            return true
         }
+        // The handler writes chunk files and sends events. The pool releases their temporary objects after each frame.
+        while autoreleasepool(invoking: frame) {}
     }
 
     /// Closes the helper input and waits 3 seconds for the helper to exit. A helper that

@@ -1,8 +1,8 @@
 "use strict";
 
 const find = (id) => document.getElementById(id);
-const MEET_ORIGIN = "https://meet.google.com";
 let tabId = null;
+// True when the content script of the tab answers, so the tab is a Meet tab.
 let meetTab = false;
 // The participant list changes only when this key changes, so that the list keeps its scroll position.
 let peopleKey = null;
@@ -28,6 +28,10 @@ function renderApp(status) {
     dot.className = "dot off";
     find("app-title").textContent = "Tinta is not installed";
     find("app-detail").textContent = "Install Tinta and open it once. Then restart Chrome.";
+  } else if (status.host === "failing") {
+    dot.className = "dot off";
+    find("app-title").textContent = "Tinta does not accept the connection";
+    find("app-detail").textContent = "Open Tinta on this Mac. If this message stays, restart Chrome.";
   } else if (status.appKnown && status.app) {
     dot.className = "dot ok";
     find("app-title").textContent = "Connected to Tinta";
@@ -100,12 +104,25 @@ function renderCall(call, status) {
     count + (count === 1 ? " person" : " people") + (canStart ? ". Start the recording in Tinta." : ".");
 }
 
+// The call of the tab, from its content script. Only a Meet tab has a content script that answers.
+async function tabState() {
+  if (tabId === null) return null;
+  try {
+    return (await chrome.tabs.sendMessage(tabId, { type: "tinta_state" })) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function refresh() {
+  const tab = await tabState();
+  meetTab = tab !== null;
   try {
     const result = await chrome.runtime.sendMessage({ type: "popup_state", tabId });
     if (!result) return;
     renderApp(result.status);
-    renderCall(result.call, result.status);
+    // The content script has the current call, also after the service worker starts again.
+    renderCall(tab ? tab.call : result.call, result.status);
   } catch (e) {
     // The service worker restarts after a pause. The next refresh reaches it.
   }
@@ -114,17 +131,9 @@ async function refresh() {
 async function start() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab ? tab.id : null;
-  // The content script match gives the extension access to the URL of a Meet tab.
-  meetTab = Boolean(tab && tab.url && tab.url.startsWith(MEET_ORIGIN + "/"));
   const outline = find("outline");
-  if (tabId !== null) {
-    chrome.tabs
-      .sendMessage(tabId, { type: "tinta_debug" })
-      .then((reply) => {
-        if (reply) outline.checked = reply.debug;
-      })
-      .catch(() => {});
-  }
+  const state = await tabState();
+  if (state) outline.checked = state.debug;
   outline.addEventListener("change", () => {
     if (tabId !== null) chrome.tabs.sendMessage(tabId, { type: "tinta_debug", on: outline.checked }).catch(() => {});
   });

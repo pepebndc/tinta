@@ -359,6 +359,22 @@ fn turn_from_row(row: &Row) -> rusqlite::Result<Turn> {
     })
 }
 
+fn revision_from_row(row: &Row) -> rusqlite::Result<Revision> {
+    Ok(Revision {
+        id: row.get("id")?,
+        batch: row.get("batch")?,
+        meeting_id: row.get("meeting_id")?,
+        entity: row.get("entity")?,
+        entity_id: row.get("entity_id")?,
+        field: row.get("field")?,
+        origin: row.get("origin")?,
+        old_value: row.get("old_value")?,
+        new_value: row.get("new_value")?,
+        ts: row.get("ts")?,
+        undone: row.get::<_, i64>("undone")? != 0,
+    })
+}
+
 impl Db {
     pub fn open(path: &Path, keys: &Keys) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -374,9 +390,17 @@ impl Db {
 
     fn init(conn: Connection, keys: &Keys) -> Result<Self> {
         conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex::encode(keys.database)))?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-            .context("the database key does not match")?;
+        // The first statement that reads the file fails with "not a database" when the key is wrong.
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;").map_err(|e| {
+            match e.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::NotADatabase) => anyhow!("the database key does not match"),
+                _ => anyhow::Error::new(e).context("cannot open the database"),
+            }
+        })?;
+        // Deleted rows and deleted search terms leave no content in the free pages of the file.
+        conn.execute_batch("PRAGMA secure_delete = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        conn.execute_batch("INSERT INTO search (search, rank) VALUES ('secure-delete', 1);")?;
         let db = Self { conn };
         db.migrate()?;
         Ok(db)
@@ -394,7 +418,23 @@ impl Db {
         }
         self.conn
             .execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS meetings_external ON meetings (external_id);")?;
+        // A meeting with an audio deadline has audio. Versions before 0.9.4 could mark such a meeting as
+        // "audio deleted", and then the audio retention did not apply to it.
+        self.conn
+            .execute_batch("UPDATE meetings SET audio_deleted = 0 WHERE audio_deleted = 1 AND audio_until IS NOT NULL;")?;
         Ok(())
+    }
+
+    /// Runs `f` in one transaction, so a change, its revision, and its search entry are saved together.
+    /// A call inside another `atomic` call joins the outer transaction.
+    fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        if !self.conn.is_autocommit() {
+            return f();
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let value = f()?;
+        tx.commit()?;
+        Ok(value)
     }
 
     pub fn external_exists(&self, external_id: &str) -> Result<bool> {
@@ -486,15 +526,17 @@ impl Db {
 
     pub fn create_meeting(&self, title: &str, source: Option<&str>) -> Result<Meeting> {
         let id = uuid::Uuid::new_v4().to_string();
-        self.conn.execute(
-            "INSERT INTO meetings (id, title, created_at, state, source) VALUES (?1, ?2, ?3, 'draft', ?4)",
-            params![id, title, now_ms(), source],
-        )?;
-        self.conn.execute(
-            "INSERT INTO notes (meeting_id, content, updated_at) VALUES (?1, '', ?2)",
-            params![id, now_ms()],
-        )?;
-        self.reindex(&id)?;
+        self.atomic(|| {
+            self.conn.execute(
+                "INSERT INTO meetings (id, title, created_at, state, source) VALUES (?1, ?2, ?3, 'draft', ?4)",
+                params![id, title, now_ms(), source],
+            )?;
+            self.conn.execute(
+                "INSERT INTO notes (meeting_id, content, updated_at) VALUES (?1, '', ?2)",
+                params![id, now_ms()],
+            )?;
+            self.reindex(&id)
+        })?;
         self.meeting(&id)
     }
 
@@ -508,16 +550,17 @@ impl Db {
                 Ok((r.get(0)?, r.get(1)?))
             })
             .optional()?;
-        match existing {
-            Some((id, None)) => return self.meeting(&id),
-            Some((id, Some(_))) => {
-                self.conn.execute("UPDATE meetings SET external_id = NULL WHERE id = ?1", [&id])?;
-            }
-            None => {}
+        if let Some((id, None)) = &existing {
+            return self.meeting(id);
         }
-        let meeting = self.create_meeting(title, None)?;
-        self.conn.execute("UPDATE meetings SET external_id = ?1 WHERE id = ?2", params![external, meeting.id])?;
-        Ok(meeting)
+        self.atomic(|| {
+            if let Some((id, _)) = &existing {
+                self.conn.execute("UPDATE meetings SET external_id = NULL WHERE id = ?1", [id])?;
+            }
+            let meeting = self.create_meeting(title, None)?;
+            self.conn.execute("UPDATE meetings SET external_id = ?1 WHERE id = ?2", params![external, meeting.id])?;
+            Ok(meeting)
+        })
     }
 
     /// The meetings that the user created from calendar events, by event ID. Meetings in the trash are not in the map.
@@ -543,6 +586,16 @@ impl Db {
             .ok_or_else(|| anyhow!("meeting not found: {id}"))?;
         meeting.tags = self.tags(id)?;
         Ok(meeting)
+    }
+
+    /// The IDs of the meetings outside the trash that start with `prefix`, two at most.
+    /// Two IDs show that the prefix is not unique.
+    pub fn ids_with_prefix(&self, prefix: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM meetings WHERE deleted_at IS NULL AND substr(id, 1, length(?1)) = ?1 LIMIT 2",
+        )?;
+        let rows = stmt.query_map([prefix], |r| r.get(0))?;
+        rows.map(|r| r.map_err(Into::into)).collect()
     }
 
     /// Returns meetings that are not in the trash, newest first.
@@ -577,10 +630,12 @@ impl Db {
             previews.insert(id, Preview { summary: summary.as_deref().and_then(summary_line), people: Vec::new() });
         }
         let mut stmt = self.conn.prepare(
-            "SELECT meeting_id, name FROM participants WHERE is_self = 0
-             UNION SELECT meeting_id, name FROM speakers WHERE name IS NOT NULL AND merged_into IS NULL AND track = 'remote'",
+            "WITH latest AS (SELECT id FROM meetings WHERE deleted_at IS NULL AND archived = 0 ORDER BY created_at DESC LIMIT ?1)
+             SELECT meeting_id, name FROM participants WHERE is_self = 0 AND meeting_id IN latest
+             UNION SELECT meeting_id, name FROM speakers
+                WHERE name IS NOT NULL AND merged_into IS NULL AND track = 'remote' AND meeting_id IN latest",
         )?;
-        for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        for row in stmt.query_map([limit as i64], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
             let (id, name) = row?;
             if let Some(preview) = previews.get_mut(&id) {
                 if !preview.people.contains(&name) {
@@ -612,15 +667,21 @@ impl Db {
         if self.start_wall_ms(id)?.is_some() {
             bail!("this meeting already has a recording");
         }
-        self.conn.execute(
-            "INSERT INTO recordings (meeting_id, start_wall_ms, offset_seconds) VALUES (?1, ?2, 0)",
-            params![id, start_wall_ms],
-        )?;
-        self.conn.execute(
-            "UPDATE meetings SET state = 'recording', started_at = COALESCE(started_at, ?2), meeting_code = COALESCE(?3, meeting_code) WHERE id = ?1",
-            params![id, start_wall_ms, meeting_code],
-        )?;
-        Ok(())
+        self.atomic(|| {
+            self.conn.execute(
+                "INSERT INTO recordings (meeting_id, start_wall_ms, offset_seconds) VALUES (?1, ?2, 0)",
+                params![id, start_wall_ms],
+            )?;
+            // The meeting has audio from now on, so the audio retention applies to it.
+            let updated = self.conn.execute(
+                "UPDATE meetings SET state = 'recording', audio_deleted = 0, started_at = COALESCE(started_at, ?2), meeting_code = COALESCE(?3, meeting_code) WHERE id = ?1",
+                params![id, start_wall_ms, meeting_code],
+            )?;
+            if updated == 0 {
+                bail!("meeting not found: {id}");
+            }
+            Ok(())
+        })
     }
 
     /// The wall clock time of the start of the meeting clock.
@@ -633,12 +694,15 @@ impl Db {
     }
 
     /// Sets the state to processing. A meeting that has an end time keeps it.
+    /// Search finds the live transcript from now on, also when the final pass fails.
     pub fn mark_stopped(&self, id: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE meetings SET state = 'processing', ended_at = COALESCE(ended_at, ?2) WHERE id = ?1",
-            params![id, now_ms()],
-        )?;
-        Ok(())
+        self.atomic(|| {
+            self.conn.execute(
+                "UPDATE meetings SET state = 'processing', ended_at = COALESCE(ended_at, ?2) WHERE id = ?1",
+                params![id, now_ms()],
+            )?;
+            self.reindex_kind(id, "transcript")
+        })
     }
 
     /// Records a change, so the MCP screen can show it and undo it. The changes of one batch undo together.
@@ -661,9 +725,11 @@ impl Db {
             bail!("the title is empty");
         }
         let old = self.meeting(id)?.title;
-        self.conn.execute("UPDATE meetings SET title = ?2 WHERE id = ?1", params![id, title])?;
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "title", Some(&old), Some(title)))?;
-        self.reindex_kind(id, "title")
+        self.atomic(|| {
+            self.conn.execute("UPDATE meetings SET title = ?2 WHERE id = ?1", params![id, title])?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "title", Some(&old), Some(title)))?;
+            self.reindex_kind(id, "title")
+        })
     }
 
     /// Moves a meeting to a folder. A name that matches an existing folder in another case uses the existing name,
@@ -678,20 +744,19 @@ impl Db {
         if old == folder {
             return Ok(());
         }
-        self.conn.execute("UPDATE meetings SET folder = ?2 WHERE id = ?1", params![id, folder])?;
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "folder", old.as_deref(), folder.as_deref()))?;
-        self.reindex_kind(id, "title")
+        self.atomic(|| {
+            self.conn.execute("UPDATE meetings SET folder = ?2 WHERE id = ?1", params![id, folder])?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "folder", old.as_deref(), folder.as_deref()))?;
+            self.reindex_kind(id, "title")
+        })
     }
 
+    /// The folder that has this name in any case. The comparison covers all letters, not only ASCII.
     fn existing_folder(&self, name: &str) -> Result<Option<String>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT folder FROM meetings WHERE folder IS NOT NULL AND lower(folder) = lower(?1) LIMIT 1",
-                [name],
-                |r| r.get(0),
-            )
-            .optional()?)
+        let wanted = name.to_lowercase();
+        let mut stmt = self.conn.prepare("SELECT DISTINCT folder FROM meetings WHERE folder IS NOT NULL")?;
+        let folders: Vec<String> = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(folders.into_iter().find(|f| f.to_lowercase() == wanted))
     }
 
     /// The meetings in a folder, in the trash too, so a restored meeting keeps the new name.
@@ -713,24 +778,21 @@ impl Db {
             Some(existing) if existing != folder => existing,
             _ => name.to_string(),
         };
-        let tx = self.conn.unchecked_transaction()?;
-        for id in &ids {
-            self.conn.execute("UPDATE meetings SET folder = ?2 WHERE id = ?1", params![id, target])?;
-            self.record(&Self::new_batch(), Origin::User, Change::meeting(id, "folder", Some(folder), Some(&target)))?;
-            self.reindex_kind(id, "title")?;
-        }
-        tx.commit()?;
+        self.atomic(|| {
+            for id in &ids {
+                self.conn.execute("UPDATE meetings SET folder = ?2 WHERE id = ?1", params![id, target])?;
+                self.record(&Self::new_batch(), Origin::User, Change::meeting(id, "folder", Some(folder), Some(&target)))?;
+                self.reindex_kind(id, "title")?;
+            }
+            Ok(())
+        })?;
         Ok(ids)
     }
 
     /// Removes a folder. Its meetings stay, without a folder. Returns the changed meetings.
     pub fn remove_folder(&self, folder: &str) -> Result<Vec<String>> {
         let ids = self.folder_members(folder)?;
-        let tx = self.conn.unchecked_transaction()?;
-        for id in &ids {
-            self.set_folder(id, None, Origin::User)?;
-        }
-        tx.commit()?;
+        self.atomic(|| ids.iter().try_for_each(|id| self.set_folder(id, None, Origin::User)))?;
         Ok(ids)
     }
 
@@ -754,16 +816,15 @@ impl Db {
             .collect();
         clean.sort();
         clean.dedup();
-        let tx = self.conn.unchecked_transaction()?;
-        self.conn.execute("DELETE FROM tags WHERE meeting_id = ?1", [id])?;
-        for tag in &clean {
-            self.conn.execute("INSERT INTO tags (meeting_id, tag) VALUES (?1, ?2)", params![id, tag])?;
-        }
-        let new = serde_json::to_string(&clean)?;
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "tags", Some(&old), Some(&new)))?;
-        self.reindex_kind(id, "title")?;
-        tx.commit()?;
-        Ok(())
+        self.atomic(|| {
+            self.conn.execute("DELETE FROM tags WHERE meeting_id = ?1", [id])?;
+            for tag in &clean {
+                self.conn.execute("INSERT INTO tags (meeting_id, tag) VALUES (?1, ?2)", params![id, tag])?;
+            }
+            let new = serde_json::to_string(&clean)?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "tags", Some(&old), Some(&new)))?;
+            self.reindex_kind(id, "title")
+        })
     }
 
     pub fn folders(&self) -> Result<Vec<String>> {
@@ -788,14 +849,16 @@ impl Db {
     /// MCP saves create a revision that the user can undo.
     pub fn set_notes(&self, id: &str, content: &str, origin: Origin) -> Result<()> {
         let old = self.notes(id)?;
-        self.conn.execute(
-            "INSERT INTO notes (meeting_id, content, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
-            params![id, content, now_ms()],
-        )?;
-        if origin == Origin::Mcp {
-            self.record(&Self::new_batch(), origin, Change::whole(id, "notes", Some(&old), Some(content)))?;
-        }
-        self.reindex_kind(id, "notes")
+        self.atomic(|| {
+            self.conn.execute(
+                "INSERT INTO notes (meeting_id, content, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
+                params![id, content, now_ms()],
+            )?;
+            if origin == Origin::Mcp {
+                self.record(&Self::new_batch(), origin, Change::whole(id, "notes", Some(&old), Some(content)))?;
+            }
+            self.reindex_kind(id, "notes")
+        })
     }
 
     // MARK: Summaries
@@ -810,38 +873,46 @@ impl Db {
             .optional()?)
     }
 
+    pub fn has_summary(&self, id: &str) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM summaries WHERE meeting_id = ?1)", [id], |r| r.get(0))?)
+    }
+
     /// `written_by` names the local model, or `MCP_AUTHOR` for a change through MCP.
     /// MCP changes create a revision that the user can undo.
     pub fn set_summary(&self, id: &str, content: &str, written_by: &str, origin: Origin) -> Result<()> {
         let old = self.summary(id)?;
-        self.conn.execute(
-            "INSERT INTO summaries (meeting_id, content, model, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, model = excluded.model, created_at = excluded.created_at",
-            params![id, content, written_by, now_ms()],
-        )?;
-        if origin == Origin::Mcp {
-            let old = old.map(|s| serde_json::to_string(&s)).transpose()?;
-            self.record(&Self::new_batch(), origin, Change::whole(id, "summary", old.as_deref(), Some(content)))?;
-        }
-        self.reindex_kind(id, "summary")
+        self.atomic(|| {
+            self.conn.execute(
+                "INSERT INTO summaries (meeting_id, content, model, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, model = excluded.model, created_at = excluded.created_at",
+                params![id, content, written_by, now_ms()],
+            )?;
+            if origin == Origin::Mcp {
+                let old = old.map(|s| serde_json::to_string(&s)).transpose()?;
+                self.record(&Self::new_batch(), origin, Change::whole(id, "summary", old.as_deref(), Some(content)))?;
+            }
+            self.reindex_kind(id, "summary")
+        })
     }
 
     pub fn delete_summary(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [id])?;
-        self.reindex_kind(id, "summary")
+        self.atomic(|| {
+            self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [id])?;
+            self.reindex_kind(id, "summary")
+        })
     }
 
     // MARK: Participants and speaker events
 
     pub fn upsert_participants(&self, id: &str, participants: &[Participant]) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        for p in participants {
-            self.conn.execute(
-                "INSERT INTO participants (meeting_id, participant_id, name, is_self) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id, participant_id) DO UPDATE SET name = excluded.name, is_self = excluded.is_self",
-                params![id, p.participant_id, p.name, p.is_self as i64],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
+        self.atomic(|| {
+            for p in participants {
+                self.conn.execute(
+                    "INSERT INTO participants (meeting_id, participant_id, name, is_self) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id, participant_id) DO UPDATE SET name = excluded.name, is_self = excluded.is_self",
+                    params![id, p.participant_id, p.name, p.is_self as i64],
+                )?;
+            }
+            Ok(())
+        })
     }
 
     pub fn participants(&self, id: &str) -> Result<Vec<Participant>> {
@@ -922,6 +993,18 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// True when the user or an MCP client set a speaker name, merged speakers, or moved a turn to another speaker.
+    /// A new final pass replaces the speakers and the turns, so these changes do not stay.
+    pub fn has_speaker_changes(&self, id: &str) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM speakers WHERE meeting_id = ?1 AND (name_source = 'user' OR merged_into IS NOT NULL))
+                OR EXISTS (SELECT 1 FROM revisions r WHERE r.meeting_id = ?1 AND r.entity = 'turn' AND r.field = 'speaker_id'
+                    AND r.undone = 0 AND EXISTS (SELECT 1 FROM turns t WHERE t.id = CAST(r.entity_id AS INTEGER)))",
+            [id],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn speakers(&self, id: &str) -> Result<Vec<Speaker>> {
         let mut stmt = self
             .conn
@@ -991,7 +1074,7 @@ impl Db {
             )?;
         }
         let updated = tx.execute(
-            "UPDATE meetings SET state = 'ready', error = NULL, duration = ?2, language = COALESCE(?3, language), audio_until = COALESCE(audio_until, ?4) WHERE id = ?1",
+            "UPDATE meetings SET state = 'ready', error = NULL, audio_deleted = 0, duration = ?2, language = COALESCE(?3, language), audio_until = COALESCE(audio_until, ?4) WHERE id = ?1",
             params![id, duration, language, audio_until],
         )?;
         if updated == 0 {
@@ -1005,18 +1088,20 @@ impl Db {
         let speaker = self.speaker(speaker_id)?;
         let name = name.map(str::trim).filter(|n| !n.is_empty());
         let source = name.map(|_| "user");
-        self.conn.execute(
-            "UPDATE speakers SET name = ?2, name_source = ?3 WHERE id = ?1",
-            params![speaker_id, name, source],
-        )?;
         let old = json!({"name": speaker.name, "name_source": speaker.name_source}).to_string();
         let new = json!({"name": name, "name_source": source}).to_string();
-        self.record(
-            &Self::new_batch(),
-            origin,
-            Change { meeting_id: &speaker.meeting_id, entity: "speaker", entity_id: speaker_id, field: "name", old: Some(&old), new: Some(&new) },
-        )?;
-        self.reindex_kind(&speaker.meeting_id, "speakers")
+        self.atomic(|| {
+            self.conn.execute(
+                "UPDATE speakers SET name = ?2, name_source = ?3 WHERE id = ?1",
+                params![speaker_id, name, source],
+            )?;
+            self.record(
+                &Self::new_batch(),
+                origin,
+                Change { meeting_id: &speaker.meeting_id, entity: "speaker", entity_id: speaker_id, field: "name", old: Some(&old), new: Some(&new) },
+            )?;
+            self.reindex_kind(&speaker.meeting_id, "speakers")
+        })
     }
 
     /// Moves all turns of `from` to `into` and hides `from`.
@@ -1026,75 +1111,82 @@ impl Db {
         if a.meeting_id != b.meeting_id || from == into {
             bail!("the speakers must be different speakers of the same meeting");
         }
+        if a.merged_into.is_some() {
+            bail!("the speaker is merged into another speaker already");
+        }
         if b.merged_into.is_some() {
             bail!("the target speaker is merged into another speaker");
         }
         let batch = Self::new_batch();
-        let tx = self.conn.unchecked_transaction()?;
-        let mut stmt = self.conn.prepare("SELECT id FROM turns WHERE speaker_id = ?1")?;
-        let turn_ids: Vec<i64> = stmt.query_map([from], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-        for turn_id in turn_ids {
-            self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![turn_id, into])?;
-            let turn = turn_id.to_string();
+        self.atomic(|| {
+            let mut stmt = self.conn.prepare("SELECT id FROM turns WHERE speaker_id = ?1")?;
+            let turn_ids: Vec<i64> = stmt.query_map([from], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+            drop(stmt);
+            for turn_id in turn_ids {
+                self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![turn_id, into])?;
+                let turn = turn_id.to_string();
+                self.record(
+                    &batch,
+                    origin,
+                    Change { meeting_id: &a.meeting_id, entity: "turn", entity_id: &turn, field: "speaker_id", old: Some(from), new: Some(into) },
+                )?;
+            }
+            self.conn.execute("UPDATE speakers SET merged_into = ?2 WHERE id = ?1", params![from, into])?;
             self.record(
                 &batch,
                 origin,
-                Change { meeting_id: &a.meeting_id, entity: "turn", entity_id: &turn, field: "speaker_id", old: Some(from), new: Some(into) },
+                Change { meeting_id: &a.meeting_id, entity: "speaker", entity_id: from, field: "merged_into", old: None, new: Some(into) },
             )?;
-        }
-        self.conn.execute("UPDATE speakers SET merged_into = ?2 WHERE id = ?1", params![from, into])?;
-        self.record(
-            &batch,
-            origin,
-            Change { meeting_id: &a.meeting_id, entity: "speaker", entity_id: from, field: "merged_into", old: None, new: Some(into) },
-        )?;
-        self.reindex_kind(&a.meeting_id, "speakers")?;
-        tx.commit()?;
-        Ok(())
+            self.reindex_kind(&a.meeting_id, "speakers")
+        })
     }
 
     /// Assigns one turn to another speaker, or to a new speaker when `speaker_id` is None.
     pub fn reassign_turn(&self, turn_id: i64, speaker_id: Option<&str>, origin: Origin) -> Result<String> {
         let turn = self.turn(turn_id)?;
-        let target = match speaker_id {
-            Some(s) => {
-                let speaker = self.speaker(s)?;
-                if speaker.meeting_id != turn.meeting_id {
-                    bail!("the speaker belongs to another meeting");
+        self.atomic(|| {
+            let target = match speaker_id {
+                Some(s) => {
+                    let speaker = self.speaker(s)?;
+                    if speaker.meeting_id != turn.meeting_id {
+                        bail!("the speaker belongs to another meeting");
+                    }
+                    if speaker.merged_into.is_some() {
+                        bail!("the speaker is merged into another speaker");
+                    }
+                    s.to_string()
                 }
-                s.to_string()
-            }
-            None => {
-                let count: i64 = self.conn.query_row(
-                    "SELECT COUNT(*) FROM speakers WHERE meeting_id = ?1",
-                    [&turn.meeting_id],
-                    |r| r.get(0),
-                )?;
-                let new_id = uuid::Uuid::new_v4().to_string();
-                self.conn.execute(
-                    "INSERT INTO speakers (id, meeting_id, label, track) VALUES (?1, ?2, ?3, ?4)",
-                    params![new_id, turn.meeting_id, format!("Speaker {}", count + 1), turn.track],
-                )?;
-                new_id
-            }
-        };
-        self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![turn_id, target])?;
-        let entity_id = turn_id.to_string();
-        self.record(
-            &Self::new_batch(),
-            origin,
-            Change {
-                meeting_id: &turn.meeting_id,
-                entity: "turn",
-                entity_id: &entity_id,
-                field: "speaker_id",
-                old: turn.speaker_id.as_deref(),
-                new: Some(&target),
-            },
-        )?;
-        self.reindex(&turn.meeting_id)?;
-        Ok(target)
+                None => {
+                    let count: i64 = self.conn.query_row(
+                        "SELECT COUNT(*) FROM speakers WHERE meeting_id = ?1",
+                        [&turn.meeting_id],
+                        |r| r.get(0),
+                    )?;
+                    let new_id = uuid::Uuid::new_v4().to_string();
+                    self.conn.execute(
+                        "INSERT INTO speakers (id, meeting_id, label, track) VALUES (?1, ?2, ?3, ?4)",
+                        params![new_id, turn.meeting_id, format!("Speaker {}", count + 1), turn.track],
+                    )?;
+                    new_id
+                }
+            };
+            self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![turn_id, target])?;
+            let entity_id = turn_id.to_string();
+            self.record(
+                &Self::new_batch(),
+                origin,
+                Change {
+                    meeting_id: &turn.meeting_id,
+                    entity: "turn",
+                    entity_id: &entity_id,
+                    field: "speaker_id",
+                    old: turn.speaker_id.as_deref(),
+                    new: Some(&target),
+                },
+            )?;
+            self.reindex(&turn.meeting_id)?;
+            Ok(target)
+        })
     }
 
     pub fn edit_turn_text(&self, turn_id: i64, text: &str, origin: Origin) -> Result<()> {
@@ -1102,14 +1194,16 @@ impl Db {
         if turn.provisional {
             bail!("you can edit the transcript after processing");
         }
-        self.conn.execute("UPDATE turns SET text = ?2, edited = 1 WHERE id = ?1", params![turn_id, text])?;
         let entity_id = turn_id.to_string();
-        self.record(
-            &Self::new_batch(),
-            origin,
-            Change { meeting_id: &turn.meeting_id, entity: "turn", entity_id: &entity_id, field: "text", old: Some(&turn.text), new: Some(text) },
-        )?;
-        self.reindex_kind(&turn.meeting_id, "transcript")
+        self.atomic(|| {
+            self.conn.execute("UPDATE turns SET text = ?2, edited = 1 WHERE id = ?1", params![turn_id, text])?;
+            self.record(
+                &Self::new_batch(),
+                origin,
+                Change { meeting_id: &turn.meeting_id, entity: "turn", entity_id: &entity_id, field: "text", old: Some(&turn.text), new: Some(text) },
+            )?;
+            self.reindex_kind(&turn.meeting_id, "transcript")
+        })
     }
 
     // MARK: Revisions
@@ -1118,74 +1212,72 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT * FROM revisions WHERE (?1 IS NULL OR origin = ?1) ORDER BY id DESC LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![origin.map(Origin::as_str), limit], |r| {
-            Ok(Revision {
-                id: r.get("id")?,
-                batch: r.get("batch")?,
-                meeting_id: r.get("meeting_id")?,
-                entity: r.get("entity")?,
-                entity_id: r.get("entity_id")?,
-                field: r.get("field")?,
-                origin: r.get("origin")?,
-                old_value: r.get("old_value")?,
-                new_value: r.get("new_value")?,
-                ts: r.get("ts")?,
-                undone: r.get::<_, i64>("undone")? != 0,
-            })
-        })?;
+        let rows = stmt.query_map(params![origin.map(Origin::as_str), limit], revision_from_row)?;
         rows.map(|r| r.map_err(Into::into)).collect()
     }
 
     /// Restores the old values of every change in the batch of `revision_id`.
-    pub fn undo(&self, revision_id: i64) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        let batch: String = self
-            .conn
-            .query_row("SELECT batch FROM revisions WHERE id = ?1", [revision_id], |r| r.get(0))?;
-        let mut stmt = self
-            .conn
-            .prepare("SELECT * FROM revisions WHERE batch = ?1 AND undone = 0 ORDER BY id DESC")?;
-        let rows: Vec<(i64, String, String, String, String, Option<String>)> = stmt
-            .query_map([&batch], |r| {
-                Ok((
-                    r.get("id")?,
-                    r.get("meeting_id")?,
-                    r.get("entity")?,
-                    r.get("entity_id")?,
-                    r.get("field")?,
-                    r.get("old_value")?,
-                ))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-        let mut meetings = std::collections::BTreeSet::new();
-        for (rev_id, meeting_id, entity, entity_id, field, old) in rows {
-            match (entity.as_str(), field.as_str()) {
-                ("meeting", "title") => {
-                    self.conn.execute("UPDATE meetings SET title = ?2 WHERE id = ?1", params![entity_id, old])?;
+    /// It refuses when a value changed after the change, so it never overwrites later work.
+    /// Returns the meetings that changed.
+    pub fn undo(&self, revision_id: i64) -> Result<Vec<String>> {
+        self.atomic(|| {
+            let batch: String = self
+                .conn
+                .query_row("SELECT batch FROM revisions WHERE id = ?1", [revision_id], |r| r.get(0))
+                .optional()?
+                .ok_or_else(|| anyhow!("change not found: {revision_id}"))?;
+            let mut stmt = self
+                .conn
+                .prepare("SELECT * FROM revisions WHERE batch = ?1 AND undone = 0 ORDER BY id DESC")?;
+            let rows: Vec<Revision> = stmt.query_map([&batch], revision_from_row)?.collect::<rusqlite::Result<_>>()?;
+            drop(stmt);
+            let mut meetings = std::collections::BTreeSet::new();
+            for revision in rows {
+                self.undo_one(&revision)?;
+                self.conn.execute("UPDATE revisions SET undone = 1 WHERE id = ?1", [revision.id])?;
+                meetings.insert(revision.meeting_id);
+            }
+            meetings.iter().try_for_each(|meeting_id| self.reindex(meeting_id))?;
+            Ok(meetings.into_iter().collect())
+        })
+    }
+
+    /// Restores the old value of one change, when the current value is still the value that the change wrote.
+    fn undo_one(&self, revision: &Revision) -> Result<()> {
+        let Revision { id: revision_id, entity, entity_id, field, old_value: old, new_value: new, .. } = revision;
+        let changed = |what: &str| anyhow!("Tinta cannot undo this change, because {what} changed after it.");
+        match (entity.as_str(), field.as_str()) {
+            ("meeting", column @ ("title" | "folder" | "audio_until" | "deleted_at" | "audio_trashed_at")) => {
+                let current: Option<String> = self
+                    .conn
+                    .query_row(&format!("SELECT CAST({column} AS TEXT) FROM meetings WHERE id = ?1"), [entity_id], |r| r.get(0))
+                    .optional()?
+                    .ok_or_else(|| anyhow!("meeting not found: {entity_id}"))?;
+                if current != *new {
+                    return Err(changed(match column {
+                        "title" => "the title",
+                        "folder" => "the folder",
+                        "audio_until" => "the audio period",
+                        _ => "the trash",
+                    }));
                 }
-                ("meeting", "folder") => {
-                    self.conn.execute("UPDATE meetings SET folder = ?2 WHERE id = ?1", params![entity_id, old])?;
+                self.conn.execute(&format!("UPDATE meetings SET {column} = ?2 WHERE id = ?1"), params![entity_id, old])?;
+            }
+            ("meeting", "tags") => {
+                if Some(serde_json::to_string(&self.tags(entity_id)?)?) != *new {
+                    return Err(changed("the tags"));
                 }
-                ("meeting", "tags") => {
-                    let tags: Vec<String> = serde_json::from_str(old.as_deref().unwrap_or("[]"))?;
-                    self.conn.execute("DELETE FROM tags WHERE meeting_id = ?1", [&entity_id])?;
-                    for tag in tags {
-                        self.conn
-                            .execute("INSERT INTO tags (meeting_id, tag) VALUES (?1, ?2)", params![entity_id, tag])?;
-                    }
+                let tags: Vec<String> = serde_json::from_str(old.as_deref().unwrap_or("[]"))?;
+                self.conn.execute("DELETE FROM tags WHERE meeting_id = ?1", [entity_id])?;
+                for tag in tags {
+                    self.conn.execute("INSERT INTO tags (meeting_id, tag) VALUES (?1, ?2)", params![entity_id, tag])?;
                 }
-                ("meeting", "audio_until") => {
-                    let value: Option<i64> = old.as_deref().and_then(|v| v.parse().ok());
-                    self.conn.execute("UPDATE meetings SET audio_until = ?2 WHERE id = ?1", params![entity_id, value])?;
+            }
+            ("summary", "content") => {
+                if self.summary(entity_id)?.map(|s| s.content) != *new {
+                    return Err(changed("the summary"));
                 }
-                ("meeting", "deleted_at") => {
-                    self.conn.execute("UPDATE meetings SET deleted_at = NULL WHERE id = ?1", [&entity_id])?;
-                }
-                ("meeting", "audio_trashed_at") => {
-                    self.conn.execute("UPDATE meetings SET audio_trashed_at = NULL WHERE id = ?1", [&entity_id])?;
-                }
-                ("summary", "content") => match old.as_deref().map(serde_json::from_str::<Summary>).transpose()? {
+                match old.as_deref().map(serde_json::from_str::<Summary>).transpose()? {
                     Some(s) => {
                         self.conn.execute(
                             "UPDATE summaries SET content = ?2, model = ?3, created_at = ?4 WHERE meeting_id = ?1",
@@ -1193,43 +1285,60 @@ impl Db {
                         )?;
                     }
                     None => {
-                        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [&entity_id])?;
+                        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [entity_id])?;
                     }
-                },
-                ("notes", "content") => {
-                    self.conn.execute(
-                        "UPDATE notes SET content = ?2, updated_at = ?3 WHERE meeting_id = ?1",
-                        params![entity_id, old.unwrap_or_default(), now_ms()],
-                    )?;
                 }
-                ("speaker", "name") => {
-                    let value: Value = serde_json::from_str(old.as_deref().unwrap_or("{}"))?;
-                    self.conn.execute(
-                        "UPDATE speakers SET name = ?2, name_source = ?3 WHERE id = ?1",
-                        params![entity_id, value["name"].as_str(), value["name_source"].as_str()],
-                    )?;
-                }
-                ("speaker", "merged_into") => {
-                    self.conn.execute("UPDATE speakers SET merged_into = NULL WHERE id = ?1", [&entity_id])?;
-                }
-                ("turn", "speaker_id") => {
-                    self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![entity_id, old])?;
-                }
-                ("turn", "text") => {
-                    self.conn.execute(
-                        "UPDATE turns SET text = ?2 WHERE id = ?1",
-                        params![entity_id, old.unwrap_or_default()],
-                    )?;
-                }
-                _ => bail!("cannot undo {entity}.{field}"),
             }
-            self.conn.execute("UPDATE revisions SET undone = 1 WHERE id = ?1", [rev_id])?;
-            meetings.insert(meeting_id);
+            ("notes", "content") => {
+                if Some(self.notes(entity_id)?) != *new {
+                    return Err(changed("the notes"));
+                }
+                self.conn.execute(
+                    "UPDATE notes SET content = ?2, updated_at = ?3 WHERE meeting_id = ?1",
+                    params![entity_id, old.as_deref().unwrap_or_default(), now_ms()],
+                )?;
+            }
+            ("speaker", "name") => {
+                let speaker = self.speaker(entity_id).map_err(|_| changed("the speaker"))?;
+                let written: Value = serde_json::from_str(new.as_deref().unwrap_or("{}"))?;
+                if json!({"name": speaker.name, "name_source": speaker.name_source}) != written {
+                    return Err(changed("the speaker name"));
+                }
+                let value: Value = serde_json::from_str(old.as_deref().unwrap_or("{}"))?;
+                self.conn.execute(
+                    "UPDATE speakers SET name = ?2, name_source = ?3 WHERE id = ?1",
+                    params![entity_id, value["name"].as_str(), value["name_source"].as_str()],
+                )?;
+            }
+            ("speaker", "merged_into") => {
+                let speaker = self.speaker(entity_id).map_err(|_| changed("the speaker"))?;
+                if speaker.merged_into != *new {
+                    return Err(changed("the speaker"));
+                }
+                self.conn.execute("UPDATE speakers SET merged_into = NULL WHERE id = ?1", [entity_id])?;
+            }
+            ("turn", "speaker_id") => {
+                let turn = self.turn(entity_id.parse()?).map_err(|_| changed("the transcript"))?;
+                if turn.speaker_id != *new {
+                    return Err(changed("the speaker of a turn"));
+                }
+                self.conn.execute("UPDATE turns SET speaker_id = ?2 WHERE id = ?1", params![turn.id, old])?;
+            }
+            ("turn", "text") => {
+                let turn = self.turn(entity_id.parse()?).map_err(|_| changed("the transcript"))?;
+                if Some(&turn.text) != new.as_ref() {
+                    return Err(changed("the text of the turn"));
+                }
+                // The turn stays edited only when another text change of it is still in effect.
+                self.conn.execute(
+                    "UPDATE turns SET text = ?2, edited = EXISTS (
+                        SELECT 1 FROM revisions WHERE entity = 'turn' AND field = 'text' AND entity_id = ?3 AND undone = 0 AND id <> ?4)
+                     WHERE id = ?1",
+                    params![turn.id, old.as_deref().unwrap_or_default(), entity_id, revision_id],
+                )?;
+            }
+            _ => bail!("cannot undo {entity}.{field}"),
         }
-        for meeting_id in &meetings {
-            self.reindex(meeting_id)?;
-        }
-        tx.commit()?;
         Ok(())
     }
 
@@ -1237,24 +1346,45 @@ impl Db {
 
     /// Permanent deletion: the caller removes the files. The database rows go at once.
     pub fn delete_meeting_now(&self, id: &str) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
-            self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
-        }
-        self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
-        self.conn.execute("DELETE FROM meetings WHERE id = ?1", [id])?;
-        tx.commit()?;
-        Ok(())
+        self.atomic(|| {
+            for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
+                self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
+            }
+            self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
+            self.conn.execute("DELETE FROM meetings WHERE id = ?1", [id])?;
+            Ok(())
+        })
+    }
+
+    /// Deletes a new meeting that has no input: no recording, no notes, no tags, and no transcript.
+    /// A new meeting in an open folder gets that folder from the app, so a folder is not input here.
+    /// Returns false, and changes nothing, when the meeting has input.
+    pub fn discard_draft(&self, id: &str) -> Result<bool> {
+        self.atomic(|| {
+            let meeting = self.meeting(id)?;
+            let empty = meeting.state == "draft"
+                && meeting.started_at.is_none()
+                && meeting.deleted_at.is_none()
+                && meeting.tags.is_empty()
+                && self.notes(id)?.trim().is_empty()
+                && self.turns(id)?.is_empty();
+            if empty {
+                self.delete_meeting_now(id)?;
+            }
+            Ok(empty)
+        })
     }
 
     /// The meeting goes to the trash for `TRASH_DAYS`.
     pub fn trash_meeting(&self, id: &str, origin: Origin) -> Result<()> {
         self.meeting(id)?;
         let now = now_ms();
-        self.conn.execute("UPDATE meetings SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "deleted_at", None, Some(&now.to_string())))?;
-        self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
-        Ok(())
+        self.atomic(|| {
+            self.conn.execute("UPDATE meetings SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "deleted_at", None, Some(&now.to_string())))?;
+            self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
+            Ok(())
+        })
     }
 
     pub fn trash_audio(&self, id: &str, origin: Origin) -> Result<()> {
@@ -1263,16 +1393,20 @@ impl Db {
             bail!("the meeting has no audio");
         }
         let now = now_ms();
-        self.conn.execute("UPDATE meetings SET audio_trashed_at = ?2 WHERE id = ?1", params![id, now])?;
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "audio_trashed_at", None, Some(&now.to_string())))
+        self.atomic(|| {
+            self.conn.execute("UPDATE meetings SET audio_trashed_at = ?2 WHERE id = ?1", params![id, now])?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "audio_trashed_at", None, Some(&now.to_string())))
+        })
     }
 
     pub fn restore(&self, id: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE meetings SET deleted_at = NULL, audio_trashed_at = NULL WHERE id = ?1",
-            [id],
-        )?;
-        self.reindex(id)
+        self.atomic(|| {
+            self.conn.execute(
+                "UPDATE meetings SET deleted_at = NULL, audio_trashed_at = NULL WHERE id = ?1",
+                [id],
+            )?;
+            self.reindex(id)
+        })
     }
 
     pub fn mark_audio_deleted(&self, id: &str) -> Result<()> {
@@ -1294,22 +1428,26 @@ impl Db {
         }
         let base = meeting.ended_at.unwrap_or(meeting.created_at);
         let until = base + days * DAY_MS;
-        self.conn.execute("UPDATE meetings SET audio_until = ?2 WHERE id = ?1", params![id, until])?;
         let old = meeting.audio_until.map(|v| v.to_string());
         let new = until.to_string();
-        self.record(&Self::new_batch(), origin, Change::meeting(id, "audio_until", old.as_deref(), Some(&new)))?;
+        self.atomic(|| {
+            self.conn.execute("UPDATE meetings SET audio_until = ?2 WHERE id = ?1", params![id, until])?;
+            self.record(&Self::new_batch(), origin, Change::meeting(id, "audio_until", old.as_deref(), Some(&new)))
+        })?;
         Ok(until)
     }
 
-    /// Meetings whose audio must go now: expired audio, audio in the trash for 7 days,
-    /// and unfinished meetings older than the default period. A failed meeting keeps its audio for a new final pass.
+    /// Meetings whose audio must go now: expired audio, audio in the trash for 7 days, and meetings without
+    /// a deadline that ended before the default period. A failed meeting has no deadline, so it keeps its audio
+    /// for a new final pass during the default period.
+    /// A draft has no audio yet, and an import writes the audio of a draft, so the default period does not apply to drafts.
     pub fn expired_audio(&self, now: i64) -> Result<Vec<String>> {
         let default_days = self.audio_retention_days()?;
         let mut stmt = self.conn.prepare(
             "SELECT id FROM meetings WHERE audio_deleted = 0 AND state NOT IN ('recording', 'processing') AND (
                 (audio_until IS NOT NULL AND audio_until <= ?1)
                 OR (audio_trashed_at IS NOT NULL AND audio_trashed_at <= ?2)
-                OR (audio_until IS NULL AND state <> 'failed' AND created_at <= ?3))",
+                OR (audio_until IS NULL AND state <> 'draft' AND COALESCE(ended_at, created_at) <= ?3))",
         )?;
         let rows = stmt.query_map(
             params![now, now - TRASH_DAYS * DAY_MS, now - default_days * DAY_MS],
@@ -1388,9 +1526,9 @@ impl Db {
     }
 
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
+        // The index splits text at every character that is not a letter or a digit, so the query does the same.
         let terms: Vec<String> = query
-            .split_whitespace()
-            .map(|t| t.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+            .split(|c: char| !c.is_alphanumeric())
             .filter(|t| !t.is_empty())
             .map(|t| format!("\"{t}\"*"))
             .collect();
@@ -1477,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn retention_keeps_the_audio_of_failed_and_unfinished_meetings() {
+    fn retention_keeps_the_audio_of_unfinished_meetings_and_of_new_failed_meetings() {
         let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
         let old = now_ms() - (DEFAULT_AUDIO_RETENTION_DAYS + 1) * DAY_MS;
         let mut ids = Vec::new();
@@ -1488,7 +1626,21 @@ mod tests {
                 .unwrap();
             ids.push(m.id);
         }
-        assert_eq!(db.expired_audio(now_ms()).unwrap(), vec![ids[0].clone()]);
+        // A meeting that failed today keeps its audio for the default period, also when it is an old draft.
+        let recent = db.create_meeting("failed today", None).unwrap();
+        db.conn
+            .execute(
+                "UPDATE meetings SET state = 'failed', created_at = ?2, ended_at = ?3 WHERE id = ?1",
+                params![recent.id, old, now_ms()],
+            )
+            .unwrap();
+        let mut expired = db.expired_audio(now_ms()).unwrap();
+        expired.sort();
+        let mut expected = vec![ids[0].clone(), ids[1].clone()];
+        expected.sort();
+        assert_eq!(expired, expected);
+        let later = now_ms() + DEFAULT_AUDIO_RETENTION_DAYS * DAY_MS;
+        assert!(db.expired_audio(later).unwrap().contains(&recent.id));
     }
 
     #[test]
@@ -1515,9 +1667,204 @@ mod tests {
                 .unwrap();
         }
         db.merge_speakers("a", "b", Origin::User).unwrap();
+        assert!(db.merge_speakers("a", "c", Origin::User).is_err());
         assert!(db.merge_speakers("c", "a", Origin::User).is_err());
         assert!(db.speaker("c").unwrap().merged_into.is_none());
         db.merge_speakers("c", "b", Origin::User).unwrap();
+    }
+
+    fn final_pass(db: &mut Db, id: &str, text: &str) {
+        let speaker = NewSpeaker {
+            label: "S1".into(),
+            track: "remote".into(),
+            name: None,
+            name_source: None,
+            suggestion: None,
+            suggestion_score: None,
+        };
+        let turn = NewTurn { track: "remote".into(), speaker_label: "S1".into(), start: 0.0, end: 2.0, text: text.into() };
+        db.replace_with_final(id, &[speaker], &[turn], 2.0, None).unwrap();
+    }
+
+    #[test]
+    fn a_draft_that_records_later_follows_the_audio_retention() {
+        let mut db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Notes first", None).unwrap();
+        let old = now_ms() - (DEFAULT_AUDIO_RETENTION_DAYS + 1) * DAY_MS;
+        db.conn.execute("UPDATE meetings SET created_at = ?2 WHERE id = ?1", params![m.id, old]).unwrap();
+        assert!(db.expired_audio(now_ms()).unwrap().is_empty());
+        // A library from an earlier version can have a draft with this mark.
+        db.mark_audio_deleted(&m.id).unwrap();
+        db.mark_started(&m.id, now_ms(), None).unwrap();
+        assert!(!db.meeting(&m.id).unwrap().audio_deleted);
+        db.mark_stopped(&m.id).unwrap();
+        final_pass(&mut db, &m.id, "hello");
+        let meeting = db.meeting(&m.id).unwrap();
+        assert!(!meeting.audio_deleted);
+        let until = meeting.audio_until.unwrap();
+        assert!(db.expired_audio(until - 1).unwrap().is_empty());
+        assert_eq!(db.expired_audio(until).unwrap(), vec![m.id.clone()]);
+    }
+
+    #[test]
+    fn only_a_draft_without_input_is_discarded() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let empty = db.create_meeting("Meeting 1", None).unwrap();
+        assert!(db.discard_draft(&empty.id).unwrap());
+        assert!(db.meeting(&empty.id).is_err());
+        assert!(db.mark_started(&empty.id, now_ms(), None).is_err());
+
+        let noted = db.create_meeting("Meeting 2", None).unwrap();
+        db.set_notes(&noted.id, "agenda", Origin::User).unwrap();
+        let tagged = db.create_meeting("Meeting 3", None).unwrap();
+        db.set_tags(&tagged.id, &["q3".into()], Origin::User).unwrap();
+        let filed = db.create_meeting("Meeting 4", None).unwrap();
+        db.set_folder(&filed.id, Some("Clients"), Origin::User).unwrap();
+        assert!(db.discard_draft(&filed.id).unwrap());
+        let recorded = db.create_meeting("Meeting 5", None).unwrap();
+        db.mark_started(&recorded.id, now_ms(), None).unwrap();
+        for m in [&noted, &tagged, &recorded] {
+            assert!(!db.discard_draft(&m.id).unwrap(), "{}", m.title);
+            assert!(db.meeting(&m.id).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_library_from_an_earlier_version_gets_its_audio_retention_back() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let wrong = db.create_meeting("Recorded in an old draft", None).unwrap();
+        let imported = db.create_meeting("No audio", None).unwrap();
+        db.conn.execute("UPDATE meetings SET audio_deleted = 1, audio_until = 1000 WHERE id = ?1", [&wrong.id]).unwrap();
+        db.conn.execute("UPDATE meetings SET audio_deleted = 1 WHERE id = ?1", [&imported.id]).unwrap();
+        db.migrate().unwrap();
+        assert!(!db.meeting(&wrong.id).unwrap().audio_deleted);
+        assert!(db.meeting(&imported.id).unwrap().audio_deleted);
+    }
+
+    #[test]
+    fn undo_refuses_to_overwrite_later_changes() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.set_notes(&m.id, "A", Origin::User).unwrap();
+        db.set_notes(&m.id, "B", Origin::Mcp).unwrap();
+        db.set_notes(&m.id, "B and more", Origin::User).unwrap();
+        let notes_change = db.revisions(Some(Origin::Mcp), 10).unwrap()[0].id;
+        assert!(db.undo(notes_change).is_err());
+        assert_eq!(db.notes(&m.id).unwrap(), "B and more");
+        assert!(!db.revisions(Some(Origin::Mcp), 10).unwrap()[0].undone);
+
+        db.set_title(&m.id, "T1", Origin::Mcp).unwrap();
+        db.set_title(&m.id, "T2", Origin::Mcp).unwrap();
+        let changes = db.revisions(Some(Origin::Mcp), 10).unwrap();
+        let (newer, older) = (changes[0].id, changes[1].id);
+        assert!(db.undo(older).is_err());
+        db.undo(newer).unwrap();
+        db.undo(older).unwrap();
+        assert_eq!(db.meeting(&m.id).unwrap().title, "Weekly");
+        assert!(db.undo(i64::MAX).is_err());
+    }
+
+    #[test]
+    fn undo_restores_a_summary_and_the_trash() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.set_summary(&m.id, "local", "model", Origin::User).unwrap();
+        db.set_summary(&m.id, "client", MCP_AUTHOR, Origin::Mcp).unwrap();
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        let summary = db.summary(&m.id).unwrap().unwrap();
+        assert_eq!((summary.content.as_str(), summary.written_by.as_str()), ("local", "model"));
+
+        db.set_summary(&m.id, "client", MCP_AUTHOR, Origin::Mcp).unwrap();
+        db.delete_summary(&m.id).unwrap();
+        assert!(db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).is_err());
+
+        db.trash_meeting(&m.id, Origin::Mcp).unwrap();
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        assert_eq!(db.meeting(&m.id).unwrap().deleted_at, None);
+        assert!(db.search("weekly", 10).unwrap().iter().any(|h| h.meeting_id == m.id));
+    }
+
+    #[test]
+    fn undo_of_a_text_edit_permits_a_new_final_pass() {
+        let mut db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        final_pass(&mut db, &m.id, "helo");
+        let turn = db.turns(&m.id).unwrap()[0].id;
+        db.edit_turn_text(turn, "hello", Origin::Mcp).unwrap();
+        assert!(db.has_edits(&m.id).unwrap());
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        assert_eq!(db.turn(turn).unwrap().text, "helo");
+        assert!(!db.has_edits(&m.id).unwrap());
+        final_pass(&mut db, &m.id, "hello again");
+
+        // An earlier edit of the user keeps the turn edited.
+        let turn = db.turns(&m.id).unwrap()[0].id;
+        db.edit_turn_text(turn, "user text", Origin::User).unwrap();
+        db.edit_turn_text(turn, "client text", Origin::Mcp).unwrap();
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        assert_eq!(db.turn(turn).unwrap().text, "user text");
+        assert!(db.has_edits(&m.id).unwrap());
+    }
+
+    #[test]
+    fn speaker_changes_are_found_until_a_new_final_pass() {
+        let mut db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        final_pass(&mut db, &m.id, "hello");
+        assert!(!db.has_speaker_changes(&m.id).unwrap());
+        let speaker = db.speakers(&m.id).unwrap()[0].id.clone();
+        db.rename_speaker(&speaker, Some("Bo Chen"), Origin::User).unwrap();
+        assert!(db.has_speaker_changes(&m.id).unwrap());
+        db.rename_speaker(&speaker, None, Origin::User).unwrap();
+        assert!(!db.has_speaker_changes(&m.id).unwrap());
+        let turn = db.turns(&m.id).unwrap()[0].id;
+        db.reassign_turn(turn, None, Origin::User).unwrap();
+        assert!(db.has_speaker_changes(&m.id).unwrap());
+        final_pass(&mut db, &m.id, "hello");
+        assert!(!db.has_speaker_changes(&m.id).unwrap());
+    }
+
+    #[test]
+    fn search_finds_words_with_punctuation() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.set_notes(&m.id, "We don't send the e-mail to O'Brien at pepe@example.com before the Q3-review.", Origin::User)
+            .unwrap();
+        for query in ["don't", "e-mail", "Q3-review", "O'Brien", "pepe@example.com", "\"e-mail\" (obrien", "revi"] {
+            let found = db.search(query, 10).unwrap().iter().any(|h| h.meeting_id == m.id);
+            assert_eq!(found, query != "\"e-mail\" (obrien", "{query}");
+        }
+        assert!(db.search("' - @", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_live_transcript_of_a_failed_meeting_is_searchable() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.mark_started(&m.id, now_ms(), None).unwrap();
+        db.add_live_turn(&m.id, "remote", 0.0, 1.0, "quarterly budget", None).unwrap();
+        db.mark_stopped(&m.id).unwrap();
+        db.set_state(&m.id, "failed", Some("error")).unwrap();
+        assert!(db.search("budget", 10).unwrap().iter().any(|h| h.meeting_id == m.id));
+    }
+
+    #[test]
+    fn folder_names_match_in_any_case_of_any_letter() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let a = db.create_meeting("A", None).unwrap();
+        let b = db.create_meeting("B", None).unwrap();
+        db.set_folder(&a.id, Some("Ámbito"), Origin::User).unwrap();
+        db.set_folder(&b.id, Some("ámbito"), Origin::User).unwrap();
+        assert_eq!(db.folders().unwrap(), vec!["Ámbito"]);
+    }
+
+    #[test]
+    fn a_failed_change_leaves_no_part_of_it() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.conn.execute_batch("DROP TABLE revisions;").unwrap();
+        assert!(db.set_title(&m.id, "Changed", Origin::User).is_err());
+        assert_eq!(db.meeting(&m.id).unwrap().title, "Weekly");
     }
 
     #[test]

@@ -3,7 +3,7 @@
   --paper: #faf9f6;
   --accent: #aaa4e8;
   --soft: #eeecf7;
-  --muted: #787586;
+  --muted: #686576;
   --line: #e5e2e9;
   --text: #343141;
   --record: #c2413b;
@@ -54,6 +54,9 @@ header img { border-radius: 7px; }
 .dot.rec { background: var(--record); animation: pulse 1.4s infinite; }
 .dot.paused { background: var(--muted); animation: none; }
 @keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .dot.rec { animation: none; }
+}
 .timer { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink); }
 .call { border-top: 1px solid var(--line); padding: 12px 0 4px; }
 .eyebrow { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
