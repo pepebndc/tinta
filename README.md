@@ -70,7 +70,7 @@ Tinta is a pilot. Processing, the library, the Granola import, and MCP work in t
 
 Tinta has no signed download yet. Build it from source:
 
-1. Install the Xcode Command Line Tools, Rust 1.89 or later, Node.js 20 or later, and pnpm. To update Rust, run `rustup update stable`.
+1. Install the Xcode Command Line Tools, Rust 1.89 or later, Node.js 20 or later, and pnpm 10 or later. To update Rust, run `rustup update stable`. To update pnpm, run `npm install -g pnpm@latest`.
 2. Clone this repository.
 3. Optional: make a code signing certificate with the name "Tinta Local". Without it, macOS asks again for the microphone, the meeting audio, the calendars, and the Keychain after each update.
    1. Open Keychain Access. Click **Keychain Access > Certificate Assistant > Create a Certificate…**.
