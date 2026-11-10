@@ -3673,7 +3673,7 @@ dependencies = [
 
 [[package]]
 name = "tinta"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3695,7 +3695,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3714,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-mcp"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3724,7 +3724,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-native-host"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -3733,7 +3733,7 @@ dependencies = [
 
 [[package]]
 name = "tinta-selftest"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "serde_json",

@@ -5,7 +5,12 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 triple="aarch64-apple-darwin"
 
 echo "Building the Swift engine"
-(cd "$root/engine" && swift build -c release)
+# The default build system of Swift 6.4 fails on this package with "Unknown error parsing property list".
+# The native build system builds it.
+if ! (cd "$root/engine" && swift build -c release); then
+  echo "Building the Swift engine again with the native build system"
+  (cd "$root/engine" && swift build -c release --build-system native)
+fi
 
 echo "Building the MCP server and the Chrome native host"
 (cd "$root" && cargo build --release -p tinta-mcp -p tinta-native-host)
@@ -20,6 +25,12 @@ if [[ "${1:-}" == "--binaries-only" ]]; then
 fi
 
 echo "Building the app bundle"
+# app/pnpm-workspace.yaml uses allowBuilds, which pnpm 9 and older reject with "packages field missing or empty".
+pnpm_major="$(pnpm --version | cut -d. -f1)"
+if (( pnpm_major < 10 )); then
+  echo "Tinta needs pnpm 10 or later, and pnpm $(pnpm --version) is installed. Run: npm install -g pnpm@latest" >&2
+  exit 1
+fi
 (cd "$root/app" && pnpm install --frozen-lockfile && pnpm tauri build)
 
 app="$root/target/release/bundle/macos/Tinta.app"

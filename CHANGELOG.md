@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1 (2026-11-10)
+
+### Fixed
+- `./scripts/build.sh` builds Tinta with Swift 6.4. Before, the build of the engine stopped with "Unknown error parsing property list".
+- `./scripts/build.sh` tells you to update pnpm when pnpm is older than version 10. Before, the build stopped with "packages field missing or empty".
+
 ## 0.10.0 (2026-11-10)
 
 ### Changed
