@@ -48,6 +48,10 @@ function detail(): MeetingDetail {
       { id: "s3", meeting_id: "m1", label: "S3", track: "remote", name: null, name_source: null, suggestion: "Sam Carter", suggestion_score: 0.3 },
     ],
     turns,
+    chat: [
+      { message_id: "c1", sender: "Morgan Lee", is_self: false, text: "Here is the board with the first screens: figma.com/file/calm-home", t_ms: now - 40 * 60_000 + 35_000, start: 35 },
+      { message_id: "c2", sender: "Sam Rivera", is_self: true, text: "Thanks!", t_ms: now - 40 * 60_000 + 52_000, start: 52 },
+    ],
     names: recording ? {} : { self: "Sam Rivera", s1: "Alex Moreno", s2: "Morgan Lee", s3: "Speaker 1" },
     participants: [
       { participant_id: "p0", name: "Sam Rivera", is_self: true },

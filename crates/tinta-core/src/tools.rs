@@ -22,7 +22,7 @@ pub fn definitions() -> Value {
     json!([
         tool("list_meetings", "List meetings, newest first. Filter by folder, tag, or date range (epoch milliseconds).",
             json!({"folder": {"type": "string"}, "tag": {"type": "string"}, "from": {"type": "integer"}, "to": {"type": "integer"}, "limit": {"type": "integer", "default": 50}}), &[]),
-        tool("search_meetings", "Full-text search over titles, tags, notes, summaries, speaker names, and transcripts.",
+        tool("search_meetings", "Full-text search over titles, tags, notes, summaries, speaker names, transcripts, and chat messages.",
             json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}), &["query"]),
         tool("get_notes", "Get the manual notes of a meeting.", json!({"meeting_id": id}), &["meeting_id"]),
         tool("get_meeting", "Get one meeting by its ID: the details, the notes, and the summary. Use get_transcript for the transcript.", json!({"meeting_id": id}), &["meeting_id"]),
@@ -30,6 +30,8 @@ pub fn definitions() -> Value {
         tool("update_summary", "Replace the summary of a meeting, or add one. Use Markdown: paragraphs, ### headings, - lists, and **bold**. The user can undo the change.", json!({"meeting_id": id, "content": {"type": "string"}}), &["meeting_id", "content"]),
         tool("get_transcript", "Get transcript turns in pages. Each speaker name has a state: confirmed (set by the user), automatic (from Meet metadata or the microphone owner), or unnamed. Do not treat automatic names as facts.",
             json!({"meeting_id": id, "page": {"type": "integer", "default": 1}, "page_size": {"type": "integer", "default": 200}}), &["meeting_id"]),
+        tool("get_chat", "Get the messages that people typed in the chat of the call, in the order of their time. `start` is the time on the meeting clock in seconds. The sender name comes from Google Meet.",
+            json!({"meeting_id": id}), &["meeting_id"]),
         tool("list_speakers", "List the speakers of a meeting with their name state and speaking time.", json!({"meeting_id": id}), &["meeting_id"]),
         tool("set_title", "Change the title of a meeting.", json!({"meeting_id": id, "title": {"type": "string"}}), &["meeting_id", "title"]),
         tool("add_tags", "Add tags to a meeting.", json!({"meeting_id": id, "tags": {"type": "array", "items": {"type": "string"}}}), &["meeting_id", "tags"]),
@@ -85,7 +87,7 @@ fn arg_list(args: &Value, key: &str) -> Result<Vec<String>> {
 
 /// The tools that only read data. All other tools change data.
 pub const READ_ONLY: &[&str] =
-    &["list_meetings", "search_meetings", "get_notes", "get_meeting", "get_summary", "get_transcript", "list_speakers"];
+    &["list_meetings", "search_meetings", "get_notes", "get_meeting", "get_summary", "get_transcript", "get_chat", "list_speakers"];
 
 /// A meeting that MCP can see: it exists and it is not in the trash.
 /// Finds a visible meeting by its full ID, or by the first 8 or more characters of the ID.
@@ -194,6 +196,15 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
                 "page": page, "page_size": size, "total_turns": total,
                 "pages": total.div_ceil(size).max(1), "turns": turns,
             })
+        }
+        "get_chat" => {
+            let id = id()?;
+            let messages: Vec<Value> = db
+                .chat_messages(&id)?
+                .into_iter()
+                .map(|c| json!({"start": c.start, "sent_at": c.t_ms, "sender": c.sender, "is_self": c.is_self, "text": c.text}))
+                .collect();
+            json!({"notice": NOTICE, "meeting_id": id, "messages": messages})
         }
         "list_speakers" => {
             let doc = Document::load(db, &id()?)?;
@@ -367,6 +378,12 @@ mod tests {
         assert_eq!(db.meeting(&m.id).unwrap().folder.as_deref(), Some("Clients"));
         call(&db, "move_to_folder", &arg(json!({"folder": null}))).unwrap();
         assert_eq!(db.meeting(&m.id).unwrap().folder, None);
+
+        let chat = crate::db::NewChatMessage { message_id: "c1".into(), sender: "Ana".into(), is_self: false, text: "Hi all".into(), t_ms: 1 };
+        db.add_chat_messages(&m.id, &[chat]).unwrap();
+        let (read, _) = call(&db, "get_chat", &arg(json!({}))).unwrap();
+        assert_eq!(read["messages"][0]["text"], "Hi all");
+        assert!(READ_ONLY.contains(&"get_chat"));
 
         let (page, _) = call(&db, "get_transcript", &arg(json!({"page": i64::MAX}))).unwrap();
         assert!(page["turns"].as_array().unwrap().is_empty());

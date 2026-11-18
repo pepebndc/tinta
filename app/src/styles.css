@@ -572,6 +572,7 @@ button.chip-label:hover { background: none; text-decoration: underline; }
 /* A live turn is a draft: quiet text and an italic name. */
 .turn.provisional .turn-text { color: var(--muted); }
 .turn.provisional .speaker { font-style: italic; }
+.turn.chat .turn-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-content { min-width: 0; }
 .turn-head { display: flex; align-items: center; gap: 10px; font-size: 12px; min-height: 22px; position: relative; }
 .turn-head .tag { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

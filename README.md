@@ -19,6 +19,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Notes and transcript side by side.** Write your notes while the draft transcript appears. Insert a timestamp with one click.
 - **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.
 - **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. In the Zoom and Microsoft Teams apps, Tinta reads who speaks from the call window (beta). You can confirm, correct, merge, or split speakers.
+- **Meet chat.** On Google Meet, the extension also keeps the messages of the call chat. They show in the transcript at the time they arrive. Search, export, summaries, and MCP include them.
 - **Next meetings.** Tinta reads the calendars on your Mac, with no sign-in, and shows your next meetings. A reminder before each call lets you join it and take notes with one click.
 - **Call detection.** Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, offers to record them, and stops when you leave.
 - **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
@@ -27,7 +28,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
 - **MCP server.** Connect Claude or another MCP client to your meetings when you choose to.
 
-Tinta has no chat and no cloud AI. The transcription, the speaker separation, and the summaries run on your Mac.
+Tinta has no chat assistant and no cloud AI. The transcription, the speaker separation, and the summaries run on your Mac.
 
 ## Privacy by design
 
@@ -38,7 +39,7 @@ Tinta has no chat and no cloud AI. The transcription, the speaker separation, an
 | **Storage** | SQLCipher encrypts the library, and AES-GCM encrypts the audio. The key is in your macOS Keychain. Time Machine does not back up the library. |
 | **Audio** | By default, Tinta deletes the audio 7 days after a meeting, also when the processing of the meeting failed. In Settings, under Storage, you can change this default from 0 to 30 days. You can also change the period of one meeting, or delete its audio at once. |
 | **Summaries** | The Apple on-device model writes the summaries. Tinta does not use Private Cloud Compute or any other server. A summary can contain mistakes, so check it against the transcript. |
-| **Browser** | The Meet extension reads only the meeting code, the meeting title, the participant names, who speaks, and whether your microphone is muted. It does not read captions, chat, or audio. |
+| **Browser** | The Meet extension reads only the meeting code, the meeting title, the participant names, who speaks, whether your microphone is muted, and the messages in the call chat. It does not read captions or audio. |
 | **Zoom and Teams** | Tinta detects a call from the use of the microphone. It does not read the audio of the app to detect the call. When you turn on names from Zoom and Teams (beta), Tinta reads the participant names, who speaks, and whether your microphone is muted from the call window. This needs Accessibility access. Tinta does not keep other text of the window. |
 | **MCP** | MCP access is local. An AI client that reads your meetings sends that content to its own model provider. Tinta records every MCP change, so you can undo it. |
 

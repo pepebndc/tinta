@@ -245,7 +245,7 @@ export function Settings({ boot, section, calls, calendar, onConnectCalendar, on
           <ExtensionSteps onError={onError} />
         )}
         <p className="small muted">
-          The extension reads only participant names and who speaks. It does not read captions, chat, or audio.
+          The extension reads only participant names, who speaks, and the messages in the call chat. It does not read captions or audio.
         </p>
       </section>
 

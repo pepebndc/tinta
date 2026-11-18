@@ -286,8 +286,8 @@ export function Onboarding({ boot, extension, granolaExport, error, onChanged, o
               </div>
               <h1>Get speaker names on Google Meet</h1>
               <p className="muted">
-                A small Chrome extension tells Tinta who speaks. It reads only participant names and who speaks. It does not read captions,
-                chat, or audio.
+                A small Chrome extension tells Tinta who speaks. It reads only participant names, who speaks, and the messages in the
+                call chat. It does not read captions or audio.
               </p>
               {connected ? (
                 <p className="step-done">

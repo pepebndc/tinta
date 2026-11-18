@@ -1,6 +1,6 @@
 //! Export formats: Markdown, JSON, SRT, and VTT.
 
-use crate::db::{Db, Meeting, Speaker, Turn, MCP_AUTHOR};
+use crate::db::{ChatMessage, Db, Meeting, Speaker, Turn, MCP_AUTHOR};
 use anyhow::{bail, Result};
 use serde_json::json;
 use std::collections::HashMap;
@@ -13,6 +13,14 @@ pub struct Document {
     pub summary_written_by: Option<String>,
     pub speakers: Vec<Speaker>,
     pub turns: Vec<Turn>,
+    /// The messages from the chat of the call.
+    pub chat: Vec<ChatMessage>,
+}
+
+/// One line of the transcript: a spoken turn or a chat message.
+pub enum Line<'a> {
+    Turn(&'a Turn),
+    Chat(&'a ChatMessage),
 }
 
 impl Document {
@@ -25,7 +33,16 @@ impl Document {
             summary_written_by,
             speakers: db.all_speakers(id)?,
             turns: db.turns(id)?,
+            chat: db.chat_messages(id)?,
         })
+    }
+
+    /// The turns and the chat messages in the order of their time. A chat message comes after a turn that starts at the same time.
+    pub fn lines(&self) -> Vec<Line<'_>> {
+        let mut lines: Vec<(f64, Line)> = self.turns.iter().map(|t| (t.start, Line::Turn(t))).collect();
+        lines.extend(self.chat.iter().map(|c| (c.start, Line::Chat(c))));
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        lines.into_iter().map(|(_, line)| line).collect()
     }
 
     /// Display name for each speaker ID. Merged speakers show the name of their target.
@@ -102,12 +119,15 @@ pub fn markdown(doc: &Document) -> String {
         out.push_str(summary.trim_end());
     }
     out.push_str("\n\n## Transcript\n\n");
-    for turn in &doc.turns {
-        let name = doc.speaker_name(&names, turn);
+    for line in doc.lines() {
+        let (name, start, text) = match line {
+            Line::Turn(t) => (doc.speaker_name(&names, t), t.start, t.text.clone()),
+            Line::Chat(c) => (format!("{} (chat)", c.sender), c.start, c.text.clone()),
+        };
         if doc.timed() {
-            out.push_str(&format!("**{name}** [{}]: {}\n\n", timestamp(turn.start, '.', false), turn.text));
+            out.push_str(&format!("**{name}** [{}]: {text}\n\n", timestamp(start, '.', false)));
         } else {
-            out.push_str(&format!("**{name}**: {}\n\n", turn.text));
+            out.push_str(&format!("**{name}**: {text}\n\n"));
         }
     }
     out
@@ -141,6 +161,13 @@ pub fn json(doc: &Document) -> Result<String> {
             "speaker_id": t.speaker_id,
             "text": t.text,
             "provisional": t.provisional,
+        })).collect::<Vec<_>>(),
+        "chat": doc.chat.iter().map(|c| json!({
+            "start": c.start,
+            "sent_at": c.t_ms,
+            "sender": c.sender,
+            "is_self": c.is_self,
+            "text": c.text,
         })).collect::<Vec<_>>(),
     });
     Ok(serde_json::to_string_pretty(&value)?)
@@ -245,5 +272,35 @@ mod tests {
         assert_eq!(srt, "1\n00:00:01,000 --> 00:00:02,000\nBo Chen: Hello. Second paragraph.\n\n2\n00:00:03,000 --> 00:00:04,000\nBo Chen: Hello.\n\n");
         assert!(render(&doc, "vtt").unwrap().starts_with("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBo Chen: Hello. Second paragraph.\n\n"));
         assert!(render(&doc, "docx").is_err());
+    }
+
+    #[test]
+    fn chat_messages_go_in_the_transcript_by_time_but_not_in_subtitles() {
+        use crate::db::{NewChatMessage, NewSpeaker, NewTurn};
+        let mut db = Db::open_in_memory(&crate::keys::Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.mark_started(&m.id, 1_000_000, None).unwrap();
+        let speaker = NewSpeaker {
+            label: "S1".into(),
+            track: "remote".into(),
+            name: Some("Bo Chen".into()),
+            name_source: Some("platform".into()),
+            suggestion: None,
+            suggestion_score: None,
+        };
+        let turn = NewTurn { track: "remote".into(), speaker_label: "S1".into(), start: 1.0, end: 2.0, text: "Hello.".into() };
+        db.replace_with_final(&m.id, &[speaker], &[turn.clone(), NewTurn { start: 10.0, end: 11.0, text: "Bye.".into(), ..turn }], 11.0, None).unwrap();
+        let chat = NewChatMessage { message_id: "c1".into(), sender: "Ana".into(), is_self: false, text: "See the doc".into(), t_ms: 1_005_000 };
+        db.add_chat_messages(&m.id, &[chat]).unwrap();
+        let doc = Document::load(&db, &m.id).unwrap();
+        let md = markdown(&doc);
+        let hello = md.find("Hello.").unwrap();
+        let chat = md.find("**Ana (chat)** [00:05]: See the doc").unwrap();
+        let bye = md.find("Bye.").unwrap();
+        assert!(hello < chat && chat < bye);
+        let value: serde_json::Value = serde_json::from_str(&json(&doc).unwrap()).unwrap();
+        assert_eq!(value["chat"][0]["sender"], "Ana");
+        assert_eq!(value["chat"][0]["start"], 5.0);
+        assert!(!render(&doc, "srt").unwrap().contains("See the doc"));
     }
 }

@@ -6,6 +6,8 @@ const MEETING_CODE = /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
 // The limits of the content script. The service worker applies them again, because the page is untrusted.
 const MAX_STRING = 200;
 const MAX_PARTICIPANTS = 100;
+const MAX_CHAT_TEXT = 2000;
+const MAX_CHAT_MESSAGES = 20;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
 // While the popup is open, the service worker tries to connect at this interval.
@@ -193,6 +195,21 @@ function messageForHost(msg) {
   if (msg.type === "active_speakers") {
     if (!Array.isArray(msg.speaking) || !msg.speaking.every((id) => typeof id === "string")) return null;
     return { ...base, speaking: msg.speaking.slice(0, MAX_PARTICIPANTS).map(text) };
+  }
+  if (msg.type === "chat_messages") {
+    if (!Array.isArray(msg.messages)) return null;
+    const messages = [];
+    for (const m of msg.messages.slice(0, MAX_CHAT_MESSAGES)) {
+      if (!m || typeof m.id !== "string" || !m.id || typeof m.text !== "string" || !m.text) return null;
+      messages.push({
+        id: text(m.id),
+        sender: text(m.sender) || "",
+        is_self: m.is_self === true,
+        text: m.text.slice(0, MAX_CHAT_TEXT),
+        sent_at: time(m.sent_at, base.t),
+      });
+    }
+    return { ...base, messages };
   }
   if (msg.type === "mic_state") return { ...base, muted: flag(msg.muted) };
   if (msg.type === "meeting_ended") return { ...base, left_at: time(msg.left_at, base.t) };

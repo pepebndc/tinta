@@ -70,11 +70,15 @@ export type Turn = {
 
 type Participant = { participant_id: string; name: string; is_self: boolean };
 
+/** A message from the chat of the call. `start` is the time on the meeting clock in seconds. */
+export type ChatMessage = { message_id: string; sender: string; is_self: boolean; text: string; t_ms: number; start: number };
+
 export type MeetingDetail = {
   meeting: Meeting;
   notes: string;
   speakers: Speaker[];
   turns: Turn[];
+  chat: ChatMessage[];
   names: Record<string, string>;
   participants: Participant[];
   has_edits: boolean;

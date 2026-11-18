@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0 (2026-11-18)
+
+### Added
+- Tinta keeps the messages of the Google Meet chat. They show in the transcript at the time they arrive, with a "chat" tag. Search finds them, and the Markdown and JSON exports include them. SRT and VTT do not.
+- Summaries include the chat messages.
+- The MCP tool `get_chat` gives the chat messages of a meeting.
+
+### Changed
+- The Meet extension is version 0.6.0. It reads the messages in the chat panel during a call. Tinta keeps the messages that arrive while it records, and not the messages that arrive during a pause. Meet shows only the messages that arrive after you join. Restart Chrome to load the new extension.
+
 ## 0.10.1 (2026-11-10)
 
 ### Fixed

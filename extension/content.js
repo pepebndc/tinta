@@ -1,6 +1,6 @@
-// Reads only the meeting code, the meeting title, the participant list, speaking state, and
-// whether your microphone is muted.
-// It does not read captions, chat, or other page content, and it does not capture audio.
+// Reads only the meeting code, the meeting title, the participant list, speaking state,
+// whether your microphone is muted, and the messages in the chat panel.
+// It does not read captions or other page content, and it does not capture audio.
 (function () {
   "use strict";
 
@@ -39,6 +39,14 @@
     stateHeartbeatMs: 10000,
     speakersHeartbeatMs: 5000,
     leaveGraceMs: 3000,
+    // Each message in the chat panel has a message ID. Its group shows the sender and the time.
+    chatMessageSelector: "[data-message-id]",
+    chatMessageIdAttribute: "data-message-id",
+    chatTextSelectors: ['[jsname="dTKtvb"]'],
+    chatSenderAttributes: ["data-sender-name"],
+    // The number of parent elements that the reader checks for the sender of a message.
+    chatGroupDepth: 6,
+    maxChatMessages: 20,
     debugStorageKey: "tinta-debug",
     debugAttribute: "data-tinta-speaking",
     ringAttribute: "data-tinta-ring",
@@ -352,6 +360,7 @@
     for (const id of participants.keys()) if (!next.has(id)) tracker.remove(id);
     participants = next;
     updateCallState();
+    readChat();
   }
 
   let rescanTimer = null;
@@ -407,6 +416,102 @@
       micFrame = null;
       checkMic();
     });
+  }
+
+  // Chat messages.
+
+  const chatLog = new globalThis.TintaChat.ChatLog();
+  // The text of each message element at its last read. The scan runs often, so it reads only the messages that change.
+  let chatRead = new WeakMap();
+
+  function isClockText(text) {
+    return globalThis.TintaChat.parseClock(text, Date.now()) !== null;
+  }
+
+  // The sender and the time of a message come from its group: the nearest parent element with text outside the messages.
+  function chatGroupInfo(el) {
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < CONFIG.chatGroupDepth; depth++, node = node.parentElement) {
+      for (const attr of CONFIG.chatSenderAttributes) {
+        const name = clean(node.getAttribute(attr));
+        if (name) return { sender: name, shownAt: groupTime(node) };
+      }
+      const texts = textNodesOutside(node, CONFIG.chatMessageSelector);
+      if (texts.length === 0) continue;
+      const sender = texts.find((t) => !isClockText(t) && (plausibleName(t) || isSelfMarker(t))) || null;
+      return { sender, shownAt: groupTime(node, texts) };
+    }
+    return { sender: null, shownAt: null };
+  }
+
+  function groupTime(node, texts) {
+    const now = Date.now();
+    for (const t of texts || textNodesOutside(node, CONFIG.chatMessageSelector)) {
+      const time = globalThis.TintaChat.parseClock(t, now);
+      if (time !== null) return time;
+    }
+    return null;
+  }
+
+  // The short texts in `root` that are not inside an element that matches `exclude`.
+  function textNodesOutside(root, exclude) {
+    const out = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          return node.matches(exclude) || node.matches(CONFIG.skipSubtreeSelector) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let node;
+    while ((node = walker.nextNode()) && out.length < 10) {
+      const t = clean(node.nodeValue);
+      if (t) out.push(t);
+    }
+    return out;
+  }
+
+  function chatText(el) {
+    for (const sel of CONFIG.chatTextSelectors) {
+      const node = el.querySelector(sel);
+      if (node) return node.innerText;
+    }
+    return el.innerText;
+  }
+
+  function chatSelfName() {
+    for (const p of participants.values()) if (p.is_self && p.name) return p.name;
+    return pageSelfName() || "";
+  }
+
+  // Reads the messages in the chat panel, and sends the new and changed messages of the call.
+  function readChat() {
+    if (!inCall) return;
+    const entries = [];
+    for (const el of document.querySelectorAll(CONFIG.chatMessageSelector)) {
+      // A message inside another message is a part of it, such as a reaction.
+      if (el.parentElement && el.parentElement.closest(CONFIG.chatMessageSelector)) continue;
+      const id = clean(el.getAttribute(CONFIG.chatMessageIdAttribute));
+      const content = el.textContent;
+      if (!id || chatRead.get(el) === content) continue;
+      chatRead.set(el, content);
+      const group = chatGroupInfo(el);
+      const self = group.sender !== null && isSelfMarker(group.sender);
+      entries.push({
+        id,
+        sender: self ? chatSelfName() : group.sender || "",
+        is_self: self,
+        text: chatText(el),
+        shown_at: group.shownAt,
+      });
+    }
+    const messages = chatLog.update(entries, Date.now());
+    if (messages.length === 0) return;
+    for (const batch of globalThis.TintaChat.batches(messages, CONFIG.maxChatMessages)) {
+      send({ type: "chat_messages", meeting_code: code, t: Date.now(), messages: batch });
+    }
+    log("chat", messages.map((m) => `${m.sender}: ${m.text}`));
   }
 
   // Call state and messages.
@@ -487,6 +592,8 @@
     lastStateKey = null;
     lastSpeakersKey = null;
     lastMicMuted = micMuted();
+    chatLog.clear();
+    chatRead = new WeakMap();
     log("joined", code);
     sendState(true);
     sendSpeakers(true);
@@ -498,6 +605,7 @@
   // `leftAt` is the time the user left, when it is earlier than now.
   function endCall(leftAt) {
     if (!inCall) return;
+    readChat();
     send({ type: "meeting_ended", meeting_code: code, t: Date.now(), left_at: leftAt || Date.now() });
     log("ended", code);
     inCall = false;

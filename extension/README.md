@@ -1,7 +1,7 @@
 # Tinta for Meet
 
-This Chrome extension sends Google Meet metadata to the Tinta app on the same computer.
-The app uses the metadata to suggest names for speaker labels.
+This Chrome extension sends Google Meet metadata and the messages of the call chat to the Tinta app on the same computer.
+The app uses the metadata to suggest names for speaker labels. It keeps the chat messages with the meeting.
 The extension sends the metadata through Chrome Native Messaging to the host `com.usetinta.tinta`.
 
 ## What the extension reads
@@ -14,11 +14,12 @@ It reads these items:
 - The participant list: the participant ID, the display name, and a flag for the local user.
 - The set of participants that speak.
 - The mute state of your microphone, from the `data-is-muted` attribute of the Meet microphone button.
+- The messages in the chat panel: the message ID, the sender name, the time that the page shows, and the text.
 - The `tinta-debug` key in the page `localStorage`.
 
 ## What the extension does not read or do
 
-- It does not read captions, chat, or other page content.
+- It does not read captions or other page content.
 - It does not capture audio or video.
 - It does not make network requests. It does not load remote code. It does not collect analytics.
 - It does not use the `tabs`, `storage`, or host permissions.
@@ -32,7 +33,8 @@ It reads these items:
 
 The extension treats the Meet page as untrusted input.
 It removes control characters from each string and cuts each string to 200 characters.
-It sends a maximum of 100 participants.
+A chat message keeps its line breaks, and its text is cut to 2000 characters.
+It sends a maximum of 100 participants, and a maximum of 20 chat messages in one message.
 The service worker builds each message for the native host from the known fields only, with the same limits. It drops a message of the wrong shape.
 The native host discards a message longer than 256 KiB and answers with an error.
 
@@ -66,6 +68,18 @@ The microphone button in the Meet toolbar has a `data-is-muted` attribute and a 
 A mutation observer reports each change of this attribute in the next frame. The extension also checks the state every 200 ms, and it reads only a visible button.
 In picture-in-picture, the extension reads the microphone button of the picture-in-picture window first.
 While Tinta records the call, the app silences your microphone track for each muted interval.
+
+## How the chat works
+
+The content script reads the chat only during a call.
+Each message in the chat panel has a `data-message-id` attribute. The text is in the `[jsname="dTKtvb"]` element of the message, or in the message itself.
+The sender and the time come from the group of the message: the nearest parent element with text outside the messages.
+A sender of "You" or a similar marker is the local user. The message then gets the name of the local user.
+The content script reads the chat at each scan of the page. It sends only the messages that are new or changed.
+The time of a message is the time when the content script first reads it.
+When the page shows a time 2 minutes or more before that, the message keeps the time of the page. This occurs when you open the chat panel after messages arrived.
+Meet shows only the messages that arrive after you join. Tinta keeps the messages that arrive while it records the call. It does not keep the messages that arrive while the recording is paused.
+The `CONFIG` object at the top of `content.js` contains the chat selectors.
 
 ## Speaker highlight
 
@@ -142,10 +156,17 @@ The `speaking` array can be empty.
 {"type":"meeting_ended","meeting_code":"abc-defg-hij","t":1758625203000,"left_at":1758625200000}
 ```
 
+`chat_messages`: the extension sends this message when the chat panel shows new or changed messages.
+`sent_at` is the time of the message in epoch milliseconds. `is_self` is true for a message from the local user.
+
+```json
+{"type":"chat_messages","meeting_code":"abc-defg-hij","t":1758625200000,"messages":[{"id":"spaces/x/messages/1","sender":"Alice","is_self":false,"text":"The doc is in the shared folder.","sent_at":1758625199000}]}
+```
+
 `hello`: the service worker sends this message each time that it connects to the native host. `version` is the version of the extension.
 
 ```json
-{"type":"hello","version":"0.5.0","t":1758625200000}
+{"type":"hello","version":"0.6.0","t":1758625200000}
 ```
 
 `ping`: the service worker sends this message only when the native host is connected. It sends it every second while the popup is open, and every 5 seconds while Tinta records or pauses a recording. The answer updates the popup and the action badge.
@@ -184,7 +205,7 @@ At the start of a recording, the app uses the Meet call from the extension only 
 
 ## Tests
 
-Run the tests for the speaking logic in `speaking.js` and for the service worker in `background.js` from the root of the repository:
+Run the tests for the speaking logic in `speaking.js`, the chat logic in `chat.js`, and the service worker in `background.js` from the root of the repository:
 
 ```sh
 node --test extension/test/*.mjs

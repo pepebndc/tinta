@@ -6,6 +6,7 @@ import {
   AppCall,
   Bootstrap,
   bytes,
+  ChatMessage,
   clock,
   dateTime,
   EngineEvent,
@@ -193,6 +194,12 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
         if (t.meeting_id !== id || !d || d.turns.some((o) => o.id === t.id)) return;
         show({ ...d, turns: [...d.turns, t] });
       }),
+      on<{ meeting_id: string; messages: ChatMessage[] }>("chat_messages", (p) => {
+        const d = detailRef.current;
+        if (p.meeting_id !== id || !d) return;
+        const changed = new Set(p.messages.map((m) => m.message_id));
+        show({ ...d, chat: [...d.chat.filter((m) => !changed.has(m.message_id)), ...p.messages] });
+      }),
       on<EngineEvent>("engine", (e) => {
         if (e.event !== "finalize_progress" || (e.id && e.id !== id)) return;
         setProgress({ stage: String(e.stage), fraction: Number(e.fraction) });
@@ -239,8 +246,8 @@ export function MeetingView({ id, boot, active, extension, calls, folders, tags,
     const listed = detail.speakers.length > 0
       ? detail.speakers.map((sp) => detail.names[sp.id]).filter(Boolean)
       : detail.participants.map((p) => (p.is_self ? "You" : p.name));
-    return meetingTones([...listed, ...detail.turns.map((t) => speakerName(detail.names, t))]);
-  }, [detail?.speakers, detail?.names, detail?.participants, detail?.turns]);
+    return meetingTones([...listed, ...detail.turns.map((t) => speakerName(detail.names, t)), ...detail.chat.map((c) => c.sender)]);
+  }, [detail?.speakers, detail?.names, detail?.participants, detail?.turns, detail?.chat]);
 
   // A detected desktop app call selects its app as the meeting audio.
   const detectedApp = calls[0]?.app;
@@ -716,16 +723,24 @@ const SpeakersContext = createContext<{ speakers: Speaker[]; names: Record<strin
 const Transcript = memo(function Transcript({ detail, tones, editable, timed, onError, onChanged }: TranscriptProps) {
   const box = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
-  const turns = useMemo(() => [...detail.turns].sort((a, b) => a.start - b.start || a.id - b.id), [detail.turns]);
+  // The turns and the chat messages in the order of their time. A chat message comes after a turn that starts at the same time.
+  const lines = useMemo(() => {
+    const all: ({ kind: "turn"; start: number; turn: Turn } | { kind: "chat"; start: number; message: ChatMessage })[] = [
+      ...detail.turns.map((turn) => ({ kind: "turn" as const, start: turn.start, turn })),
+      ...detail.chat.map((message) => ({ kind: "chat" as const, start: message.start, message })),
+    ];
+    const order = (l: (typeof all)[number]) => (l.kind === "turn" ? l.turn.id : Number.MAX_SAFE_INTEGER);
+    return all.sort((a, b) => a.start - b.start || order(a) - order(b) || (a.kind === "chat" && b.kind === "chat" ? a.message.t_ms - b.message.t_ms : 0));
+  }, [detail.turns, detail.chat]);
   const speakers = useMemo(() => new Map(detail.speakers.map((s) => [s.id, s])), [detail.speakers]);
   const speakerList = useMemo(() => ({ speakers: detail.speakers, names: detail.names }), [detail.speakers, detail.names]);
 
   // The live transcript follows new turns only while the user is at the end of it.
   useEffect(() => {
     if (!editable && atBottom.current && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [turns.length, editable]);
+  }, [lines.length, editable]);
 
-  if (turns.length === 0) return <div className="muted pad">No transcript yet.</div>;
+  if (lines.length === 0) return <div className="muted pad">No transcript yet.</div>;
 
   return (
     <SpeakersContext.Provider value={speakerList}>
@@ -737,22 +752,44 @@ const Transcript = memo(function Transcript({ detail, tones, editable, timed, on
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {turns.map((t) => (
+        {lines.map((line) =>
+          line.kind === "chat" ? (
+            <ChatRow key={`chat-${line.message.message_id}`} message={line.message} tone={nameTone(line.message.sender, tones)} timed={timed} />
+          ) : (
           <TurnRow
-            key={t.id}
-            turn={t}
-            name={speakerName(detail.names, t)}
-            tone={nameTone(speakerName(detail.names, t), tones)}
-            speaker={t.speaker_id ? speakers.get(t.speaker_id) : undefined}
+            key={line.turn.id}
+            turn={line.turn}
+            name={speakerName(detail.names, line.turn)}
+            tone={nameTone(speakerName(detail.names, line.turn), tones)}
+            speaker={line.turn.speaker_id ? speakers.get(line.turn.speaker_id) : undefined}
             editable={editable}
             timed={timed}
             playable={!detail.meeting.audio_deleted}
             onError={onError}
             onChanged={onChanged}
           />
-        ))}
+          ),
+        )}
       </div>
     </SpeakersContext.Provider>
+  );
+});
+
+/** A message from the chat of the call. It has no audio, and the user cannot edit it. */
+const ChatRow = memo(function ChatRow({ message, tone, timed }: { message: ChatMessage; tone: string; timed: boolean }) {
+  return (
+    <div className="turn chat">
+      <div className="turn-content">
+        <div className="turn-head">
+          <span className={`speaker ${tone}`}>{message.sender}</span>
+          {timed && <time>{clock(message.start)}</time>}
+          <span className="tag" title="A message from the chat of the call">
+            chat
+          </span>
+        </div>
+        <div className="turn-text">{message.text}</div>
+      </div>
+    </div>
   );
 });
 

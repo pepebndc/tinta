@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// The kinds of search entries. Each meeting has one entry of each kind.
-const SEARCH_KINDS: [&str; 5] = ["title", "notes", "summary", "speakers", "transcript"];
+const SEARCH_KINDS: [&str; 6] = ["title", "notes", "summary", "speakers", "transcript", "chat"];
 
 /// The author of a summary that an MCP client wrote.
 pub const MCP_AUTHOR: &str = "MCP client";
@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS speaker_events (
     speaking TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS speaker_events_meeting ON speaker_events (meeting_id, t_ms);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    meeting_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    t_ms INTEGER NOT NULL,
+    sender TEXT NOT NULL,
+    is_self INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, message_id)
+);
 CREATE TABLE IF NOT EXISTS revisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     batch TEXT NOT NULL,
@@ -246,6 +255,29 @@ pub struct Participant {
     pub participant_id: String,
     pub name: String,
     pub is_self: bool,
+}
+
+/// A message from the chat of the call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub message_id: String,
+    pub sender: String,
+    pub is_self: bool,
+    pub text: String,
+    /// The wall clock time when the message arrived, in epoch milliseconds.
+    pub t_ms: i64,
+    /// The time on the meeting clock, in seconds. It is 0 for a message from before the recording.
+    pub start: f64,
+}
+
+/// A chat message from the call, before it has a time on the meeting clock.
+#[derive(Debug, Clone)]
+pub struct NewChatMessage {
+    pub message_id: String,
+    pub sender: String,
+    pub is_self: bool,
+    pub text: String,
+    pub t_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -955,6 +987,52 @@ impl Db {
         Ok(events)
     }
 
+    // MARK: Chat messages
+
+    /// Adds the chat messages of a call. A message that the meeting has already gets the new text and sender,
+    /// and keeps its first time. Returns the messages that are new or changed.
+    pub fn add_chat_messages(&self, id: &str, messages: &[NewChatMessage]) -> Result<Vec<ChatMessage>> {
+        self.atomic(|| {
+            let mut changed = Vec::new();
+            for m in messages {
+                let count = self.conn.execute(
+                    "INSERT INTO chat_messages (meeting_id, message_id, t_ms, sender, is_self, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(meeting_id, message_id) DO UPDATE SET text = excluded.text, sender = excluded.sender, is_self = excluded.is_self
+                     WHERE text != excluded.text OR sender != excluded.sender OR is_self != excluded.is_self",
+                    params![id, m.message_id, m.t_ms, m.sender, m.is_self as i64, m.text],
+                )?;
+                if count > 0 {
+                    changed.push(m.message_id.clone());
+                }
+            }
+            if changed.is_empty() {
+                return Ok(Vec::new());
+            }
+            self.reindex_kind(id, "chat")?;
+            Ok(self.chat_messages(id)?.into_iter().filter(|m| changed.contains(&m.message_id)).collect())
+        })
+    }
+
+    /// The chat messages of a meeting, in the order of their time.
+    pub fn chat_messages(&self, id: &str) -> Result<Vec<ChatMessage>> {
+        let start_wall_ms = self.start_wall_ms(id)?;
+        let mut stmt = self.conn.prepare(
+            "SELECT message_id, sender, is_self, text, t_ms FROM chat_messages WHERE meeting_id = ?1 ORDER BY t_ms, rowid",
+        )?;
+        let rows = stmt.query_map([id], |r| {
+            let t_ms: i64 = r.get(4)?;
+            Ok(ChatMessage {
+                message_id: r.get(0)?,
+                sender: r.get(1)?,
+                is_self: r.get::<_, i64>(2)? != 0,
+                text: r.get(3)?,
+                t_ms,
+                start: start_wall_ms.map(|s| ((t_ms - s) as f64 / 1000.0).max(0.0)).unwrap_or(0.0),
+            })
+        })?;
+        rows.map(|r| r.map_err(Into::into)).collect()
+    }
+
     // MARK: Turns and speakers
 
     pub fn add_live_turn(
@@ -1347,7 +1425,7 @@ impl Db {
     /// Permanent deletion: the caller removes the files. The database rows go at once.
     pub fn delete_meeting_now(&self, id: &str) -> Result<()> {
         self.atomic(|| {
-            for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "recordings", "revisions"] {
+            for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "chat_messages", "recordings", "revisions"] {
                 self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
             }
             self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
@@ -1517,6 +1595,7 @@ impl Db {
             "summary" => self.summary(id)?.map(|s| s.content),
             "speakers" => Some(self.speakers(id)?.into_iter().filter_map(|s| s.name).collect::<Vec<_>>().join(" ")),
             "transcript" => Some(self.turns(id)?.into_iter().map(|t| t.text).collect::<Vec<_>>().join("\n")),
+            "chat" => Some(self.chat_messages(id)?.into_iter().map(|m| m.text).collect::<Vec<_>>().join("\n")),
             other => bail!("unknown search kind {other}"),
         };
         if let Some(body) = body {
@@ -1583,6 +1662,34 @@ mod tests {
         assert_eq!(db.remove_folder("customers").unwrap().len(), 2);
         assert!(db.folders().unwrap().is_empty());
         assert_eq!(db.meetings(false).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn chat_messages_keep_their_first_time_and_are_searchable() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Sync", Some("com.google.Chrome")).unwrap();
+        db.mark_started(&m.id, 1_000_000, Some("abc-defg-hij")).unwrap();
+        let message = |id: &str, text: &str, t_ms: i64| NewChatMessage {
+            message_id: id.into(),
+            sender: "Alice".into(),
+            is_self: false,
+            text: text.into(),
+            t_ms,
+        };
+        let added = db.add_chat_messages(&m.id, &[message("m1", "Link to the dashboard", 1_065_000), message("m2", "Thanks", 990_000)]).unwrap();
+        assert_eq!(added.len(), 2);
+        // The same message again changes nothing. A new text keeps the first time.
+        assert!(db.add_chat_messages(&m.id, &[message("m1", "Link to the dashboard", 1_070_000)]).unwrap().is_empty());
+        let changed = db.add_chat_messages(&m.id, &[message("m1", "Link to the new dashboard", 1_070_000)]).unwrap();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].t_ms, 1_065_000);
+        let all = db.chat_messages(&m.id).unwrap();
+        assert_eq!(all.iter().map(|c| c.message_id.as_str()).collect::<Vec<_>>(), vec!["m2", "m1"]);
+        assert_eq!(all[0].start, 0.0);
+        assert_eq!(all[1].start, 65.0);
+        assert!(db.search("dashboard", 10).unwrap().iter().any(|h| h.meeting_id == m.id && h.kind == "chat"));
+        db.delete_meeting_now(&m.id).unwrap();
+        assert!(db.chat_messages(&m.id).unwrap().is_empty());
     }
 
     #[test]

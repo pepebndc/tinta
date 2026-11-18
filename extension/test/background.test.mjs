@@ -182,6 +182,26 @@ test("only the known fields go to the host, with size limits", () => {
   assert.ok(JSON.stringify(sent).length < 256 * 1024);
 });
 
+test("chat messages go to the host with the known fields and size limits", () => {
+  const ext = load();
+  const long = "x".repeat(3000);
+  const messages = Array.from({ length: 25 }, (_, i) => ({ id: `m${i}`, sender: "Ana", text: i === 0 ? long : "Hi", sent_at: 5, extra: "no" }));
+  ext.fromMeet({ type: "chat_messages", meeting_code: CODE, t: 7, messages });
+  const sent = ext.ports[0].received.at(-1);
+  assert.equal(sent.type, "chat_messages");
+  assert.equal(sent.messages.length, 20);
+  assert.equal(sent.messages[0].text.length, 2000);
+  assert.deepEqual({ ...sent.messages[1] }, { id: "m1", sender: "Ana", is_self: false, text: "Hi", sent_at: 5 });
+});
+
+test("a chat message without an ID or text does not go to the host", () => {
+  const ext = load();
+  ext.fromMeet({ type: "chat_messages", meeting_code: CODE, messages: [{ id: "", text: "Hi" }] });
+  ext.fromMeet({ type: "chat_messages", meeting_code: CODE, messages: [{ id: "m1", text: 3 }] });
+  ext.fromMeet({ type: "chat_messages", meeting_code: CODE, messages: "Hi" });
+  assert.deepEqual(types(ext.ports[0]), ["hello"]);
+});
+
 test("a call that is open in two tabs ends when the last tab leaves", () => {
   const ext = load();
   const port = ext.ports[0];

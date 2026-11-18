@@ -10,7 +10,8 @@ mod system;
 
 use anyhow::{bail, Context, Result};
 use engine::Engine;
-use tinta_core::db::{Db, Participant};
+use tinta_core::db::{Db, NewChatMessage, Participant};
+use tinta_core::export::Line;
 use tinta_core::keys::Keys;
 use tinta_core::naming;
 use tinta_core::transcript::{self, FinalResult};
@@ -102,6 +103,34 @@ fn parse_names(value: &Value) -> Vec<String> {
         .as_array()
         .map(|l| l.iter().filter_map(|v| v.as_str().map(|s| s.chars().take(200).collect())).take(100).collect())
         .unwrap_or_default()
+}
+
+/// The longest chat message that the app keeps, in characters. The extension applies the same limit.
+const MAX_CHAT_TEXT: usize = 2000;
+
+/// The chat messages of a `chat_messages` message from the extension. A message without an ID or text is not kept.
+/// A message from the user without a sender gets `own` as its sender.
+fn parse_chat(value: &Value, fallback_ms: i64, own: &str) -> Vec<NewChatMessage> {
+    let Some(list) = value.as_array() else { return Vec::new() };
+    list.iter()
+        .filter_map(|m| {
+            let message_id: String = m["id"].as_str()?.chars().take(200).collect();
+            let text: String = m["text"].as_str()?.chars().take(MAX_CHAT_TEXT).collect();
+            if message_id.is_empty() || text.trim().is_empty() {
+                return None;
+            }
+            let is_self = m["is_self"].as_bool().unwrap_or(false);
+            let sender: String = m["sender"].as_str().unwrap_or_default().chars().take(200).collect();
+            let sender = match sender.trim() {
+                "" if is_self && !own.trim().is_empty() => own.trim().to_string(),
+                "" => "Unknown".to_string(),
+                name => name.to_string(),
+            };
+            let t_ms = m["sent_at"].as_i64().unwrap_or(fallback_ms).min(now_ms());
+            Some(NewChatMessage { message_id, sender, is_self, text, t_ms })
+        })
+        .take(50)
+        .collect()
 }
 
 /// The call app does not always mark the user. Then the user's name identifies the user.
@@ -730,14 +759,17 @@ impl AppState {
         let doc = tinta_core::export::Document::load(&self.db.lock().unwrap(), id)?;
         let names = doc.names();
         let lines: Vec<String> = doc
-            .turns
-            .iter()
-            .map(|t| {
-                let name = doc.speaker_name(&names, t);
+            .lines()
+            .into_iter()
+            .map(|line| {
+                let (name, start, text) = match line {
+                    Line::Turn(t) => (doc.speaker_name(&names, t), t.start, &t.text),
+                    Line::Chat(c) => (format!("{} (in the chat)", c.sender), c.start, &c.text),
+                };
                 if doc.timed() {
-                    format!("[{}] {name}: {}", tinta_core::export::timestamp(t.start, '.', false), t.text)
+                    format!("[{}] {name}: {text}", tinta_core::export::timestamp(start, '.', false))
                 } else {
-                    format!("{name}: {}", t.text)
+                    format!("{name}: {text}")
                 }
             })
             .collect();
@@ -767,6 +799,8 @@ impl AppState {
         let mut ended = None;
         let mut store_participants = None;
         let mut store_speakers = None;
+        let mut store_chat = None;
+        let chat_own = (kind == "chat_messages").then(|| self.self_name());
         let snapshot = {
             let mut ext = self.extension.lock().unwrap();
             if ext.connected_at.is_none() {
@@ -792,6 +826,10 @@ impl AppState {
                     store_speakers = Some(ext.speaking.clone());
                 }
                 "mic_state" => ext.mic_muted = message["muted"].as_bool(),
+                "chat_messages" => {
+                    let own = ext.self_name.clone().or(chat_own).unwrap_or_default();
+                    store_chat = Some(parse_chat(&message["messages"], t, &own));
+                }
                 "ping" => {}
                 // Only the current extension sends "hello", so no extension uses the old host name.
                 "hello" => system::remove_old_native_host(),
@@ -839,6 +877,12 @@ impl AppState {
             }
             if let Some(speaking) = store_speakers.as_ref().filter(|_| !active.paused) {
                 let _ = self.db.lock().unwrap().add_speaker_event(&active.meeting_id, t, speaking);
+            }
+            if let Some(chat) = store_chat.as_ref().filter(|c| !active.paused && !c.is_empty()) {
+                let added = self.db.lock().unwrap().add_chat_messages(&active.meeting_id, chat);
+                if let Some(messages) = added.ok().filter(|m| !m.is_empty()) {
+                    self.emit("chat_messages", json!({"meeting_id": active.meeting_id, "messages": messages}));
+                }
             }
             let reported = match kind {
                 "meet_state" => message["mic_muted"].as_bool(),
@@ -1196,4 +1240,29 @@ pub fn run() {
                 let _ = std::fs::remove_file(paths::socket_path());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_messages_from_the_extension_are_checked() {
+        let long = "x".repeat(MAX_CHAT_TEXT + 10);
+        let messages = json!([
+            {"id": "m1", "sender": "Ana", "text": "Hello", "sent_at": 5},
+            {"id": "m2", "sender": "", "is_self": true, "text": "Mine"},
+            {"id": "m3", "sender": "Bo", "text": "   "},
+            {"id": "", "sender": "Bo", "text": "No ID"},
+            {"id": "m4", "text": long},
+            {"sender": "Bo", "text": "No ID"},
+        ]);
+        let parsed = parse_chat(&messages, 7, "Sam");
+        assert_eq!(parsed.iter().map(|m| m.message_id.as_str()).collect::<Vec<_>>(), vec!["m1", "m2", "m4"]);
+        assert_eq!((parsed[0].sender.as_str(), parsed[0].t_ms), ("Ana", 5));
+        assert_eq!((parsed[1].sender.as_str(), parsed[1].is_self, parsed[1].t_ms), ("Sam", true, 7));
+        assert_eq!(parsed[2].sender, "Unknown");
+        assert_eq!(parsed[2].text.chars().count(), MAX_CHAT_TEXT);
+        assert!(parse_chat(&json!("not a list"), 7, "Sam").is_empty());
+    }
 }

@@ -209,6 +209,7 @@ async fn get_meeting(id: String) -> CommandResult<Value> {
             "notes": doc.notes,
             "speakers": doc.speakers.iter().filter(|sp| sp.merged_into.is_none()).collect::<Vec<_>>(),
             "turns": doc.turns,
+            "chat": doc.chat,
             "participants": participants,
             "has_edits": has_edits,
             "has_speaker_changes": has_speaker_changes,
