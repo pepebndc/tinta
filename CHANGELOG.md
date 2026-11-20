@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0 (2026-11-20)
+
+### Added
+- Summary history. Each "Write again" and each change from an MCP client adds a new version of the summary, and the earlier versions stay. Select a version in the list above the summary to read it. Click "Use this version" to show it as the summary, or "Delete" to delete only that version.
+- The MCP tool `get_summary_versions` gives all versions of the summary of a meeting.
+
+### Changed
+- `update_summary` adds a new summary version and does not replace the earlier version. An undo on the MCP screen deletes the version of the MCP client and puts the earlier version in use again.
+- The summary of each meeting becomes the first version of its history. The summaries that MCP clients replaced in earlier versions of Tinta come back as earlier versions.
+
 ## 0.11.0 (2026-11-18)
 
 ### Added

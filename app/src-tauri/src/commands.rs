@@ -192,7 +192,7 @@ async fn create_meeting(title: Option<String>) -> CommandResult<Value> {
 async fn get_meeting(id: String) -> CommandResult<Value> {
     blocking(move || {
         let s = state();
-        let (doc, participants, has_edits, has_speaker_changes, summary) = {
+        let (doc, participants, has_edits, has_speaker_changes, summary, summary_versions) = {
             let db = s.db.lock().unwrap();
             let doc = Document::load(&db, &id).map_err(err)?;
             (
@@ -201,6 +201,7 @@ async fn get_meeting(id: String) -> CommandResult<Value> {
                 db.has_edits(&id).map_err(err)?,
                 db.has_speaker_changes(&id).map_err(err)?,
                 db.summary(&id).map_err(err)?,
+                db.summary_versions(&id).map_err(err)?,
             )
         };
         Ok(json!({
@@ -215,6 +216,7 @@ async fn get_meeting(id: String) -> CommandResult<Value> {
             "has_speaker_changes": has_speaker_changes,
             "audio_bytes": dir_size(&paths::audio_dir(&id)),
             "summary": summary,
+            "summary_versions": summary_versions,
             "summarizing": s.summarizing.lock().unwrap().contains(&id),
         }))
     })
@@ -320,9 +322,17 @@ async fn summarize(id: String) -> CommandResult<()> {
 }
 
 #[tauri::command]
-async fn delete_summary(id: String) -> CommandResult<()> {
+async fn use_summary_version(id: String, version_id: i64) -> CommandResult<()> {
     let s = state();
-    s.db.lock().unwrap().delete_summary(&id).map_err(err)?;
+    s.db.lock().unwrap().use_summary_version(&id, version_id).map_err(err)?;
+    s.meeting_changed(&id);
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_summary_version(id: String, version_id: i64) -> CommandResult<()> {
+    let s = state();
+    s.db.lock().unwrap().delete_summary_version(&id, version_id).map_err(err)?;
     s.meeting_changed(&id);
     Ok(())
 }
@@ -724,7 +734,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         prepare_extension,
         storage_usage,
         summarize,
-        delete_summary,
+        use_summary_version,
+        delete_summary_version,
         granola_default_path,
         granola_preview,
         import_granola,

@@ -26,8 +26,9 @@ pub fn definitions() -> Value {
             json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}), &["query"]),
         tool("get_notes", "Get the manual notes of a meeting.", json!({"meeting_id": id}), &["meeting_id"]),
         tool("get_meeting", "Get one meeting by its ID: the details, the notes, and the summary. Use get_transcript for the transcript.", json!({"meeting_id": id}), &["meeting_id"]),
-        tool("get_summary", "Get the summary of a meeting. A local model wrote it from the notes and the transcript, or an MCP client changed it, so it can contain mistakes. The summary is null when the meeting has none.", json!({"meeting_id": id}), &["meeting_id"]),
-        tool("update_summary", "Replace the summary of a meeting, or add one. Use Markdown: paragraphs, ### headings, - lists, and **bold**. The user can undo the change.", json!({"meeting_id": id, "content": {"type": "string"}}), &["meeting_id", "content"]),
+        tool("get_summary", "Get the summary of a meeting: the version that the user has in use. A local model wrote it from the notes and the transcript, or an MCP client wrote it, so it can contain mistakes. The summary is null when the meeting has none.", json!({"meeting_id": id}), &["meeting_id"]),
+        tool("get_summary_versions", "Get all versions of the summary of a meeting, newest first. `current` is true for the version in use. The user keeps each version until they delete it.", json!({"meeting_id": id}), &["meeting_id"]),
+        tool("update_summary", "Add a new version of the summary of a meeting, and put it in use. The earlier versions stay in the history. Use Markdown: paragraphs, ### headings, - lists, and **bold**. The user can undo the change.", json!({"meeting_id": id, "content": {"type": "string"}}), &["meeting_id", "content"]),
         tool("get_transcript", "Get transcript turns in pages. Each speaker name has a state: confirmed (set by the user), automatic (from Meet metadata or the microphone owner), or unnamed. Do not treat automatic names as facts.",
             json!({"meeting_id": id, "page": {"type": "integer", "default": 1}, "page_size": {"type": "integer", "default": 200}}), &["meeting_id"]),
         tool("get_chat", "Get the messages that people typed in the chat of the call, in the order of their time. `start` is the time on the meeting clock in seconds. The sender name comes from Google Meet.",
@@ -87,7 +88,7 @@ fn arg_list(args: &Value, key: &str) -> Result<Vec<String>> {
 
 /// The tools that only read data. All other tools change data.
 pub const READ_ONLY: &[&str] =
-    &["list_meetings", "search_meetings", "get_notes", "get_meeting", "get_summary", "get_transcript", "get_chat", "list_speakers"];
+    &["list_meetings", "search_meetings", "get_notes", "get_meeting", "get_summary", "get_summary_versions", "get_transcript", "get_chat", "list_speakers"];
 
 /// A meeting that MCP can see: it exists and it is not in the trash.
 /// Finds a visible meeting by its full ID, or by the first 8 or more characters of the ID.
@@ -160,6 +161,7 @@ pub fn call(db: &Db, name: &str, args: &Value) -> Result<(Value, Vec<String>)> {
             })
         }
         "get_summary" => json!({"notice": NOTICE, "meeting_id": id()?, "summary": db.summary(&id()?)?}),
+        "get_summary_versions" => json!({"notice": NOTICE, "meeting_id": id()?, "versions": db.summary_versions(&id()?)?}),
         "update_summary" => {
             let content = arg_str(args, "content")?;
             if content.trim().is_empty() {
@@ -384,6 +386,13 @@ mod tests {
         let (read, _) = call(&db, "get_chat", &arg(json!({}))).unwrap();
         assert_eq!(read["messages"][0]["text"], "Hi all");
         assert!(READ_ONLY.contains(&"get_chat"));
+
+        call(&db, "update_summary", &arg(json!({"content": "First"}))).unwrap();
+        call(&db, "update_summary", &arg(json!({"content": "Second"}))).unwrap();
+        let (read, _) = call(&db, "get_summary_versions", &arg(json!({}))).unwrap();
+        assert_eq!(read["versions"].as_array().unwrap().len(), 2);
+        assert_eq!(read["versions"][0]["content"], "Second");
+        assert_eq!(read["versions"][0]["current"], true);
 
         let (page, _) = call(&db, "get_transcript", &arg(json!({"page": i64::MAX}))).unwrap();
         assert!(page["turns"].as_array().unwrap().is_empty());

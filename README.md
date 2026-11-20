@@ -22,7 +22,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 - **Meet chat.** On Google Meet, the extension also keeps the messages of the call chat. They show in the transcript at the time they arrive. Search, export, summaries, and MCP include them.
 - **Next meetings.** Tinta reads the calendars on your Mac, with no sign-in, and shows your next meetings. A reminder before each call lets you join it and take notes with one click.
 - **Call detection.** Tinta detects calls in Google Meet, Zoom, and Microsoft Teams, offers to record them, and stops when you leave.
-- **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac.
+- **Local summaries.** After a call, the Apple on-device model writes a summary from your notes and the transcript: an overview, key points, decisions, and action items. It runs on your Mac. Tinta keeps each version of a summary until you delete it.
 - **Your library.** Search, folders, tags, and export to Markdown, JSON, SRT, and VTT.
 - **Trash.** Deleted meetings stay in the trash for 7 days.
 - **Import from Granola.** Bring your Granola export into Tinta, with notes, transcripts, and speaker names.
@@ -118,7 +118,7 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 **After the call.** Tinta processes the recording on your Mac. Processing improves the text and matches speaker names. To name a speaker, click the speaker name in the transcript. Click the text of a turn to edit it. Under Speakers, play a sample of each speaker and merge speakers. Your notes stay separate from the transcript.
 
-**Summaries.** After processing, Tinta writes a summary above the notes. Your notes show what is important to you, so the summary uses them with the transcript. Click **Write again** after you correct names or text, or **Write a summary** for an older meeting. To hide the summary, click **Summary**. To write summaries only when you ask, turn off "Write a summary after each call" in Settings.
+**Summaries.** After processing, Tinta writes a summary above the notes. Your notes show what is important to you, so the summary uses them with the transcript. Click **Write again** after you correct names or text, or **Write a summary** for an older meeting. Each **Write again** and each change from an MCP client adds a new version, and the earlier versions stay. Select a version in the list above the summary to read it. Click **Use this version** to show it as the summary, or **Delete** to delete only that version. To hide the summary, click **Summary**. To write summaries only when you ask, turn off "Write a summary after each call" in Settings.
 
 **Folders and tags.** Under the title of a meeting, click **+ Folder** or **+ Tag**. You can also drag a meeting from the list onto a folder. The folders show above the meetings in the sidebar. Click a folder to open it, and click **…** next to its name to rename or remove it. A new meeting that you create in an open folder goes into that folder. To show the meetings with a tag, select the tag in the filter above the list, or click the tag on a Home card.
 

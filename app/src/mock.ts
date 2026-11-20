@@ -31,6 +31,13 @@ const lines: [string, string, number, string][] = [
 ];
 
 function detail(): MeetingDetail {
+  const summary = {
+    id: 2,
+    current: true,
+    content: "The team reviewed the first screen of the app. They agreed to keep it calm, with speaker names and timestamps, and to give the notes their own space.\n\n### Key points\n\n- The first screen should feel calm.\n- Speaker names and timestamps help people find a part of the conversation.\n- Notes stay on this Mac.\n\n### Action items\n\n- **Sam Carter**: Review the icon at small sizes tomorrow morning.\n",
+    written_by: "Apple on-device model",
+    updated_at: now - 30 * 60_000,
+  };
   const recording = hash() === "recording";
   const turns: Turn[] = lines.map(([speaker, track, start, text], i) => ({
     id: i + 1, meeting_id: "m1", track: track as Turn["track"], speaker_id: recording ? null : speaker, start, end: start + 12,
@@ -62,11 +69,11 @@ function detail(): MeetingDetail {
     has_edits: false,
     has_speaker_changes: false,
     audio_bytes: 61_400_000,
-    summary: {
-      content: "The team reviewed the first screen of the app. They agreed to keep it calm, with speaker names and timestamps, and to give the notes their own space.\n\n### Key points\n\n- The first screen should feel calm.\n- Speaker names and timestamps help people find a part of the conversation.\n- Notes stay on this Mac.\n\n### Action items\n\n- **Sam Carter**: Review the icon at small sizes tomorrow morning.\n",
-      written_by: "Apple on-device model",
-      updated_at: now - 30 * 60_000,
-    },
+    summary,
+    summary_versions: [
+      summary,
+      { id: 1, current: false, content: "The team talked about the first screen and the notes.", written_by: "Apple on-device model", updated_at: now - 35 * 60_000 },
+    ],
     summarizing: false,
   };
 }

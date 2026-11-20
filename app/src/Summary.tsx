@@ -55,7 +55,12 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
     setCollapsed(!collapsed);
   };
   const id = detail.meeting.id;
-  const summary = detail.summary;
+  const versions = detail.summary_versions;
+  // The version that the panel shows. It is the version in use until the user selects another version.
+  const [shownId, setShownId] = useState<number | null>(null);
+  const summary = versions.find((v) => v.id === shownId) ?? detail.summary;
+  // A new version in use, for example after "Write again", shows at once.
+  useEffect(() => setShownId(null), [detail.summary?.id]);
   const available = boot?.summaries.available ?? false;
 
   useEffect(() => {
@@ -73,6 +78,12 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
   }, [id]);
 
   const start = () => api.summarize(id).catch((e) => onError(String(e)));
+  const use = (versionId: number) => api.useSummaryVersion(id, versionId).catch((e) => onError(String(e)));
+  const remove = (versionId: number) =>
+    api
+      .deleteSummaryVersion(id, versionId)
+      .then(() => setShownId(null))
+      .catch((e) => onError(String(e)));
 
   async function copy() {
     if (!summary) return;
@@ -132,6 +143,25 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
         </button>
         {!collapsed && (
           <span className="summary-actions">
+            {versions.length > 1 && (
+              <select
+                className="inline-select"
+                aria-label="Summary version"
+                value={summary.id}
+                onChange={(e) => setShownId(Number(e.target.value))}
+              >
+                {versions.map((v, i) => (
+                  <option key={v.id} value={v.id}>
+                    {`Version ${versions.length - i}: ${dateTime(v.updated_at)}, ${v.written_by}${v.current ? " (in use)" : ""}`}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!summary.current && (
+              <button className="quiet" onClick={() => use(summary.id)}>
+                Use this version
+              </button>
+            )}
             <button className="quiet" onClick={copy}>
               Copy
             </button>
@@ -140,9 +170,9 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
             </button>
             <ConfirmButton
               label="Delete"
-              question="Delete this summary?"
-              confirm="Delete summary"
-              onConfirm={() => api.deleteSummary(id).catch((e) => onError(String(e)))}
+              question={versions.length > 1 ? "Delete this version of the summary? The other versions stay." : "Delete this summary?"}
+              confirm={versions.length > 1 ? "Delete version" : "Delete summary"}
+              onConfirm={() => remove(summary.id)}
             />
           </span>
         )}
@@ -151,8 +181,9 @@ export function SummaryPanel({ detail, boot, onError, onMessage }: Props) {
         <>
       <Markdown text={summary.content} />
       <p className="small muted summary-note">
+        {!summary.current && "This version is not in use. "}
         {summary.written_by === "MCP client"
-          ? `Changed by an MCP client, ${dateTime(summary.updated_at)}. Undo the change on the MCP screen.`
+          ? `Written by an MCP client, ${dateTime(summary.updated_at)}. Undo the change on the MCP screen.`
           : `Written by the ${summary.written_by}, ${dateTime(summary.updated_at)}.`}{" "}
         It can contain mistakes. Check it against the transcript.
       </p>

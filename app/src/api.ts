@@ -73,6 +73,9 @@ type Participant = { participant_id: string; name: string; is_self: boolean };
 /** A message from the chat of the call. `start` is the time on the meeting clock in seconds. */
 export type ChatMessage = { message_id: string; sender: string; is_self: boolean; text: string; t_ms: number; start: number };
 
+/** One version of a summary. `current` is true for the version in use. */
+export type Summary = { id: number; content: string; written_by: string; updated_at: number; current: boolean };
+
 export type MeetingDetail = {
   meeting: Meeting;
   notes: string;
@@ -85,7 +88,9 @@ export type MeetingDetail = {
   /** True when a speaker has a name, a merge, or a turn that the user or an MCP client set. */
   has_speaker_changes: boolean;
   audio_bytes: number;
-  summary: { content: string; written_by: string; updated_at: number } | null;
+  summary: Summary | null;
+  /** All summary versions, newest first. */
+  summary_versions: Summary[];
   summarizing: boolean;
 };
 
@@ -278,7 +283,8 @@ export const api = {
   showLibrary: () => invoke<void>("show_library"),
   prepareExtension: () => invoke<string>("prepare_extension"),
   summarize: (id: string) => invoke<void>("summarize", { id }),
-  deleteSummary: (id: string) => invoke<void>("delete_summary", { id }),
+  useSummaryVersion: (id: string, versionId: number) => invoke<void>("use_summary_version", { id, versionId }),
+  deleteSummaryVersion: (id: string, versionId: number) => invoke<void>("delete_summary_version", { id, versionId }),
   storageUsage: () => invoke<StorageUsage>("storage_usage"),
   granolaDefaultPath: () => invoke<string | null>("granola_default_path"),
   granolaPreview: (path: string) => invoke<GranolaPreview>("granola_preview", { path }),

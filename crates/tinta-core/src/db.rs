@@ -15,12 +15,19 @@ const SEARCH_KINDS: [&str; 6] = ["title", "notes", "summary", "speakers", "trans
 /// The author of a summary that an MCP client wrote.
 pub const MCP_AUTHOR: &str = "MCP client";
 
+/// One version of the summary of a meeting. A meeting keeps every version until the user deletes it.
+/// The version in use is the summary that Tinta shows, searches, and exports.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
+    #[serde(default)]
+    pub id: i64,
     pub content: String,
     /// The local model, or `MCP_AUTHOR`.
     pub written_by: String,
+    /// The time when the local model or the MCP client wrote this version.
     pub updated_at: i64,
+    #[serde(default)]
+    pub current: bool,
 }
 
 const SCHEMA: &str = r#"
@@ -53,12 +60,16 @@ CREATE TABLE IF NOT EXISTS notes (
     content TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS summaries (
-    meeting_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS summary_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id TEXT NOT NULL,
     content TEXT NOT NULL,
-    model TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    written_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    current INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS summary_versions_meeting ON summary_versions (meeting_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS summary_versions_current ON summary_versions (meeting_id) WHERE current = 1;
 CREATE TABLE IF NOT EXISTS tags (
     meeting_id TEXT NOT NULL,
     tag TEXT NOT NULL,
@@ -375,6 +386,16 @@ fn speaker_from_row(row: &Row) -> rusqlite::Result<Speaker> {
     })
 }
 
+fn summary_from_row(row: &Row) -> rusqlite::Result<Summary> {
+    Ok(Summary {
+        id: row.get(0)?,
+        content: row.get(1)?,
+        written_by: row.get(2)?,
+        updated_at: row.get(3)?,
+        current: row.get::<_, i64>(4)? != 0,
+    })
+}
+
 fn turn_from_row(row: &Row) -> rusqlite::Result<Turn> {
     Ok(Turn {
         id: row.get("id")?,
@@ -454,7 +475,41 @@ impl Db {
         // "audio deleted", and then the audio retention did not apply to it.
         self.conn
             .execute_batch("UPDATE meetings SET audio_deleted = 0 WHERE audio_deleted = 1 AND audio_until IS NOT NULL;")?;
-        Ok(())
+        self.migrate_summaries()
+    }
+
+    /// A library from an older Tinta has one summary for each meeting in a `summaries` table.
+    /// Each summary becomes the version in use. The summaries that MCP changes replaced are in the change log,
+    /// so they become earlier versions.
+    fn migrate_summaries(&self) -> Result<()> {
+        let old: bool = self
+            .conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'summaries')", [], |r| r.get(0))?;
+        if !old {
+            return Ok(());
+        }
+        self.atomic(|| {
+            self.conn.execute_batch(
+                "INSERT INTO summary_versions (meeting_id, content, written_by, created_at, current)
+                 SELECT meeting_id, content, model, created_at, 1 FROM summaries;",
+            )?;
+            let replaced: Vec<(String, String)> = self
+                .conn
+                .prepare("SELECT meeting_id, old_value FROM revisions WHERE entity = 'summary' AND field = 'content' AND old_value IS NOT NULL ORDER BY id")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            for (meeting_id, old_value) in replaced {
+                let Ok(s) = serde_json::from_str::<Summary>(&old_value) else { continue };
+                self.conn.execute(
+                    "INSERT INTO summary_versions (meeting_id, content, written_by, created_at)
+                     SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (
+                         SELECT 1 FROM summary_versions WHERE meeting_id = ?1 AND content = ?2 AND created_at = ?4)",
+                    params![meeting_id, s.content, s.written_by, s.updated_at],
+                )?;
+            }
+            self.conn.execute_batch("DROP TABLE summaries;")?;
+            Ok(())
+        })
     }
 
     /// Runs `f` in one transaction, so a change, its revision, and its search entry are saved together.
@@ -653,7 +708,7 @@ impl Db {
     /// Home shows these on its meeting cards.
     pub fn previews(&self, limit: usize) -> Result<HashMap<String, Preview>> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, s.content FROM meetings m LEFT JOIN summaries s ON s.meeting_id = m.id
+            "SELECT m.id, s.content FROM meetings m LEFT JOIN summary_versions s ON s.meeting_id = m.id AND s.current = 1
              WHERE m.deleted_at IS NULL AND m.archived = 0 ORDER BY m.created_at DESC LIMIT ?1",
         )?;
         let mut previews: HashMap<String, Preview> = HashMap::new();
@@ -895,29 +950,42 @@ impl Db {
 
     // MARK: Summaries
 
-    /// The summary of a meeting. A local model writes it, and MCP clients can change it.
+    /// The summary version in use. A local model writes a version, and MCP clients can add one.
     pub fn summary(&self, id: &str) -> Result<Option<Summary>> {
         Ok(self
             .conn
-            .query_row("SELECT content, model, created_at FROM summaries WHERE meeting_id = ?1", [id], |r| {
-                Ok(Summary { content: r.get(0)?, written_by: r.get(1)?, updated_at: r.get(2)? })
-            })
+            .query_row(
+                "SELECT id, content, written_by, created_at, current FROM summary_versions WHERE meeting_id = ?1 AND current = 1",
+                [id],
+                summary_from_row,
+            )
             .optional()?)
     }
 
-    pub fn has_summary(&self, id: &str) -> Result<bool> {
-        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM summaries WHERE meeting_id = ?1)", [id], |r| r.get(0))?)
+    /// All summary versions of a meeting, newest first.
+    pub fn summary_versions(&self, id: &str) -> Result<Vec<Summary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, written_by, created_at, current FROM summary_versions WHERE meeting_id = ?1 ORDER BY created_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([id], summary_from_row)?;
+        rows.map(|r| r.map_err(Into::into)).collect()
     }
 
+    pub fn has_summary(&self, id: &str) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM summary_versions WHERE meeting_id = ?1)", [id], |r| r.get(0))?)
+    }
+
+    /// Adds a summary version and puts it in use. The earlier versions stay.
     /// `written_by` names the local model, or `MCP_AUTHOR` for a change through MCP.
     /// MCP changes create a revision that the user can undo.
     pub fn set_summary(&self, id: &str, content: &str, written_by: &str, origin: Origin) -> Result<()> {
         let old = self.summary(id)?;
         self.atomic(|| {
             self.conn.execute(
-                "INSERT INTO summaries (meeting_id, content, model, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content, model = excluded.model, created_at = excluded.created_at",
+                "INSERT INTO summary_versions (meeting_id, content, written_by, created_at) VALUES (?1, ?2, ?3, ?4)",
                 params![id, content, written_by, now_ms()],
             )?;
+            self.use_version(id, Some(self.conn.last_insert_rowid()))?;
             if origin == Origin::Mcp {
                 let old = old.map(|s| serde_json::to_string(&s)).transpose()?;
                 self.record(&Self::new_batch(), origin, Change::whole(id, "summary", old.as_deref(), Some(content)))?;
@@ -926,11 +994,56 @@ impl Db {
         })
     }
 
-    pub fn delete_summary(&self, id: &str) -> Result<()> {
+    /// Puts a summary version of the meeting in use.
+    pub fn use_summary_version(&self, id: &str, version_id: i64) -> Result<()> {
         self.atomic(|| {
-            self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [id])?;
+            self.summary_version(id, version_id)?;
+            self.use_version(id, Some(version_id))?;
             self.reindex_kind(id, "summary")
         })
+    }
+
+    /// Deletes one summary version of the meeting. When it is in use, the newest other version goes in use.
+    pub fn delete_summary_version(&self, id: &str, version_id: i64) -> Result<()> {
+        self.atomic(|| {
+            let version = self.summary_version(id, version_id)?;
+            self.conn.execute("DELETE FROM summary_versions WHERE id = ?1", [version_id])?;
+            if version.current {
+                self.use_version(id, self.newest_summary_version(id)?)?;
+            }
+            self.reindex_kind(id, "summary")
+        })
+    }
+
+    fn summary_version(&self, id: &str, version_id: i64) -> Result<Summary> {
+        self.conn
+            .query_row(
+                "SELECT id, content, written_by, created_at, current FROM summary_versions WHERE meeting_id = ?1 AND id = ?2",
+                params![id, version_id],
+                summary_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("summary version not found: {version_id}"))
+    }
+
+    fn newest_summary_version(&self, id: &str) -> Result<Option<i64>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id FROM summary_versions WHERE meeting_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Marks one version as the version in use, or none.
+    fn use_version(&self, id: &str, version_id: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE summary_versions SET current = 0 WHERE meeting_id = ?1 AND current = 1", [id])?;
+        if let Some(version_id) = version_id {
+            self.conn.execute("UPDATE summary_versions SET current = 1 WHERE id = ?1", [version_id])?;
+        }
+        Ok(())
     }
 
     // MARK: Participants and speaker events
@@ -1352,20 +1465,26 @@ impl Db {
                 }
             }
             ("summary", "content") => {
-                if self.summary(entity_id)?.map(|s| s.content) != *new {
-                    return Err(changed("the summary"));
-                }
-                match old.as_deref().map(serde_json::from_str::<Summary>).transpose()? {
-                    Some(s) => {
-                        self.conn.execute(
-                            "UPDATE summaries SET content = ?2, model = ?3, created_at = ?4 WHERE meeting_id = ?1",
-                            params![entity_id, s.content, s.written_by, s.updated_at],
-                        )?;
-                    }
-                    None => {
-                        self.conn.execute("DELETE FROM summaries WHERE meeting_id = ?1", [entity_id])?;
-                    }
-                }
+                // The undo deletes the version of the MCP client, and puts the version before it in use again.
+                let current = self.summary(entity_id)?.filter(|s| Some(&s.content) == new.as_ref());
+                let Some(current) = current else { return Err(changed("the summary")) };
+                self.conn.execute("DELETE FROM summary_versions WHERE id = ?1", [current.id])?;
+                let before = match old.as_deref().map(serde_json::from_str::<Summary>).transpose()? {
+                    Some(s) => self
+                        .conn
+                        .query_row(
+                            "SELECT id FROM summary_versions WHERE meeting_id = ?1 AND content = ?2 ORDER BY created_at DESC, id DESC LIMIT 1",
+                            params![entity_id, s.content],
+                            |r| r.get(0),
+                        )
+                        .optional()?,
+                    None => None,
+                };
+                let before = match before {
+                    Some(version_id) => Some(version_id),
+                    None => self.newest_summary_version(entity_id)?,
+                };
+                self.use_version(entity_id, before)?;
             }
             ("notes", "content") => {
                 if Some(self.notes(entity_id)?) != *new {
@@ -1425,7 +1544,7 @@ impl Db {
     /// Permanent deletion: the caller removes the files. The database rows go at once.
     pub fn delete_meeting_now(&self, id: &str) -> Result<()> {
         self.atomic(|| {
-            for table in ["notes", "summaries", "tags", "speakers", "turns", "participants", "speaker_events", "chat_messages", "recordings", "revisions"] {
+            for table in ["notes", "summary_versions", "tags", "speakers", "turns", "participants", "speaker_events", "chat_messages", "recordings", "revisions"] {
                 self.conn.execute(&format!("DELETE FROM {table} WHERE meeting_id = ?1"), [id])?;
             }
             self.conn.execute("DELETE FROM search WHERE meeting_id = ?1", [id])?;
@@ -1872,6 +1991,74 @@ mod tests {
     }
 
     #[test]
+    fn summary_versions_stay_until_the_user_deletes_them() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.set_summary(&m.id, "first", "model", Origin::User).unwrap();
+        db.set_summary(&m.id, "second", "model", Origin::User).unwrap();
+        db.set_summary(&m.id, "third", MCP_AUTHOR, Origin::Mcp).unwrap();
+        let versions = db.summary_versions(&m.id).unwrap();
+        assert_eq!(versions.iter().map(|v| v.content.as_str()).collect::<Vec<_>>(), vec!["third", "second", "first"]);
+        assert_eq!(versions.iter().filter(|v| v.current).count(), 1);
+        assert_eq!(db.summary(&m.id).unwrap().unwrap().content, "third");
+
+        let first = versions[2].id;
+        db.use_summary_version(&m.id, first).unwrap();
+        assert_eq!(db.summary(&m.id).unwrap().unwrap().content, "first");
+        assert!(db.search("first", 10).unwrap().iter().any(|h| h.meeting_id == m.id && h.kind == "summary"));
+        assert!(db.search("third", 10).unwrap().is_empty());
+
+        // A deleted version in use gives its place to the newest other version.
+        db.delete_summary_version(&m.id, first).unwrap();
+        assert_eq!(db.summary(&m.id).unwrap().unwrap().content, "third");
+        db.delete_summary_version(&m.id, versions[1].id).unwrap();
+        assert_eq!(db.summary_versions(&m.id).unwrap().len(), 1);
+        let other = db.create_meeting("Other", None).unwrap();
+        assert!(db.delete_summary_version(&other.id, versions[0].id).is_err());
+        db.delete_summary_version(&m.id, versions[0].id).unwrap();
+        assert!(db.summary(&m.id).unwrap().is_none());
+        assert!(!db.has_summary(&m.id).unwrap());
+    }
+
+    #[test]
+    fn the_undo_of_an_mcp_summary_puts_the_earlier_version_in_use() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        db.set_summary(&m.id, "local", "model", Origin::User).unwrap();
+        db.set_summary(&m.id, "again", "model", Origin::User).unwrap();
+        let local = db.summary_versions(&m.id).unwrap()[1].id;
+        db.use_summary_version(&m.id, local).unwrap();
+        db.set_summary(&m.id, "client", MCP_AUTHOR, Origin::Mcp).unwrap();
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        let versions = db.summary_versions(&m.id).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(db.summary(&m.id).unwrap().unwrap().id, local);
+    }
+
+    #[test]
+    fn the_summary_of_an_old_library_becomes_the_version_in_use() {
+        let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
+        let m = db.create_meeting("Weekly", None).unwrap();
+        let replaced = serde_json::json!({"content": "local", "written_by": "model", "updated_at": 10}).to_string();
+        db.conn
+            .execute_batch(&format!(
+                "CREATE TABLE summaries (meeting_id TEXT PRIMARY KEY, content TEXT NOT NULL, model TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO summaries VALUES ('{id}', 'client', 'MCP client', 20);
+                 INSERT INTO revisions (batch, meeting_id, entity, entity_id, field, origin, old_value, new_value, ts)
+                 VALUES ('b', '{id}', 'summary', '{id}', 'content', 'mcp', '{replaced}', 'client', 20);",
+                id = m.id
+            ))
+            .unwrap();
+        db.migrate().unwrap();
+        let versions = db.summary_versions(&m.id).unwrap();
+        assert_eq!(versions.iter().map(|v| (v.content.as_str(), v.current)).collect::<Vec<_>>(), vec![("client", true), ("local", false)]);
+        // The undo of the old MCP change still works.
+        db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).unwrap();
+        assert_eq!(db.summary(&m.id).unwrap().unwrap().content, "local");
+        db.migrate().unwrap();
+    }
+
+    #[test]
     fn undo_restores_a_summary_and_the_trash() {
         let db = Db::open_in_memory(&Keys::for_tests()).unwrap();
         let m = db.create_meeting("Weekly", None).unwrap();
@@ -1882,7 +2069,8 @@ mod tests {
         assert_eq!((summary.content.as_str(), summary.written_by.as_str()), ("local", "model"));
 
         db.set_summary(&m.id, "client", MCP_AUTHOR, Origin::Mcp).unwrap();
-        db.delete_summary(&m.id).unwrap();
+        let client = db.summary(&m.id).unwrap().unwrap();
+        db.delete_summary_version(&m.id, client.id).unwrap();
         assert!(db.undo(db.revisions(Some(Origin::Mcp), 1).unwrap()[0].id).is_err());
 
         db.trash_meeting(&m.id, Origin::Mcp).unwrap();
