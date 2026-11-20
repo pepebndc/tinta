@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.1 (2026-11-20)
+
+### Fixed
+- Short replies in a language other than English no longer turn into English words. For example, "Sí, sí" no longer becomes "See, see", and "¿Me escuchas?" no longer becomes "Miss Putches?". The transcription now uses the speech around each reply to find its language, and it follows a meeting that changes language, for example from Spanish to English.
+
 ## 0.13.0 (2026-11-20)
 
 ### Added

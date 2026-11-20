@@ -13,6 +13,9 @@ final class LiveSegmenter: @unchecked Sendable {
     private static let maxSegmentSamples = 12 * ChunkFormat.sampleRate
     private static let endSilenceSamples = ChunkFormat.sampleRate * 7 / 10
     private static let paddingSamples = ChunkFormat.sampleRate / 4
+    /// The most recent audio before an utterance goes to the model with it, so that the model stays in the
+    /// language of the conversation. A short context lets the transcript follow a change of language quickly.
+    private static let maxContextSamples = 8 * ChunkFormat.sampleRate
 
     /// `isEcho` receives the RMS level and the sample range of a microphone utterance.
     typealias EchoCheck = @Sendable (_ level: Float, _ start: Int64, _ end: Int64) -> Bool
@@ -38,7 +41,9 @@ final class LiveSegmenter: @unchecked Sendable {
     private static func run(stream: AsyncStream<([Float], Int64)>, track: Track, speech: Speech, isEcho: EchoCheck?) async {
         var pending: [Float] = []
         var pendingStart: Int64 = 0
-        var history: [Float] = []
+        // The latest audio of the track, for the padding and the context of an utterance. It ends at `recentEnd`.
+        var recent: [Float] = []
+        var recentEnd: Int64 = 0
         var segment: [Float] = []
         var segmentStart: Int64 = 0
         var speaking = false
@@ -51,8 +56,16 @@ final class LiveSegmenter: @unchecked Sendable {
                 if isEcho(level, start, start + Int64(samples.count)) { return }
             }
             let offset = Double(start) / Double(ChunkFormat.sampleRate)
+            // The context is the audio just before the utterance, without the part that is already in it.
+            let room = max(0, Speech.modelSamples - ChunkFormat.sampleRate / 2 - samples.count)
+            let available = max(0, min(recent.count, Int(start - (recentEnd - Int64(recent.count)))))
+            let context = Array(recent.prefix(available).suffix(min(maxContextSamples, room)))
+            let utterance = context.count..<(context.count + samples.count)
             do {
-                let (text, _) = try await speech.transcribe(samples, offset: offset)
+                let words = try await speech.transcribe(
+                    context + samples, offset: Double(start - Int64(context.count)) / Double(ChunkFormat.sampleRate),
+                    window: utterance, keep: utterance)
+                let text = words.map(\.text).joined(separator: " ")
                 guard !text.isEmpty else { return }
                 Output.shared.event(
                     "live",
@@ -72,7 +85,7 @@ final class LiveSegmenter: @unchecked Sendable {
                 speaking = false
                 segment.removeAll()
                 pending.removeAll()
-                history.removeAll()
+                recent.removeAll()
                 pendingStart = index
                 state = nil
             }
@@ -104,12 +117,14 @@ final class LiveSegmenter: @unchecked Sendable {
                 } else if probability >= 0.5 {
                     speaking = true
                     silence = 0
-                    let pad = Array(history.suffix(paddingSamples))
+                    let pad = Array(recent.suffix(paddingSamples))
                     segment = pad + chunk
                     segmentStart = chunkStart - Int64(pad.count)
                 }
-                history.append(contentsOf: chunk)
-                if history.count > paddingSamples * 2 { history.removeFirst(history.count - paddingSamples) }
+                recent.append(contentsOf: chunk)
+                recentEnd = chunkStart + Int64(frame)
+                let keep = maxSegmentSamples + maxContextSamples
+                if recent.count > keep + ChunkFormat.sampleRate { recent.removeFirst(recent.count - keep) }
             }
         }
         if speaking && !segment.isEmpty { await emit(segment, start: segmentStart) }

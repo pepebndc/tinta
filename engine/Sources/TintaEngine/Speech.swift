@@ -163,22 +163,77 @@ actor Speech {
         return (result.probability, result.state)
     }
 
-    func transcribe(_ samples: [Float], offset: Double) async throws -> (String, [Word]) {
+    /// The model reads at most this much audio in one pass, and it pads a shorter input to this length.
+    /// So context audio up to this length costs no extra time.
+    static let modelSamples = ASRConstants.maxModelSamples
+
+    /// Transcribes the speech in `window` of `audio`. `audio[0]` is at `offset` seconds.
+    /// The model has no language setting: it takes the language from the audio. A short utterance alone,
+    /// such as "sí", often comes out as English words, and the speech around it gives the model the language
+    /// of the conversation. But near a change of language, the speech around it can pull the utterance into
+    /// the wrong language. So the model decodes the window alone and with the audio around it, and the decode
+    /// with the higher mean token confidence wins. Only the words with their middle in `keep` count.
+    func transcribe(_ audio: [Float], offset: Double, window: Range<Int>, keep: Range<Int>) async throws -> [Word] {
+        let rate = Double(ChunkFormat.sampleRate)
+        let seconds = { (sample: Int) in offset + Double(sample) / rate }
+        let keep = seconds(keep.lowerBound)..<seconds(keep.upperBound)
+        let alone = try await decode(Array(audio[window]), offset: seconds(window.lowerBound), keep: keep)
+        let context = Self.contextRange(for: window, count: audio.count)
+        guard context != window else { return alone.words }
+        let around = try await decode(Array(audio[context]), offset: seconds(context.lowerBound), keep: keep)
+        return around.confidence > alone.confidence ? around.words : alone.words
+    }
+
+    /// The words with their middle in `keep`, and the mean confidence of their tokens. A word of only
+    /// punctuation, such as the end of the sentence before `keep`, does not count.
+    private func decode(_ samples: [Float], offset: Double, keep: Range<Double>) async throws -> (words: [Word], confidence: Float) {
         try await loadIfNeeded()
         guard let asr else { throw EngineError("ASR not loaded") }
-        guard samples.count >= ASRConstants.minimumRequiredSamples(forSampleRate: ChunkFormat.sampleRate) else { return ("", []) }
+        guard samples.count >= ASRConstants.minimumRequiredSamples(forSampleRate: ChunkFormat.sampleRate) else { return ([], 0) }
         var state = try TdtDecoderState(decoderLayers: await asr.decoderLayerCount)
         let result = try await asr.transcribe(samples, decoderState: &state)
-        let words = buildWordTimings(from: result.tokenTimings ?? []).map {
-            Word(text: $0.word, start: $0.startTime + offset, end: $0.endTime + offset)
-        }
-        return (result.text.trimmingCharacters(in: .whitespacesAndNewlines), words)
+        let all = result.tokenTimings ?? []
+        let inside = all.indices.filter { keep.contains(offset + (all[$0].startTime + all[$0].endTime) / 2) }
+        guard let first = inside.first, let last = inside.last else { return ([], 0) }
+        let tokens = Array(all[first...last])
+        var words = buildWordTimings(from: tokens)
+            .filter { $0.word.contains { $0.isLetter || $0.isNumber } }
+            .map { Word(text: $0.word, start: $0.startTime + offset, end: $0.endTime + offset) }
+        // The model can put the punctuation of a sentence in the silence around it. The marks join the
+        // first and the last word, and the word times stay the times of the speech.
+        let mark = { (token: TokenTiming) in token.token.replacingOccurrences(of: "▁", with: "").trimmingCharacters(in: .whitespaces) }
+        var opening = "", closing = ""
+        var index = first - 1
+        while index >= 0, Self.isPunctuation(all[index].token, in: "¿¡\"«(") { opening = mark(all[index]) + opening; index -= 1 }
+        index = last + 1
+        while index < all.count, Self.isPunctuation(all[index].token, in: ".,;:?!…\"»)") { closing += mark(all[index]); index += 1 }
+        if let head = words.first, !opening.isEmpty { words[0] = Word(text: opening + head.text, start: head.start, end: head.end) }
+        if let tail = words.last, !closing.isEmpty { words[words.count - 1] = Word(text: tail.text + closing, start: tail.start, end: tail.end) }
+        return (words, tokens.map(\.confidence).reduce(0, +) / Float(tokens.count))
+    }
+
+    /// True when the token has only characters of `marks`, without the word start mark of the vocabulary.
+    nonisolated static func isPunctuation(_ token: String, in marks: String) -> Bool {
+        let text = token.replacingOccurrences(of: "▁", with: "").trimmingCharacters(in: .whitespaces)
+        return !text.isEmpty && text.allSatisfy { marks.contains($0) }
+    }
+
+    /// The audio range to transcribe for the speech in `window`: the window and the audio around it,
+    /// to a total of almost `modelSamples`. Each side gets half of the context. When one side reaches the
+    /// start or the end of the track, the other side gets the rest.
+    nonisolated static func contextRange(for window: Range<Int>, count: Int) -> Range<Int> {
+        let target = modelSamples - ChunkFormat.sampleRate / 2
+        let extra = max(0, target - window.count)
+        var start = max(0, window.lowerBound - extra / 2)
+        let end = min(count, start + max(target, window.count))
+        start = max(0, min(start, end - max(target, window.count)))
+        return start..<end
     }
 
     // MARK: Final pass
 
     /// Transcribes speech regions of a full track. Regions come from VAD and are grouped
-    /// into windows of at most 25 seconds.
+    /// into windows of at most 12 seconds, so that a window and its context fit in one pass of the model.
     func transcribeTrack(_ samples: [Float]) async throws -> [Word] {
         try await loadIfNeeded()
         guard let vad, !samples.isEmpty else { return [] }
@@ -190,17 +245,19 @@ actor Speech {
             let start = segment.startSample(sampleRate: rate)
             let end = min(samples.count, segment.endSample(sampleRate: rate))
             guard end > start else { continue }
-            if let last = windows.last, end - last.0 <= 25 * rate, start - last.1 <= rate {
+            if let last = windows.last, end - last.0 <= 12 * rate, start - last.1 <= rate {
                 windows[windows.count - 1] = (last.0, end)
             } else {
                 windows.append((start, end))
             }
         }
         var words: [Word] = []
+        let margin = rate * 3 / 20
         for (index, window) in windows.enumerated() {
-            let slice = Array(samples[window.0..<window.1])
-            let (_, windowWords) = try await transcribe(slice, offset: Double(window.0) / Double(rate))
-            words.append(contentsOf: windowWords)
+            // A word at the edge of the speech still counts, but no word of the next window does.
+            let from = index == 0 ? 0 : max(window.0 - margin, (windows[index - 1].1 + window.0) / 2)
+            let to = index == windows.count - 1 ? samples.count : min(window.1 + margin, (window.1 + windows[index + 1].0) / 2)
+            words += try await transcribe(samples, offset: 0, window: window.0..<window.1, keep: from..<to)
             Output.shared.event("finalize_progress", ["stage": "transcription", "fraction": Double(index + 1) / Double(max(1, windows.count))])
         }
         return words

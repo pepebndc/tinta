@@ -17,7 +17,7 @@ Write your notes, get a transcript with speaker names, and keep everything on yo
 ## What Tinta does
 
 - **Notes and transcript side by side.** Write your notes while the draft transcript appears. Insert a timestamp with one click.
-- **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language.
+- **Local transcription.** Parakeet v3 runs on the Apple Neural Engine. It supports English, Spanish, and 23 other European languages. Tinta detects the language, also when a meeting changes language, for example from Spanish to English.
 - **Speaker names.** Tinta separates the voices. On Google Meet, a small Chrome extension reads who speaks, and Tinta names each speaker. In the Zoom and Microsoft Teams apps, Tinta reads who speaks from the call window (beta). You can confirm, correct, merge, or split speakers.
 - **Meet chat.** On Google Meet, the extension also keeps the messages of the call chat. They show in the transcript at the time they arrive. Search, export, summaries, and MCP include them.
 - **Next meetings.** Tinta reads the calendars on your Mac, with no sign-in, and shows your next meetings. A reminder before each call lets you join it and take notes with one click.
