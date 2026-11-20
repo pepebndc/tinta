@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0 (2026-11-20)
+
+### Added
+- Command+plus makes the text and the interface larger, and Command+minus makes them smaller. Command+0 sets the default size. Tinta keeps the size after a restart.
+
 ## 0.12.0 (2026-11-20)
 
 ### Added

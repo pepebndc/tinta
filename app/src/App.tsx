@@ -11,6 +11,7 @@ import { resizeWindow } from "./windowFrame";
 import { GranolaImport } from "./GranolaImport";
 import { Onboarding } from "./Onboarding";
 import { setTheme } from "./theme";
+import { restoreZoom, zoom } from "./zoom";
 
 /** Below this window width, the window shows only the sidebar. */
 const COMPACT_WIDTH = 640;
@@ -247,10 +248,21 @@ export function App() {
   const connect = useCallback(() => latest.current.connectCalendar(), []);
   const closeNotice = useCallback((id: string) => setClosedNotices((closed) => [...closed, id]), []);
 
+  // Command-plus, Command-minus, and Command-0 change the size of the text and the interface, also during setup.
   // Command-F opens the search. Command-N creates a meeting. Command-comma opens Settings.
-  // Control-Command-F is the full screen shortcut of macOS. The shortcuts do not work during setup.
+  // Control-Command-F is the full screen shortcut of macOS. The other shortcuts do not work during setup.
   useEffect(() => {
+    restoreZoom();
     const key = (e: KeyboardEvent) => {
+      if (e.metaKey && !e.altKey && !e.ctrlKey) {
+        // On many keyboards, plus is Shift and the equals key. Command-equals also makes the size larger.
+        const step = e.key === "+" || e.key === "=" ? 1 : e.key === "-" || e.key === "_" ? -1 : e.key === "0" ? 0 : null;
+        if (step !== null) {
+          e.preventDefault();
+          zoom(step);
+          return;
+        }
+      }
       if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || !latest.current.ready) return;
       const letter = e.key.toLowerCase();
       if (letter === "f") {

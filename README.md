@@ -114,6 +114,8 @@ When you open Tinta for the first time, a short setup guides you through these s
 
 **Close the window.** When you close the window, Tinta hides it and continues. Reminders, call detection, and a recording stay active. Click the Tinta icon in the Dock to show the window again. To quit Tinta, press Command+Q.
 
+**Text size.** Press Command+plus to make the text and the interface larger, and Command+minus to make them smaller. Command+0 sets the default size. Tinta keeps the size after a restart.
+
 **Notes and transcript.** The notes and the transcript fill the window. On a tall or narrow window, the notes show above the transcript. Drag the divider between them to change their size. Double-click the divider to reset it.
 
 **After the call.** Tinta processes the recording on your Mac. Processing improves the text and matches speaker names. To name a speaker, click the speaker name in the transcript. Click the text of a turn to edit it. Under Speakers, play a sample of each speaker and merge speakers. Your notes stay separate from the transcript.
